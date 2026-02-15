@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../../services/supabase';
 import { Store, Mapping, RawRow } from '../../types';
 import { toast } from 'react-hot-toast';
-import { FileUp, Columns, CheckCircle2, ChevronRight, Loader2, AlertCircle, FileSpreadsheet, Percent, Info, Calculator } from 'lucide-react';
+import { FileUp, Columns, CheckCircle2, ChevronRight, Loader2, AlertCircle, FileSpreadsheet, Percent, Info, Calculator, Store as StoreIcon } from 'lucide-react';
 
 interface ImportWizardProps {
   store: Store;
@@ -200,7 +200,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       const { error: itemError } = await supabase.from('order_items').insert(itemsToUpsert);
       if (itemError) throw itemError;
 
-      toast.success(`Berhasil sinkron ${ordersToUpsert.length} data.`);
+      toast.success(`Berhasil sinkron ${ordersToUpsert.length} data ke ${store.name}.`);
       setStep(3);
     } catch (err: any) {
       toast.error("Gagal: " + err.message);
@@ -210,7 +210,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
       {/* Step Indicator */}
-      <div className="flex items-center justify-between mb-12 relative">
+      <div className="flex items-center justify-between mb-8 relative">
         <div className="absolute top-1/2 left-0 w-full h-0.5 bg-slate-200 dark:bg-slate-800 -z-10 -translate-y-1/2"></div>
         {[1, 2, 3].map((s) => (
           <div key={s} className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-sm ${
@@ -219,6 +219,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
             {step > s ? <CheckCircle2 className="w-6 h-6" /> : s}
           </div>
         ))}
+      </div>
+
+      <div className="bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 rounded-2xl p-4 mb-8 flex items-center justify-center gap-3">
+        <StoreIcon className="w-5 h-5 text-orange-600" />
+        <span className="text-sm text-orange-800 dark:text-orange-200 font-medium">
+          Mengimpor data untuk toko: <span className="font-black uppercase tracking-wide">{store.name}</span>
+        </span>
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 p-8">

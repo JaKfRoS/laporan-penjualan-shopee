@@ -325,6 +325,7 @@ GRANT EXECUTE ON FUNCTION delete_all_store_orders(uuid) TO authenticated;`}
           
           {activeTab === 'import' && currentStore && (
             <ImportWizard 
+              key={currentStore.id}
               store={currentStore} 
               onComplete={() => {
                 setRefreshKey(Date.now());
