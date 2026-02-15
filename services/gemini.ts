@@ -7,7 +7,7 @@ const apiKey = process.env.API_KEY;
 export const getSalesInsights = async (data: any) => {
   if (!apiKey) {
     console.warn('Gemini API_KEY is missing. AI insights will be disabled.');
-    return "AI insights are currently unavailable because the API key is not configured.";
+    return "AI insights are currently under maintenance.";
   }
 
   try {
