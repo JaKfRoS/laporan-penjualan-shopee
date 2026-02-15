@@ -9,7 +9,7 @@ import { StoreSelector } from './components/StoreSelector';
 import { Layout } from './components/Layout';
 import { Toaster, toast } from 'react-hot-toast';
 import { Store } from './types';
-import { AlertCircle, Loader2, Trash2, AlertTriangle, RefreshCcw, UserCircle, ShieldAlert, Pencil, Check, X, Code } from 'lucide-react';
+import { AlertCircle, Loader2, Trash2, AlertTriangle, RefreshCcw, UserCircle, ShieldAlert, Pencil, Check, X, Code, Layers } from 'lucide-react';
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -81,7 +81,7 @@ export default function App() {
 
       if (data && data.length > 0) {
         setStores(data);
-        if (!currentStore || !data.find(s => s.id === currentStore.id)) {
+        if (!currentStore || (currentStore.id !== 'all' && !data.find(s => s.id === currentStore.id))) {
           setCurrentStore(data[0]);
         }
       } else {
@@ -143,66 +143,81 @@ export default function App() {
     }
   };
 
-  const handleClearStoreData = async () => {
-    console.log("Trigger: handleClearStoreData");
-    if (!currentStore) {
-      console.log("Error: currentStore is null");
-      toast.error("Pilih toko terlebih dahulu.");
+  const handleDeleteSpecificStore = async (id: string, name: string) => {
+    if (!window.confirm(`PERINGATAN: Toko "${name}" akan dihapus secara permanen.\n\nSemua data pesanan terkait toko ini juga akan hilang.\nLanjutkan?`)) {
       return;
     }
 
-    // Step 1: Confirmation
+    const toastId = toast.loading('Menghapus toko...');
+    try {
+      const { error } = await supabase
+        .from('stores')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      const updatedStores = stores.filter(s => s.id !== id);
+      setStores(updatedStores);
+
+      // Logika switch toko jika yang dihapus adalah toko aktif
+      if (currentStore?.id === id) {
+        if (updatedStores.length > 0) {
+          setCurrentStore(updatedStores[0]);
+        } else {
+          // Jika tidak ada toko tersisa, buat toko default
+          if (session?.user?.id) await createDefaultStore(session.user.id);
+        }
+      }
+
+      toast.success(`Toko "${name}" berhasil dihapus.`, { id: toastId });
+    } catch (err: any) {
+      console.error(err);
+      // Jika error foreign key constraint, tampilkan panduan SQL
+      if (err.code === '23503') {
+         toast.error("Gagal: Database menolak penghapusan. Jalankan script SQL Update.", { id: toastId });
+         setShowSqlGuide(true);
+      } else {
+         toast.error("Gagal hapus toko: " + err.message, { id: toastId });
+      }
+    }
+  };
+
+  const handleClearStoreData = async () => {
+    if (!currentStore) {
+      toast.error("Pilih toko terlebih dahulu.");
+      return;
+    }
+    
+    if (currentStore.id === 'all') {
+      toast.error("Pilih toko spesifik untuk menghapus data.");
+      return;
+    }
+
     if (!isConfirmingClear) {
-      console.log("Status: Waiting for confirmation");
       setIsConfirmingClear(true);
       return;
     }
 
-    console.log("Status: Starting deletion process");
     setIsDeleting(true);
-    const loadingToast = toast.loading("Mengirim perintah hapus ke database...");
+    const loadingToast = toast.loading("Menghapus data toko...");
 
     try {
-      // 1. Mencoba dengan RPC (Rekomendasi)
-      console.log("Action: Calling RPC 'delete_all_store_orders'...");
-      const { data, error: rpcError } = await supabase.rpc('delete_all_store_orders', { 
-        target_store_id: currentStore.id 
-      });
+      const { error: deleteError } = await supabase
+        .from('orders')
+        .delete()
+        .eq('store_id', currentStore.id);
 
-      if (rpcError) {
-        console.warn("RPC Error:", rpcError);
-        // Jika fungsi tidak ditemukan
-        if (rpcError.code === 'PGRST202' || rpcError.message.includes('not found')) {
-          console.log("Action: RPC not found. Showing SQL guide.");
-          setShowSqlGuide(true);
-          
-          // 2. Fallback: Mencoba Direct Delete (Jika RLS mengizinkan)
-          console.log("Action: Attempting fallback direct delete...");
-          const { error: deleteError } = await supabase
-            .from('orders')
-            .delete()
-            .eq('store_id', currentStore.id);
-            
-          if (deleteError) {
-            console.error("Direct Delete Fallback Error:", deleteError);
-            throw new Error("Izin hapus ditolak oleh database. Anda harus menjalankan kode SQL di dashboard Supabase.");
-          }
-        } else {
-          throw rpcError;
-        }
-      }
+      if (deleteError) throw deleteError;
 
-      console.log("Status: Deletion successful");
-      toast.success("Berhasil! Data telah dikosongkan.", { id: loadingToast });
-      
-      // Reset state
+      toast.success("Data pesanan berhasil dikosongkan.", { id: loadingToast });
       setIsConfirmingClear(false);
       setRefreshKey(Date.now());
       setActiveTab('dashboard');
-
     } catch (err: any) {
-      console.error("Final Catch Error:", err);
-      toast.error(err.message || "Gagal menghapus data.", { id: loadingToast, duration: 6000 });
+      console.error(err);
+      toast.error("Gagal hapus data: " + err.message, { id: loadingToast });
+      setShowSqlGuide(true);
     } finally {
       setIsDeleting(false);
     }
@@ -210,18 +225,36 @@ export default function App() {
 
   const handleResetEverything = async () => {
     if (!session?.user?.id) return;
-    setIsDeleting(true);
-    try {
-      const { error } = await supabase
-        .from('stores')
-        .delete()
-        .eq('user_id', session.user.id);
+    
+    if (!window.confirm("PERINGATAN KERAS: Akun Anda akan dihapus permanen beserta seluruh data toko.")) {
+      return;
+    }
 
-      if (error) throw error;
-      toast.success(`Akun direset.`);
+    setIsDeleting(true);
+    const loadingToast = toast.loading("Menghapus akun...");
+
+    try {
+      const { error } = await supabase.rpc('delete_user_account');
+
+      if (error) {
+        // Fallback manual jika RPC belum ada
+        if (error.code === 'PGRST202' || error.message.includes('function not found')) {
+            toast.error("Update database diperlukan. Menghapus data manual...", { id: loadingToast });
+            await supabase.from('stores').delete().eq('user_id', session.user.id);
+            await supabase.auth.signOut();
+            window.location.reload();
+            return;
+        }
+        throw error;
+      }
+
+      toast.success(`Akun dihapus.`, { id: loadingToast });
+      await supabase.auth.signOut();
       window.location.reload(); 
     } catch (err: any) {
-      toast.error("Gagal: " + err.message);
+      console.error(err);
+      toast.error("Gagal: " + err.message, { id: loadingToast });
+      setShowSqlGuide(true);
     } finally {
       setIsDeleting(false);
     }
@@ -249,8 +282,15 @@ export default function App() {
         <Layout>
           <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-10">
             <div>
-              <h1 className="text-3xl font-black tracking-tighter uppercase">
-                {activeTab === 'dashboard' ? `Toko: ${currentStore?.name}` : activeTab}
+              <h1 className="text-3xl font-black tracking-tighter uppercase flex items-center gap-3">
+                {currentStore?.id === 'all' ? (
+                  <>
+                    <Layers className="w-8 h-8 text-purple-600" />
+                    Semua Toko
+                  </>
+                ) : (
+                  activeTab === 'dashboard' ? `Toko: ${currentStore?.name}` : activeTab
+                )}
               </h1>
               <div className="flex items-center gap-2 mt-1">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
@@ -275,38 +315,46 @@ export default function App() {
 
           {/* SQL GUIDE */}
           {showSqlGuide && (
-            <div className="mb-10 p-6 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 dark:border-amber-800 rounded-3xl animate-in fade-in zoom-in duration-300">
-              <div className="flex items-start gap-4">
-                <div className="p-3 bg-amber-200 dark:bg-amber-800 rounded-2xl shrink-0">
-                  <Code className="w-6 h-6 text-amber-700 dark:text-amber-200" />
+            <div className="mb-10 p-6 bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-3xl animate-in fade-in zoom-in duration-300">
+               <div className="flex items-start gap-4">
+                <div className="p-3 bg-red-200 dark:bg-red-800 rounded-2xl shrink-0">
+                  <Code className="w-6 h-6 text-red-700 dark:text-red-200" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-black uppercase tracking-tight text-amber-900 dark:text-amber-100">Penting: Izin Database Dibutuhkan</h3>
-                  <p className="text-sm text-amber-800 dark:text-amber-300 mt-1 mb-4">
-                    Untuk menghapus data dalam jumlah besar, database memerlukan fungsi khusus. Salin kode ini ke <b>SQL Editor Supabase</b> dan klik <b>RUN</b>:
+                  <h3 className="text-lg font-black uppercase tracking-tight text-red-900 dark:text-red-100">Update Database Diperlukan</h3>
+                  <p className="text-sm text-red-800 dark:text-red-300 mt-1 mb-4">
+                    Fitur "Hapus Toko" memerlukan update database agar data pesanan ikut terhapus otomatis (Cascade). Salin kode di bawah ke <b>SQL Editor Supabase</b>:
                   </p>
                   <pre className="bg-slate-900 text-orange-400 p-4 rounded-xl text-xs overflow-x-auto font-mono mb-4 border border-slate-800 select-all">
-{`CREATE OR REPLACE FUNCTION delete_all_store_orders(target_store_id uuid)
-RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$
+{`-- 1. Hapus Constraint Lama
+ALTER TABLE stores DROP CONSTRAINT IF EXISTS stores_user_id_fkey;
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_store_id_fkey;
+ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_store_order_fkey;
+
+-- 2. Tambahkan Constraint Baru (CASCADE)
+ALTER TABLE stores ADD CONSTRAINT stores_user_id_fkey 
+FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE orders ADD CONSTRAINT orders_store_id_fkey 
+FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE;
+
+-- 3. Fungsi Hapus Akun Aman
+CREATE OR REPLACE FUNCTION delete_user_account()
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM stores WHERE id = target_store_id AND user_id = auth.uid()) THEN
-    DELETE FROM orders WHERE store_id = target_store_id;
-    RETURN true;
-  END IF;
-  RETURN false;
-END; $$;
-GRANT EXECUTE ON FUNCTION delete_all_store_orders(uuid) TO authenticated;`}
+  DELETE FROM auth.users WHERE id = auth.uid();
+END; $$;`}
                   </pre>
                   <div className="flex gap-3">
                     <button 
                       onClick={() => setShowSqlGuide(false)}
-                      className="px-6 py-2 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700 transition-all"
+                      className="px-6 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 transition-all"
                     >
-                      OKE, SAYA SUDAH RUN
+                      TUTUP
                     </button>
                     <button 
                       onClick={() => window.open('https://app.supabase.com', '_blank')}
-                      className="px-6 py-2 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold rounded-xl border border-amber-200 dark:border-amber-700"
+                      className="px-6 py-2 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold rounded-xl border border-red-200 dark:border-red-700"
                     >
                       BUKA SUPABASE DASHBOARD
                     </button>
@@ -319,23 +367,34 @@ GRANT EXECUTE ON FUNCTION delete_all_store_orders(uuid) TO authenticated;`}
           {activeTab === 'dashboard' && currentStore && (
             <Dashboard 
               store={currentStore} 
+              allStores={stores} 
               key={`dash-${currentStore.id}-${refreshKey}`} 
             />
           )}
           
           {activeTab === 'import' && currentStore && (
-            <ImportWizard 
-              key={currentStore.id}
-              store={currentStore} 
-              onComplete={() => {
-                setRefreshKey(Date.now());
-                setActiveTab('dashboard');
-              }} 
-            />
+            currentStore.id === 'all' ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                 <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                    <Layers className="w-10 h-10 text-slate-400" />
+                 </div>
+                 <h2 className="text-xl font-bold mb-2">Pilih Toko Spesifik</h2>
+                 <p className="text-slate-500 max-w-md">Anda tidak dapat mengimpor data ke "Semua Toko" sekaligus. Silakan pilih toko spesifik melalui menu di pojok kanan atas.</p>
+              </div>
+            ) : (
+              <ImportWizard 
+                key={currentStore.id}
+                store={currentStore} 
+                onComplete={() => {
+                  setRefreshKey(Date.now());
+                  setActiveTab('dashboard');
+                }} 
+              />
+            )
           )}
           
           {activeTab === 'settings' && (
-            <div className="max-w-4xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
+             <div className="max-w-4xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
               <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
                 <div className="flex items-center gap-4 mb-10">
                   <div className="w-14 h-14 bg-orange-100 dark:bg-orange-500/10 rounded-2xl flex items-center justify-center">
@@ -347,9 +406,10 @@ GRANT EXECUTE ON FUNCTION delete_all_store_orders(uuid) TO authenticated;`}
                   </div>
                 </div>
 
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 ml-1">Daftar Toko & Pengaturan</h3>
                 <div className="grid grid-cols-1 gap-4">
                   {stores.map(s => (
-                    <div key={s.id} className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 flex justify-between items-center group transition-all">
+                    <div key={s.id} className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 flex justify-between items-center group transition-all hover:bg-slate-100 dark:hover:bg-slate-800/80">
                       <div className="flex-1">
                         {editingStoreId === s.id ? (
                           <div className="flex items-center gap-2">
@@ -365,36 +425,51 @@ GRANT EXECUTE ON FUNCTION delete_all_store_orders(uuid) TO authenticated;`}
                           </div>
                         ) : (
                           <div className="flex items-center gap-4">
-                            <span className="text-lg font-black tracking-tight">{s.name}</span>
-                            <button 
-                              onClick={() => { setEditingStoreId(s.id); setEditName(s.name); }}
-                              className="p-2 text-slate-400 hover:text-orange-600 transition-all opacity-0 group-hover:opacity-100"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
+                            <span className="text-lg font-black tracking-tight dark:text-slate-200">{s.name}</span>
                           </div>
                         )}
+                      </div>
+                      
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-2">
+                        {editingStoreId !== s.id && (
+                          <button 
+                            onClick={() => { setEditingStoreId(s.id); setEditName(s.name); }}
+                            className="p-2.5 text-slate-400 hover:text-orange-600 hover:bg-white dark:hover:bg-slate-700 rounded-xl transition-all"
+                            title="Ubah Nama"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => handleDeleteSpecificStore(s.id, s.name)}
+                          className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
+                          title="Hapus Toko"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
-
+              
+              {currentStore?.id !== 'all' && (
               <div className="bg-red-50/30 dark:bg-red-950/5 rounded-[2.5rem] border border-red-100 dark:border-red-900/20 p-10">
                 <div className="flex items-center gap-3 text-red-600 font-black mb-10 uppercase text-sm tracking-widest">
                   <ShieldAlert className="w-6 h-6" />
-                  Management Data (Bahaya)
+                  Zona Bahaya
                 </div>
                 
                 <div className="grid grid-cols-1 gap-8">
                   <div className="bg-white dark:bg-slate-900/60 p-8 rounded-3xl border border-red-100 dark:border-red-900/10 flex flex-col lg:flex-row items-center justify-between gap-8">
                     <div className="flex-1 text-center lg:text-left">
-                      <h4 className="font-black flex items-center justify-center lg:justify-start gap-2 text-lg uppercase">
+                      <h4 className="font-black flex items-center justify-center lg:justify-start gap-2 text-lg uppercase dark:text-slate-200">
                         <RefreshCcw className={`w-5 h-5 text-orange-500 ${isDeleting ? 'animate-spin' : ''}`} />
-                        Hapus Data: {currentStore?.name}
+                        Hapus Data Pesanan: {currentStore?.name}
                       </h4>
                       <p className="text-sm text-slate-500 mt-2 font-medium">
-                        Ini akan menghapus semua riwayat pesanan dari toko ini secara permanen.
+                        Toko tetap ada, tetapi semua riwayat pesanan akan dihapus.
                       </p>
                     </div>
                     
@@ -425,8 +500,8 @@ GRANT EXECUTE ON FUNCTION delete_all_store_orders(uuid) TO authenticated;`}
 
                   <div className="bg-gradient-to-br from-red-600 to-red-700 p-8 rounded-3xl shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-8">
                     <div className="text-white text-center lg:text-left flex-1">
-                      <h4 className="font-black text-2xl uppercase tracking-tighter">RESET TOTAL</h4>
-                      <p className="text-sm text-red-100 mt-1 font-medium">Hapus akun dan semua toko secara permanen.</p>
+                      <h4 className="font-black text-2xl uppercase tracking-tighter">HAPUS AKUN SAYA</h4>
+                      <p className="text-sm text-red-100 mt-1 font-medium">Data yang dihapus tidak dapat dikembalikan.</p>
                     </div>
                     <button 
                       onClick={handleResetEverything}
@@ -438,6 +513,7 @@ GRANT EXECUTE ON FUNCTION delete_all_store_orders(uuid) TO authenticated;`}
                   </div>
                 </div>
               </div>
+              )}
             </div>
           )}
         </Layout>

@@ -2,13 +2,14 @@
 import React, { useState } from 'react';
 import { supabase } from '../../services/supabase';
 import { toast } from 'react-hot-toast';
-import { BarChart3, Mail, Lock, Loader2, ArrowRight, LogIn, UserPlus } from 'lucide-react';
+import { BarChart3, Mail, Lock, Loader2, LogIn, AlertCircle } from 'lucide-react';
 
 export const AuthView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  // Mode di-hardcode ke 'login' karena pendaftaran ditutup sementara
+  const mode = 'login'; 
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,29 +21,14 @@ export const AuthView: React.FC = () => {
 
     setLoading(true);
     try {
-      if (mode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          if (error.message.includes('Invalid login credentials')) {
-            throw new Error("Akun tidak ditemukan atau password salah. Silakan klik 'Daftar Akun Baru' jika belum punya akun.");
-          }
-          throw error;
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          throw new Error("Akun tidak ditemukan atau password salah.");
         }
-        toast.success('Berhasil masuk!');
-      } else {
-        const { data, error } = await supabase.auth.signUp({ 
-          email, 
-          password,
-        });
-        
-        if (error) throw error;
-        
-        if (data.user && !data.session) {
-          toast.success('Pendaftaran berhasil! Silakan cek email Anda untuk konfirmasi (jika diaktifkan) atau coba login.');
-        } else if (data.session) {
-          toast.success('Pendaftaran berhasil! Selamat datang.');
-        }
+        throw error;
       }
+      toast.success('Berhasil masuk!');
     } catch (err: any) {
       toast.error(err.message || "Terjadi kesalahan autentikasi");
     } finally {
@@ -61,12 +47,10 @@ export const AuthView: React.FC = () => {
 
           <div className="text-center mb-10">
             <h1 className="text-2xl font-black text-slate-900 mb-2">
-              {mode === 'login' ? 'Login ke Dashboard' : 'Daftar Akun Baru'}
+              Login ke Dashboard
             </h1>
             <p className="text-slate-500 text-sm">
-              {mode === 'login' 
-                ? 'Kelola data penjualan Shopee Anda dalam satu dashboard' 
-                : 'Mulai analisis profit bersih toko Shopee Anda sekarang'}
+              Kelola data penjualan Shopee Anda dalam satu dashboard
             </p>
           </div>
 
@@ -95,7 +79,7 @@ export const AuthView: React.FC = () => {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimal 6 karakter"
+                  placeholder="Password akun Anda"
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all font-medium"
                 />
               </div>
@@ -107,24 +91,22 @@ export const AuthView: React.FC = () => {
             >
               {loading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
-              ) : mode === 'login' ? (
-                <>MASUK SEKARANG <LogIn className="w-5 h-5" /></>
               ) : (
-                <>DAFTAR SEKARANG <UserPlus className="w-5 h-5" /></>
+                <>MASUK SEKARANG <LogIn className="w-5 h-5" /></>
               )}
             </button>
           </form>
 
           <div className="mt-10 pt-8 border-t border-slate-100 text-center">
-            <p className="text-slate-500 text-sm font-medium">
-              {mode === 'login' ? "Belum punya akun?" : "Sudah punya akun?"}
-            </p>
-            <button 
-              onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-              className="mt-2 text-orange-600 font-bold hover:text-orange-700 underline underline-offset-4"
-            >
-              {mode === 'login' ? 'Klik di sini untuk Daftar' : 'Klik di sini untuk Login'}
-            </button>
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex flex-col items-center gap-2">
+              <div className="flex items-center gap-2 text-amber-700 font-bold uppercase text-xs tracking-widest">
+                <AlertCircle className="w-4 h-4" />
+                Info
+              </div>
+              <p className="text-xs text-amber-600 font-medium leading-relaxed">
+                Silakan login jika sudah memiliki akun.
+              </p>
+            </div>
           </div>
         </div>
       </div>

@@ -11,11 +11,14 @@ import { DateRangePicker } from './DateRangePicker';
 import { Download, BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet } from 'lucide-react';
 import { getSalesInsights } from '../../services/gemini';
 import { toast } from 'react-hot-toast';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 
-interface DashboardProps { store: Store; }
+interface DashboardProps { 
+  store: Store; 
+  allStores?: Store[]; // Optional: dibutuhkan jika store.id === 'all'
+}
 
-export const Dashboard: React.FC<DashboardProps> = ({ store }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
@@ -32,8 +35,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ store }) => {
       let query = supabase
         .from('orders')
         .select('*')
-        .eq('store_id', store.id)
         .order('order_date', { ascending: false });
+
+      if (store.id === 'all') {
+        // Jika mode 'Semua Toko', filter berdasarkan list ID toko milik user
+        if (allStores && allStores.length > 0) {
+           const storeIds = allStores.map(s => s.id);
+           query = query.in('store_id', storeIds);
+        } else {
+           // Fallback jika tidak ada toko
+           setOrders([]);
+           setLoading(false);
+           return;
+        }
+      } else {
+        // Filter toko spesifik
+        query = query.eq('store_id', store.id);
+      }
 
       if (dateRange.start) query = query.gte('order_date', dateRange.start);
       if (dateRange.end) query = query.lte('order_date', dateRange.end);
@@ -93,7 +111,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store }) => {
       }
 
       const formatDate = (dateStr: string) => {
-        try { return format(parseISO(dateStr), 'dd/MM/yyyy'); } 
+        try { return format(new Date(dateStr), 'dd/MM/yyyy'); } 
         catch { return dateStr; }
       };
 
@@ -266,7 +284,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <RevenueChart orders={orders.filter(o => !o.status?.toLowerCase().includes('batal'))} />
-        <ProductChart storeId={store.id} />
+        <ProductChart 
+          storeId={store.id} 
+          allStoreIds={store.id === 'all' ? allStores?.map(s => s.id) : undefined} 
+        />
       </div>
 
       <OrdersTable orders={orders} />

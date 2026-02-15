@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Store as StoreIcon, ChevronDown, Plus, Check, X } from 'lucide-react';
+import { Store as StoreIcon, ChevronDown, Plus, Check, X, Layers } from 'lucide-react';
 import { Store } from '../types';
 
 interface StoreSelectorProps {
@@ -40,12 +40,23 @@ export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, currentSto
       onAddStore(newStoreName.trim());
       setNewStoreName('');
       setIsAdding(false);
-      // Opsional: Tutup dropdown setelah menambah, atau biarkan terbuka
     }
   };
 
   const handleSelect = (store: Store) => {
     onSelect(store);
+    setIsOpen(false);
+  };
+
+  const handleSelectAll = () => {
+    // Membuat dummy store object untuk 'Semua Toko'
+    const allStore: Store = {
+      id: 'all',
+      name: 'Semua Toko',
+      user_id: 'all',
+      created_at: new Date().toISOString()
+    };
+    onSelect(allStore);
     setIsOpen(false);
   };
 
@@ -60,7 +71,7 @@ export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, currentSto
         }`}
       >
         <div className={`p-1 rounded-full ${isOpen ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'}`}>
-           <StoreIcon className="w-3.5 h-3.5" />
+           {currentStore?.id === 'all' ? <Layers className="w-3.5 h-3.5" /> : <StoreIcon className="w-3.5 h-3.5" />}
         </div>
         <span className="max-w-[120px] truncate">{currentStore?.name || 'Pilih Toko'}</span>
         <ChevronDown className={`w-4 h-4 text-slate-400 ml-1 transition-transform duration-200 ${isOpen ? 'rotate-180 text-orange-500' : ''}`} />
@@ -116,6 +127,32 @@ export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, currentSto
 
           {/* List Toko */}
           <div className="max-h-[300px] overflow-y-auto custom-scrollbar p-2">
+            {/* Opsi Semua Toko */}
+            {stores.length > 0 && (
+              <button
+                onClick={handleSelectAll}
+                className={`w-full text-left px-3 py-3 mb-1 rounded-xl text-sm transition-all flex items-center justify-between group relative overflow-hidden ${
+                  currentStore?.id === 'all'
+                  ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 font-bold border border-purple-100 dark:border-purple-500/20' 
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent'
+                }`}
+              >
+                <div className="flex items-center gap-3 z-10 relative">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black uppercase ${
+                    currentStore?.id === 'all' ? 'bg-purple-200 text-purple-700' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:shadow-sm'
+                  }`}>
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <span className="truncate max-w-[160px]">Semua Toko</span>
+                </div>
+                {currentStore?.id === 'all' && (
+                  <div className="bg-purple-100 dark:bg-purple-500/20 p-1 rounded-full">
+                    <Check className="w-3 h-3 text-purple-600" />
+                  </div>
+                )}
+              </button>
+            )}
+
             {stores.length > 0 ? (
               stores.map((store) => (
                 <button

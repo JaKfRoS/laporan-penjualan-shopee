@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Order } from '../../types';
-import { format, parseISO } from 'date-fns';
-import { Search, Filter, ExternalLink, ChevronDown, Check } from 'lucide-react';
+import { format } from 'date-fns';
+import { Search, Filter, ExternalLink, ChevronDown, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface OrdersTableProps {
   orders: Order[];
@@ -11,6 +11,10 @@ interface OrdersTableProps {
 export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   
   // State untuk custom dropdown
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -27,6 +31,11 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Reset page saat filter berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
+
   const filteredOrders = orders.filter(o => {
     const matchesSearch = o.order_id.toLowerCase().includes(searchTerm.toLowerCase()) || 
                          (o.buyer_username || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -35,6 +44,17 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
   });
 
   const statuses = ['All', ...Array.from(new Set(orders.map(o => o.status)))];
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const currentOrders = filteredOrders.slice(startIndex, startIndex + itemsPerPage);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+    }
+  };
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden transition-colors">
@@ -115,10 +135,10 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {filteredOrders.map((order) => (
+            {currentOrders.map((order) => (
               <tr key={order.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                 <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-white">{order.order_id}</td>
-                <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{format(parseISO(order.order_date), 'MMM dd, yyyy')}</td>
+                <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{format(new Date(order.order_date), 'MMM dd, yyyy')}</td>
                 <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{order.buyer_username || '-'}</td>
                 <td className="px-6 py-4 text-sm">
                   <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${
@@ -149,6 +169,72 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
         <div className="py-12 text-center flex flex-col items-center justify-center">
           <Search className="w-12 h-12 text-slate-200 dark:text-slate-700 mb-3" />
           <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">No orders found matching your criteria.</p>
+        </div>
+      )}
+
+      {/* Pagination Footer */}
+      {filteredOrders.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 gap-4">
+          
+          <div className="flex items-center gap-4">
+            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              Showing <span className="font-bold text-slate-900 dark:text-white">{startIndex + 1}</span> to <span className="font-bold text-slate-900 dark:text-white">{Math.min(startIndex + itemsPerPage, filteredOrders.length)}</span> of <span className="font-bold text-slate-900 dark:text-white">{filteredOrders.length}</span> entries
+            </div>
+
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-orange-500/20 cursor-pointer"
+            >
+              <option value={10}>10 Baris</option>
+              <option value={20}>20 Baris</option>
+              <option value={50}>50 Baris</option>
+            </select>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-slate-600 dark:text-slate-300"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                 // Simple logic to show near current page
+                 let p = i + 1;
+                 if (totalPages > 5 && currentPage > 3) {
+                   p = currentPage - 2 + i;
+                 }
+                 if (p > totalPages) return null;
+                 
+                 return (
+                  <button
+                    key={p}
+                    onClick={() => handlePageChange(p)}
+                    className={`w-8 h-8 text-xs font-bold rounded-lg transition-all ${
+                      currentPage === p
+                        ? 'bg-orange-600 text-white shadow-md shadow-orange-500/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                 );
+              })}
+            </div>
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-slate-600 dark:text-slate-300"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
     </div>

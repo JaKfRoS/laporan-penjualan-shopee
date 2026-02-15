@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Order } from '../../types';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 
 interface RevenueChartProps {
   orders: Order[];
@@ -13,8 +13,12 @@ export const RevenueChart: React.FC<RevenueChartProps> = ({ orders }) => {
     const dailyData: Record<string, number> = {};
     
     orders.forEach(order => {
-      const date = format(parseISO(order.order_date), 'MMM dd');
-      dailyData[date] = (dailyData[date] || 0) + order.net_revenue;
+      try {
+        const date = format(new Date(order.order_date), 'MMM dd');
+        dailyData[date] = (dailyData[date] || 0) + order.net_revenue;
+      } catch (e) {
+        // Skip invalid date
+      }
     });
 
     return Object.entries(dailyData)
@@ -23,9 +27,11 @@ export const RevenueChart: React.FC<RevenueChartProps> = ({ orders }) => {
   }, [orders]);
 
   return (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-      <h3 className="text-lg font-semibold text-slate-800 mb-6">Net Revenue over Time</h3>
-      <div className="h-64">
+    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 transition-colors">
+      <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-6">Net Revenue over Time</h3>
+      
+      {/* PENTING: Fix height eksplisit */}
+      <div style={{ width: '100%', height: 256, minHeight: 256 }}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData}>
             <defs>
