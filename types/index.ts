@@ -30,6 +30,7 @@ export interface Order {
 export interface OrderItem {
   id: string;
   order_id: string;
+  store_id?: string; // Added store_id to prevent mixing items
   product_name: string;
   variation: string | null;
   quantity: number;

@@ -147,8 +147,11 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         }
 
         orderGroups[orderId].grossProductValue += prodTotal;
+        
+        // PENTING: Tambahkan store_id ke setiap item
         orderGroups[orderId].items.push({
           order_id: orderId,
+          store_id: store.id, // Menjamin item terikat ke toko yang benar
           product_name: row[mapping['product_name']] || 'Produk Tanpa Nama',
           variation: row[mapping['variation']],
           quantity: qty,
@@ -175,8 +178,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
           finalServiceFee = Math.max(0, gmv * customServiceRate);
         }
 
-        // Net Revenue = GMV - Voucher Penjual - Biaya Admin - Biaya Layanan
-        // Sesuai hitungan manual user: 1.477.914 - 15% = 1.256.226
         const netRevenue = gmv - o.seller_voucher - finalAdminFee - finalServiceFee;
         
         return { 
@@ -190,20 +191,31 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
       const itemsToUpsert = Object.values(orderGroups).flatMap(g => g.items);
 
+      // 1. Upsert Orders menggunakan Composite Key (store_id, order_id)
       const { error: orderError } = await supabase
         .from('orders')
-        .upsert(ordersToUpsert, { onConflict: 'order_id' });
+        .upsert(ordersToUpsert, { onConflict: 'store_id, order_id' });
+      
       if (orderError) throw orderError;
 
       const orderIds = ordersToUpsert.map(o => o.order_id);
-      await supabase.from('order_items').delete().in('order_id', orderIds);
+      
+      // 2. Hapus items lama HANYA untuk toko ini (mencegah menghapus items toko lain yang punya No.Pesanan sama)
+      await supabase
+        .from('order_items')
+        .delete()
+        .eq('store_id', store.id) 
+        .in('order_id', orderIds);
+      
+      // 3. Masukkan items baru dengan store_id
       const { error: itemError } = await supabase.from('order_items').insert(itemsToUpsert);
       if (itemError) throw itemError;
 
       toast.success(`Berhasil sinkron ${ordersToUpsert.length} data ke ${store.name}.`);
       setStep(3);
     } catch (err: any) {
-      toast.error("Gagal: " + err.message);
+      console.error(err);
+      toast.error("Gagal: " + (err.message || "Terjadi kesalahan database"));
     } finally { setIsProcessing(false); }
   };
 
