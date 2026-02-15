@@ -1,0 +1,5 @@
+{
+  "name": "Laporan shopee",
+  "description": "A production-ready SaaS dashboard for Shopee sellers to upload, analyze, and gain insights from their sales data using Supabase and Gemini AI.",
+  "requestFramePermissions": []
+}
