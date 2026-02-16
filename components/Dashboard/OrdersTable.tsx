@@ -1,14 +1,15 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Order } from '../../types';
+import { Order, Store } from '../../types';
 import { format } from 'date-fns';
-import { Search, Filter, ExternalLink, ChevronDown, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Filter, ExternalLink, ChevronDown, Check, ChevronLeft, ChevronRight, Store as StoreIcon } from 'lucide-react';
 
 interface OrdersTableProps {
   orders: Order[];
+  stores?: Store[];
 }
 
-export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
+export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   
@@ -55,6 +56,13 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
       setCurrentPage(newPage);
     }
   };
+
+  const getStoreName = (storeId: string) => {
+    if (!stores) return null;
+    return stores.find(s => s.id === storeId)?.name || 'Toko tidak dikenal';
+  };
+
+  const showStoreColumn = stores && stores.length > 0;
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden transition-colors">
@@ -127,6 +135,9 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-800/50">
               <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Order ID</th>
+              {showStoreColumn && (
+                <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Toko</th>
+              )}
               <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Date</th>
               <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Buyer</th>
               <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Status</th>
@@ -138,6 +149,14 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
             {currentOrders.map((order) => (
               <tr key={order.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                 <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-white">{order.order_id}</td>
+                {showStoreColumn && (
+                  <td className="px-6 py-4 text-sm">
+                    <div className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700">
+                      <StoreIcon className="w-3 h-3" />
+                      <span className="truncate max-w-[120px]">{getStoreName(order.store_id)}</span>
+                    </div>
+                  </td>
+                )}
                 <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{format(new Date(order.order_date), 'MMM dd, yyyy')}</td>
                 <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{order.buyer_username || '-'}</td>
                 <td className="px-6 py-4 text-sm">
