@@ -189,10 +189,12 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                               <span className="text-sm font-bold text-slate-800 dark:text-slate-200 line-clamp-2 leading-tight group-hover:text-orange-600 transition-colors">
                                   {firstItem.product_name}
                               </span>
-                              {firstItem.variation && !firstItem.product_name.includes(firstItem.variation) && (
-                                  <span className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-1">
-                                      <Tag className="w-3 h-3" /> {firstItem.variation}
-                                  </span>
+                              {firstItem.variation && (
+                                  <div className="flex items-center gap-1 mt-1">
+                                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                      {firstItem.variation}
+                                    </span>
+                                  </div>
                               )}
                               {remainingCount > 0 && (
                                   <span className="text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded w-fit mt-1">
@@ -361,19 +363,22 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                               <ShoppingBag className="w-8 h-8 text-slate-400 dark:text-slate-500" />
                            </div>
                            <div className="flex-1 min-w-0 flex flex-col justify-center">
-                              {/* Product Name + Variation Logic
-                                  Sometimes imported name includes variation. 
-                                  We try to show the full name to be safe.
-                              */}
-                              <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-2">
+                              {/* Product Name */}
+                              <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-1">
                                 {item.product_name}
-                                {/* If variation exists and not likely in name, append it */}
-                                {item.variation && !item.product_name.includes(item.variation) && (
-                                    <span className="text-slate-500 font-normal"> - {item.variation}</span>
-                                )}
                               </p>
                               
-                              <div className="flex flex-wrap items-center gap-2">
+                              {/* Explicit Variation Display */}
+                              {item.variation && (
+                                <div className="mt-1.5 mb-2">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/30 text-xs font-bold text-orange-800 dark:text-orange-300">
+                                    <Layers className="w-3.5 h-3.5" />
+                                    Variasi: {item.variation}
+                                  </span>
+                                </div>
+                              )}
+                              
+                              <div className="flex flex-wrap items-center gap-2 mt-1">
                                 <span className="text-xs font-black bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900 px-3 py-1 rounded-lg border border-slate-900 dark:border-slate-200">
                                    Qty: {item.quantity}
                                 </span>
