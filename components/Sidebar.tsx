@@ -1,10 +1,10 @@
 
 import React from 'react';
-import { LayoutDashboard, UploadCloud, Settings, LogOut, BarChart3, Moon, Sun, Megaphone, Calculator } from 'lucide-react';
+import { LayoutDashboard, UploadCloud, Settings, LogOut, BarChart3, Moon, Sun, Megaphone, Calculator, PackageSearch } from 'lucide-react';
 
 interface SidebarProps {
-  activeTab: 'dashboard' | 'import' | 'settings' | 'ads' | 'calculator';
-  setActiveTab: (tab: 'dashboard' | 'import' | 'settings' | 'ads' | 'calculator') => void;
+  activeTab: 'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products';
+  setActiveTab: (tab: 'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products') => void;
   isDarkMode: boolean;
   toggleDarkMode: () => void;
 }
@@ -12,6 +12,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isDarkMode, toggleDarkMode }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Sales Dashboard', icon: LayoutDashboard },
+    { id: 'products', label: 'Produk & HPP', icon: PackageSearch },
     { id: 'ads', label: 'Ads & Pemasaran', icon: Megaphone },
     { id: 'calculator', label: 'Kalkulator Harga', icon: Calculator },
     { id: 'import', label: 'Import Data', icon: UploadCloud },

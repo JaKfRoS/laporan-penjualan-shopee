@@ -6,15 +6,16 @@ import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { ImportWizard } from './components/Import/ImportWizard';
 import { PriceCalculator } from './components/Calculator/PriceCalculator';
+import { ProductManager } from './components/Product/ProductManager';
 import { StoreSelector } from './components/StoreSelector';
 import { Layout } from './components/Layout';
 import { Toaster, toast } from 'react-hot-toast';
 import { Store } from './types';
-import { AlertCircle, Loader2, Trash2, AlertTriangle, RefreshCcw, UserCircle, ShieldAlert, Pencil, Check, X, Code, Layers, Megaphone, Calculator, LayoutDashboard, UploadCloud, Settings } from 'lucide-react';
+import { AlertCircle, Loader2, Trash2, AlertTriangle, RefreshCcw, UserCircle, ShieldAlert, Pencil, Check, X, Code, Layers, Megaphone, Calculator, LayoutDashboard, UploadCloud, Settings, PackageSearch } from 'lucide-react';
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'import' | 'settings' | 'ads' | 'calculator'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products'>('dashboard');
   const [currentStore, setCurrentStore] = useState<Store | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
@@ -215,6 +216,8 @@ export default function App() {
         .from('ads_performance')
         .delete()
         .eq('store_id', currentStore.id);
+        
+      // Also clear mappings? Optional. Let's keep mappings for convenience, only clear transactions.
 
       if (deleteOrders) throw deleteOrders;
 
@@ -319,6 +322,7 @@ export default function App() {
                   activeTab === 'ads' ? 'Ads & Marketing' : 
                   activeTab === 'calculator' ? 'Kalkulator Harga' :
                   activeTab === 'import' ? 'Import Data' :
+                  activeTab === 'products' ? 'Produk & HPP' :
                   'Pengaturan'
                 )}
               </h1>
@@ -359,23 +363,35 @@ export default function App() {
                 <div className="flex-1 overflow-hidden">
                   <h3 className="text-lg font-black uppercase tracking-tight text-red-900 dark:text-red-100">Update Database Diperlukan</h3>
                   <p className="text-sm text-red-800 dark:text-red-300 mt-1 mb-4">
-                    Fitur baru memerlukan update struktur tabel. Salin kode di bawah ke <b>SQL Editor Supabase</b>:
+                    Fitur penghapusan produk memerlukan fungsi baru di database. Salin kode di bawah ke <b>SQL Editor Supabase</b>:
                   </p>
                   <pre className="bg-slate-900 text-orange-400 p-4 rounded-xl text-[10px] md:text-xs overflow-x-auto font-mono mb-4 border border-slate-800 select-all whitespace-pre-wrap break-all">
-{`CREATE TABLE IF NOT EXISTS ads_performance (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  store_id uuid REFERENCES stores(id) ON DELETE CASCADE,
-  report_date date NOT NULL,
-  platform text DEFAULT 'shopee',
-  impressions int DEFAULT 0,
-  clicks int DEFAULT 0,
-  ctr numeric DEFAULT 0,
-  conversions int DEFAULT 0,
-  amount_spent numeric DEFAULT 0,
-  gmv_generated numeric DEFAULT 0,
-  created_at timestamptz DEFAULT now(),
-  UNIQUE(store_id, report_date, platform)
-);`}
+{`-- BAGIAN 4.5: RPC Safe Delete & Policies --
+
+-- Policy agar user bisa menghapus/edit
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sku_mappings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Enable all for authenticated users" ON products FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all for authenticated users" ON sku_mappings FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all for authenticated users" ON order_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- Fungsi Hapus Aman
+CREATE OR REPLACE FUNCTION delete_product_safely(p_sku text, p_store_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  -- 1. Hapus Mapping
+  DELETE FROM sku_mappings WHERE mapped_sku = p_sku AND store_id = p_store_id;
+  -- 2. Unlink Orders
+  UPDATE order_items SET final_sku = NULL, is_sku_mapped = FALSE WHERE final_sku = p_sku AND store_id = p_store_id;
+  -- 3. Hapus Produk
+  DELETE FROM products WHERE sku = p_sku AND store_id = p_store_id;
+END;
+$$;`}
                   </pre>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <button 
@@ -400,6 +416,10 @@ export default function App() {
 
           {activeTab === 'calculator' && (
              <PriceCalculator />
+          )}
+
+          {activeTab === 'products' && currentStore && (
+             <ProductManager store={currentStore} />
           )}
 
           {activeTab === 'ads' && (
@@ -435,7 +455,8 @@ export default function App() {
                 store={currentStore} 
                 onComplete={() => {
                   setRefreshKey(Date.now());
-                  setActiveTab('dashboard');
+                  // Optionally redirect to dashboard or products page
+                  // setActiveTab('dashboard'); 
                 }} 
               />
             )
@@ -569,8 +590,9 @@ export default function App() {
 
       {/* Mobile Bottom Navigation (Glassmorphism) */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-safe">
-        <div className="grid grid-cols-5 gap-1 p-2 max-w-md mx-auto">
+        <div className="grid grid-cols-6 gap-0.5 p-2 max-w-md mx-auto">
           <MobileNavItem id="dashboard" label="Home" icon={LayoutDashboard} />
+          <MobileNavItem id="products" label="Produk" icon={PackageSearch} />
           <MobileNavItem id="ads" label="Ads" icon={Megaphone} />
           <MobileNavItem id="calculator" label="Harga" icon={Calculator} />
           <MobileNavItem id="import" label="Import" icon={UploadCloud} />

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../services/supabase';
-import { Store, Mapping, RawRow } from '../../types';
+import { Store, Mapping, RawRow, Product, SkuMapping } from '../../types';
 import { toast } from 'react-hot-toast';
 import { FileUp, Columns, CheckCircle2, ChevronRight, Loader2, AlertCircle, FileSpreadsheet, Percent, Info, Calculator, Store as StoreIcon, ShoppingBag, Megaphone } from 'lucide-react';
 
@@ -30,6 +30,7 @@ const DEFAULT_MAPPING: Mapping = {
   "Variasi": "variation",
   "Kota/Kabupaten": "city",
   "Provinsi": "province",
+  "Nomor Referensi SKU": "final_sku" // Try to map directly if available
 };
 
 export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete }) => {
@@ -40,6 +41,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
   const [isProcessing, setIsProcessing] = useState(false);
   const [adminFeePercent, setAdminFeePercent] = useState<string>('');
   const [serviceFeePercent, setServiceFeePercent] = useState<string>('');
+  const [importStats, setImportStats] = useState({ total: 0, unmapped: 0 });
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -108,9 +110,23 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
     }
 
     try {
+      // 1. Fetch Master Products & Mappings
+      const { data: products } = await supabase.from('products').select('*').eq('store_id', store.id);
+      const { data: mappings } = await supabase.from('sku_mappings').select('*').eq('store_id', store.id);
+
+      const productMap = new Map<string, Product>();
+      products?.forEach(p => productMap.set(p.sku, p));
+
+      // Key for mapping: "ProductName|VariationName"
+      const mappingMap = new Map<string, string>();
+      mappings?.forEach(m => {
+        mappingMap.set(`${m.shopee_product_name}|${m.shopee_variation_name || ''}`, m.mapped_sku);
+      });
+
       const orderGroups: Record<string, { order: any, items: any[], grossProductValue: number }> = {};
       const customAdminRate = parseFloat(adminFeePercent) / 100;
       const customServiceRate = parseFloat(serviceFeePercent) / 100;
+      let unmappedCount = 0;
 
       csvData.forEach((row) => {
         const orderId = String(row[mapping['order_id']] || '').trim();
@@ -161,16 +177,52 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
         orderGroups[orderId].grossProductValue += prodTotal;
         
+        // --- LOGIKA MAPPING SKU BARU ---
+        const rawSku = row[mapping['final_sku']] ? String(row[mapping['final_sku']]).trim() : '';
+        const prodName = row[mapping['product_name']] || 'Produk Tanpa Nama';
+        const variation = row[mapping['variation']] || '';
+        
+        let finalSku = null;
+        let hppAtTime = 0;
+        let isMapped = false;
+
+        // 1. Cek jika SKU ada di CSV dan Valid di Master DB
+        if (rawSku && productMap.has(rawSku)) {
+            finalSku = rawSku;
+            hppAtTime = productMap.get(rawSku)!.hpp;
+            isMapped = true;
+        } 
+        // 2. Jika tidak, cek Mapping Database
+        else {
+            const mapKey = `${prodName}|${variation}`;
+            const mappedSku = mappingMap.get(mapKey);
+            
+            if (mappedSku && productMap.has(mappedSku)) {
+                finalSku = mappedSku;
+                hppAtTime = productMap.get(mappedSku)!.hpp;
+                isMapped = true;
+            } else {
+                // 3. Tidak ditemukan dimanapun
+                isMapped = false;
+                unmappedCount++;
+            }
+        }
+
         orderGroups[orderId].items.push({
           order_id: orderId,
           store_id: store.id,
-          product_name: row[mapping['product_name']] || 'Produk Tanpa Nama',
-          variation: row[mapping['variation']],
+          product_name: prodName,
+          variation: variation,
           quantity: qty,
           product_total: prodTotal,
-          unit_price: qty > 0 ? prodTotal / qty : 0
+          unit_price: qty > 0 ? prodTotal / qty : 0,
+          final_sku: finalSku,
+          hpp_at_time: hppAtTime,
+          is_sku_mapped: isMapped
         });
       });
+
+      setImportStats({ total: Object.keys(orderGroups).length, unmapped: unmappedCount });
 
       const ordersToUpsert = Object.values(orderGroups).map(g => {
         const o = g.order;
@@ -208,6 +260,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
       const orderIds = ordersToUpsert.map(o => o.order_id);
       
+      // Hapus items lama untuk order ini agar tidak duplikat/konflik
       await supabase
         .from('order_items')
         .delete()
@@ -322,6 +375,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
                       step="0.01"
                       placeholder="Gunakan dari CSV" 
                       value={adminFeePercent}
+                      onWheel={(e) => e.currentTarget.blur()}
                       onChange={(e) => setAdminFeePercent(e.target.value)}
                       className="w-full pl-4 pr-10 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-black outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
                     />
@@ -340,6 +394,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
                       step="0.01"
                       placeholder="Gunakan dari CSV" 
                       value={serviceFeePercent}
+                      onWheel={(e) => e.currentTarget.blur()}
                       onChange={(e) => setServiceFeePercent(e.target.value)}
                       className="w-full pl-4 pr-10 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-black outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
                     />
@@ -392,7 +447,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
           </div>
         )}
 
-        {/* Placeholder for Ads Import Step 2 - to be implemented fully later */}
+        {/* Placeholder for Ads Import Step 2 */}
         {step === 2 && importType === 'ads' && (
              <div className="text-center py-10">
                  <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-2xl mb-6">
@@ -412,10 +467,23 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
               <CheckCircle2 className="w-10 h-10 text-green-600" />
             </div>
             <h2 className="text-2xl font-black mb-2 dark:text-white uppercase tracking-tight">Kalkulasi Berhasil</h2>
-            <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium">Semua biaya telah dihitung ulang secara otomatis. Pesanan dibatalkan sudah dikecualikan.</p>
-            <button onClick={onComplete} className="px-12 py-4 bg-orange-600 text-white rounded-2xl font-black hover:bg-orange-700 transition-all shadow-xl shadow-orange-500/20 active:scale-95">
-              LIHAT HASIL ANALISIS
-            </button>
+            <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium">
+                Semua biaya telah dihitung. <br/>
+                {importStats.unmapped > 0 && (
+                    <span className="text-red-500 font-bold">
+                        Peringatan: Ada {importStats.unmapped} item yang belum memiliki HPP (SKU tidak dikenali).
+                        Silakan buka menu "Produk & HPP" untuk mapping.
+                    </span>
+                )}
+            </p>
+            <div className="flex justify-center gap-4">
+                <button onClick={onComplete} className="px-8 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black hover:bg-slate-200 transition-all">
+                  DASHBOARD
+                </button>
+                <button onClick={onComplete} className="px-8 py-4 bg-orange-600 text-white rounded-2xl font-black hover:bg-orange-700 transition-all shadow-xl shadow-orange-500/20 active:scale-95">
+                  LIHAT ANALISIS
+                </button>
+            </div>
           </div>
         )}
       </div>

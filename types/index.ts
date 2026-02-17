@@ -30,12 +30,34 @@ export interface Order {
 export interface OrderItem {
   id: string;
   order_id: string;
-  store_id?: string; // Added store_id to prevent mixing items
+  store_id?: string;
   product_name: string;
   variation: string | null;
   quantity: number;
   unit_price: number;
   product_total: number;
+  // New Fields for Mapping
+  final_sku?: string | null;
+  hpp_at_time?: number;
+  is_sku_mapped?: boolean;
+}
+
+export interface Product {
+  sku: string;
+  store_id: string;
+  product_name: string;
+  hpp: number;
+  stock: number;
+  created_at?: string;
+}
+
+export interface SkuMapping {
+  id?: number;
+  store_id: string;
+  shopee_product_name: string;
+  shopee_variation_name: string;
+  mapped_sku: string;
+  created_at?: string;
 }
 
 export interface AdPerformance {
@@ -47,8 +69,8 @@ export interface AdPerformance {
   clicks: number;
   ctr: number;
   conversions: number;
-  amount_spent: number; // Biaya Iklan
-  gmv_generated: number; // Omzet dari Iklan
+  amount_spent: number; 
+  gmv_generated: number; 
   created_at: string;
 }
 

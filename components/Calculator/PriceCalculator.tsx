@@ -48,11 +48,11 @@ const InputGroup: React.FC<{
           value={value}
           onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
           step={step}
+          onWheel={(e) => e.currentTarget.blur()} // PREVENT SCROLL CHANGE
           className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-3.5 md:py-4 font-bold text-slate-900 dark:text-white outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all text-sm md:text-base ${
             prefix ? 'pl-12' : 'pl-4'
           } ${suffix ? 'pr-12' : 'pr-4'}`}
           placeholder={placeholder}
-          onWheel={(e) => e.currentTarget.blur()}
         />
         {suffix && (
           <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm pointer-events-none">
