@@ -35,6 +35,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   // Mapping Selection State
   const [selectedUnmapped, setSelectedUnmapped] = useState<{name: string, variation: string} | null>(null);
   const [targetSku, setTargetSku] = useState('');
+  const [mappingSearchTerm, setMappingSearchTerm] = useState(''); // New: Search inside mapping modal
   
   // Quick Create State (in Mapping)
   const [isQuickCreating, setIsQuickCreating] = useState(false);
@@ -48,25 +49,50 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     if (activeTab === 'mapping') fetchUnmappedItems();
   }, [store, activeTab]);
 
-  // --- SMART SUGGESTION EFFECT ---
+  // --- SMART SUGGESTION EFFECT (UPDATED) ---
   useEffect(() => {
     if (selectedUnmapped && products.length > 0) {
-      // Simple algorithm to find matches based on words
-      const shopeeNameWords = selectedUnmapped.name.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(' ').filter(w => w.length > 3);
-      const shopeeVarWords = selectedUnmapped.variation ? selectedUnmapped.variation.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(' ') : [];
+      setMappingSearchTerm(''); // Reset search when opening modal
       
-      const searchWords = [...shopeeNameWords, ...shopeeVarWords];
+      // 1. Prepare Shopee Tokens (Name + Variation)
+      const cleanString = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+      
+      const shopeeName = cleanString(selectedUnmapped.name);
+      const shopeeVar = cleanString(selectedUnmapped.variation || '');
+      
+      // Gabungkan nama dan variasi untuk konteks penuh
+      const shopeeFullTokens = `${shopeeName} ${shopeeVar}`.split(/\s+/).filter(w => w.length > 2);
 
       let bestScore = 0;
       let bestSku = '';
 
+      // 2. Iterate Master Products
       products.forEach(p => {
-        let score = 0;
-        const internalName = p.product_name.toLowerCase();
+        const internalName = cleanString(p.product_name);
+        const internalSku = cleanString(p.sku);
         
-        searchWords.forEach(word => {
-          if (internalName.includes(word)) score++;
+        // Exact SKU Match (Highest Priority)
+        if (internalSku === shopeeName || internalSku.includes(shopeeName)) {
+            bestScore = 1000;
+            bestSku = p.sku;
+            return;
+        }
+
+        // Token Matching Logic
+        let matches = 0;
+        const internalTokens = internalName.split(/\s+/);
+        
+        shopeeFullTokens.forEach(token => {
+            if (internalName.includes(token)) {
+                matches += 1;
+                // Bonus if exact word match
+                if (internalTokens.includes(token)) matches += 0.5;
+            }
         });
+
+        // Calculate Score relative to internal name length to avoid matching generic long descriptions
+        // But favor matches that cover most of the Shopee search terms
+        const score = matches; 
 
         if (score > bestScore) {
           bestScore = score;
@@ -74,8 +100,8 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         }
       });
 
-      // Only auto-select if we have a decent match (at least 1 significant word match)
-      if (bestScore > 0) {
+      // Threshold: At least one strong word match (score > 1) to auto-select
+      if (bestScore >= 1) {
         setTargetSku(bestSku);
       } else {
         setTargetSku('');
@@ -206,26 +232,31 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     const toastId = toast.loading(`Menghapus ${selectedSkus.size} produk...`);
     try {
       const skusArray = Array.from(selectedSkus);
-      let errorCount = 0;
+      
+      // OPTIMIZATION: Send all SKUs in a single RPC call
+      const { error } = await supabase.rpc('bulk_delete_products', {
+        p_skus: skusArray,
+        p_store_id: store.id
+      });
 
-      // Loop RPC calls sequentially to ensure atomicity per item
-      for (const sku of skusArray) {
-         const { error } = await supabase.rpc('delete_product_safely', {
-            p_sku: sku,
-            p_store_id: store.id
-         });
-         if (error) {
-             console.error(`Failed to delete ${sku}:`, error);
-             errorCount++;
+      if (error) {
+         if(error.message.includes('function not found') || error.code === 'PGRST202') {
+             // Fallback to loop if function not exists (for backward compatibility before user updates SQL)
+             console.warn("Bulk delete RPC not found, falling back to loop...");
+             toast('Fitur delete cepat belum aktif. Sedang menghapus satu per satu... (Harap update database)', { icon: '⚠️', duration: 5000 });
+             
+             let errorCount = 0;
+             for (const sku of skusArray) {
+                const { error: singleError } = await supabase.rpc('delete_product_safely', { p_sku: sku, p_store_id: store.id });
+                if (singleError) errorCount++;
+             }
+             if (errorCount > 0) throw new Error("Beberapa data gagal dihapus (Metode Lambat). Harap update database.");
+         } else {
+             throw error;
          }
       }
 
-      if (errorCount > 0) {
-          toast.error(`${errorCount} produk gagal dihapus. Cek log atau update database.`, { id: toastId });
-      } else {
-          toast.success(`${skusArray.length} produk berhasil dihapus`, { id: toastId });
-      }
-      
+      toast.success(`${skusArray.length} produk berhasil dihapus`, { id: toastId });
       fetchProducts();
     } catch (err: any) {
       toast.error("Gagal: " + err.message, { id: toastId });
@@ -461,7 +492,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
             shopee_product_name: selectedUnmapped!.name,
             shopee_variation_name: selectedUnmapped!.variation,
             mapped_sku: newProduct.sku
-        }]);
+          }]);
 
         if (mapError) throw mapError;
 
@@ -489,10 +520,17 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       }
   };
 
-  // --- FILTERED MASTER LIST ---
+  // --- FILTERED LISTS ---
   const filteredProducts = products.filter(p => 
       p.product_name.toLowerCase().includes(searchProduct.toLowerCase()) || 
       p.sku.toLowerCase().includes(searchProduct.toLowerCase())
+  );
+
+  // Filter for Mapping Modal Dropdown
+  const mappingOptions = products.filter(p => 
+      !mappingSearchTerm || 
+      p.product_name.toLowerCase().includes(mappingSearchTerm.toLowerCase()) ||
+      p.sku.toLowerCase().includes(mappingSearchTerm.toLowerCase())
   );
 
   return (
@@ -599,23 +637,40 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                         <>
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-500 uppercase flex items-center justify-between">
-                                  <span>Pilih Master SKU</span>
-                                  {targetSku && (
+                                  <span>Cari & Pilih Master SKU</span>
+                                  {targetSku && !mappingSearchTerm && (
                                     <span className="text-[10px] text-orange-600 flex items-center gap-1">
                                       <Lightbulb className="w-3 h-3" /> Saran Sistem
                                     </span>
                                   )}
                                 </label>
+                                
+                                {/* Search Input inside Modal */}
+                                <div className="relative mb-2">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                    <input 
+                                        type="text"
+                                        placeholder="Ketik untuk mencari produk..."
+                                        value={mappingSearchTerm}
+                                        onChange={(e) => setMappingSearchTerm(e.target.value)}
+                                        className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-orange-500/20"
+                                    />
+                                </div>
+
                                 <select 
                                     value={targetSku}
                                     onChange={(e) => setTargetSku(e.target.value)}
-                                    className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-orange-500/20"
+                                    className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-orange-500/20 max-h-48"
+                                    size={5} // Tampilkan sebagai list terbuka agar lebih mudah dilihat
                                 >
-                                    <option value="">-- Pilih SKU Internal --</option>
-                                    {products.map(p => (
-                                        <option key={p.sku} value={p.sku}>{p.product_name} ({p.sku}) - HPP: Rp {p.hpp.toLocaleString()}</option>
+                                    <option value="" className="p-2 text-slate-400">-- Pilih SKU Internal --</option>
+                                    {mappingOptions.map(p => (
+                                        <option key={p.sku} value={p.sku} className="p-2 border-b border-slate-100 dark:border-slate-700/50">
+                                            {p.product_name} ({p.sku}) - Rp {p.hpp.toLocaleString()}
+                                        </option>
                                     ))}
                                 </select>
+                                <p className="text-[10px] text-slate-400 text-right">Menampilkan {mappingOptions.length} produk</p>
                             </div>
                             
                             <div className="flex items-center justify-between">

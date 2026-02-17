@@ -95,15 +95,18 @@ ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sku_mappings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 
--- Policy sederhana: Izinkan semua untuk user yang login (karena difilter by store_id di level aplikasi)
--- Idealnya filter by user_id via store, tapi ini quick fix agar delete jalan.
+-- PERBAIKAN: Drop policy lama sebelum membuat baru agar tidak error 'policy already exists'
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON products;
 CREATE POLICY "Enable all for authenticated users" ON products FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON sku_mappings;
 CREATE POLICY "Enable all for authenticated users" ON sku_mappings FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON order_items;
 CREATE POLICY "Enable all for authenticated users" ON order_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 
--- 4.5 RPC: Safe Delete Product
--- Fungsi ini akan dipanggil dari frontend untuk menghapus produk dengan aman
+-- 4.5 RPC: Safe Delete Product (Single)
 CREATE OR REPLACE FUNCTION delete_product_safely(p_sku text, p_store_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -122,5 +125,28 @@ BEGIN
   -- 3. Hapus Produk Master
   DELETE FROM products 
   WHERE sku = p_sku AND store_id = p_store_id;
+END;
+$$;
+
+-- 4.6 RPC: Bulk Delete Products (Optimized)
+-- Menghapus banyak produk sekaligus dalam satu transaksi
+CREATE OR REPLACE FUNCTION bulk_delete_products(p_skus text[], p_store_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  -- 1. Hapus Mapping untuk semua SKU di list
+  DELETE FROM sku_mappings 
+  WHERE mapped_sku = ANY(p_skus) AND store_id = p_store_id;
+
+  -- 2. Putuskan hubungan pesanan untuk semua SKU di list
+  UPDATE order_items 
+  SET final_sku = NULL, is_sku_mapped = FALSE
+  WHERE final_sku = ANY(p_skus) AND store_id = p_store_id;
+
+  -- 3. Hapus Produk Master untuk semua SKU di list
+  DELETE FROM products 
+  WHERE sku = ANY(p_skus) AND store_id = p_store_id;
 END;
 $$;
