@@ -11,7 +11,7 @@ import { StoreSelector } from './components/StoreSelector';
 import { Layout } from './components/Layout';
 import { Toaster, toast } from 'react-hot-toast';
 import { Store } from './types';
-import { AlertCircle, Loader2, Trash2, AlertTriangle, RefreshCcw, UserCircle, ShieldAlert, Pencil, Check, X, Code, Layers, Megaphone, Calculator, LayoutDashboard, UploadCloud, Settings, PackageSearch } from 'lucide-react';
+import { AlertCircle, Loader2, Trash2, AlertTriangle, RefreshCcw, UserCircle, ShieldAlert, Pencil, Check, X, Code, Layers, Megaphone, Calculator, LayoutDashboard, UploadCloud, Settings, PackageSearch, Database } from 'lucide-react';
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -363,10 +363,13 @@ export default function App() {
                 <div className="flex-1 overflow-hidden">
                   <h3 className="text-lg font-black uppercase tracking-tight text-red-900 dark:text-red-100">Update Database Diperlukan</h3>
                   <p className="text-sm text-red-800 dark:text-red-300 mt-1 mb-4">
-                    Fitur penghapusan produk memerlukan fungsi baru di database. Salin kode di bawah ke <b>SQL Editor Supabase</b>:
+                    Fitur baru memerlukan pembaruan database. Salin kode di bawah ke <b>SQL Editor Supabase</b>:
                   </p>
                   <pre className="bg-slate-900 text-orange-400 p-4 rounded-xl text-[10px] md:text-xs overflow-x-auto font-mono mb-4 border border-slate-800 select-all whitespace-pre-wrap break-all">
-{`-- BAGIAN 4.5: RPC Safe Delete & Policies --
+{`-- BAGIAN PENTING: KOLOM BARU --
+ALTER TABLE products ADD COLUMN IF NOT EXISTS variation_name text DEFAULT NULL;
+
+-- BAGIAN 4.5: RPC Safe Delete & Policies --
 
 -- Policy agar user bisa menghapus/edit
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
@@ -395,19 +398,6 @@ BEGIN
   UPDATE order_items SET final_sku = NULL, is_sku_mapped = FALSE WHERE final_sku = p_sku AND store_id = p_store_id;
   -- 3. Hapus Produk
   DELETE FROM products WHERE sku = p_sku AND store_id = p_store_id;
-END;
-$$;
-
--- Fungsi Hapus Masal (Cepat)
-CREATE OR REPLACE FUNCTION bulk_delete_products(p_skus text[], p_store_id uuid)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-  DELETE FROM sku_mappings WHERE mapped_sku = ANY(p_skus) AND store_id = p_store_id;
-  UPDATE order_items SET final_sku = NULL, is_sku_mapped = FALSE WHERE final_sku = ANY(p_skus) AND store_id = p_store_id;
-  DELETE FROM products WHERE sku = ANY(p_skus) AND store_id = p_store_id;
 END;
 $$;`}
                   </pre>
@@ -483,14 +473,25 @@ $$;`}
           {activeTab === 'settings' && (
              <div className="max-w-4xl space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
               <div className="bg-white dark:bg-slate-900 p-6 md:p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
-                <div className="flex items-center gap-4 mb-8 md:mb-10">
-                  <div className="w-12 h-12 md:w-14 md:h-14 bg-orange-100 dark:bg-orange-500/10 rounded-2xl flex items-center justify-center">
-                    <UserCircle className="w-6 h-6 md:w-8 md:h-8 text-orange-600" />
+                <div className="flex items-center justify-between mb-8 md:mb-10">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 md:w-14 md:h-14 bg-orange-100 dark:bg-orange-500/10 rounded-2xl flex items-center justify-center">
+                      <UserCircle className="w-6 h-6 md:w-8 md:h-8 text-orange-600" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight">Akun Saya</h2>
+                      <p className="text-xs md:text-sm text-slate-500 font-medium break-all">{session.user.email}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight">Akun Saya</h2>
-                    <p className="text-xs md:text-sm text-slate-500 font-medium break-all">{session.user.email}</p>
-                  </div>
+                  
+                  {/* TOMBOL PANDUAN SQL */}
+                  <button 
+                     onClick={() => setShowSqlGuide(true)}
+                     className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl text-xs font-bold hover:bg-orange-50 dark:hover:bg-orange-900/10 hover:text-orange-600 transition-all flex items-center gap-2"
+                  >
+                     <Code className="w-4 h-4" />
+                     Script Database
+                  </button>
                 </div>
 
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 ml-1">Daftar Toko & Pengaturan</h3>

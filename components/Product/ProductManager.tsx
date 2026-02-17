@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../../services/supabase';
 import { Store, Product } from '../../types';
 import { toast } from 'react-hot-toast';
-import { PackageSearch, Plus, Search, CheckCircle2, Link as LinkIcon, Edit2, Trash2, Save, X, Loader2, ArrowRightLeft, Lightbulb, FileSpreadsheet, CheckSquare, Info, Download } from 'lucide-react';
+import { PackageSearch, Plus, Search, CheckCircle2, Link as LinkIcon, Edit2, Trash2, Save, X, Loader2, ArrowRightLeft, Lightbulb, FileSpreadsheet, CheckSquare, Square, Info, Download, Tag } from 'lucide-react';
 
 interface ProductManagerProps {
   store: Store;
@@ -20,8 +20,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   
   // Selection & Bulk Actions
   const [selectedSkus, setSelectedSkus] = useState<Set<string>>(new Set());
-  const [isBulkEditingHpp, setIsBulkEditingHpp] = useState(false);
-  const [bulkHppValue, setBulkHppValue] = useState<number | ''>('');
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   
   // Mapping State
   const [unmappedItems, setUnmappedItems] = useState<{name: string, variation: string, count: number}[]>([]);
@@ -29,7 +28,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   
   // Edit/Create State
   const [isAddingProduct, setIsAddingProduct] = useState(false);
-  const [newProduct, setNewProduct] = useState({ sku: '', product_name: '', cost_price: 0 });
+  const [newProduct, setNewProduct] = useState({ sku: '', product_name: '', variation_name: '', cost_price: 0 });
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   // Mapping Selection State
@@ -49,38 +48,85 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     if (activeTab === 'mapping') fetchUnmappedItems();
   }, [store, activeTab]);
 
-  // --- SMART SUGGESTION EFFECT ---
+  // --- SMART SUGGESTION EFFECT V3 (STRICT MODE) ---
   useEffect(() => {
     if (selectedUnmapped && products.length > 0) {
       setMappingSearchTerm(''); 
-      const clean = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-      const shopeeName = clean(selectedUnmapped.name);
-      const shopeeVar = clean(selectedUnmapped.variation || '');
-      const shopeeTokens = `${shopeeName} ${shopeeVar}`.split(/\s+/).filter(w => w.length > 2);
+      
+      const clean = (str: string) => str ? str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim() : '';
+      const getTokens = (str: string) => clean(str).split(/\s+/).filter(w => w.length > 1);
 
-      let bestScore = 0;
+      const sName = clean(selectedUnmapped.name);
+      const sVar = clean(selectedUnmapped.variation || '');
+      const sTokens = getTokens(selectedUnmapped.name);
+
+      let bestScore = -Infinity;
       let bestSku = '';
 
       products.forEach(p => {
-        const internalSku = clean(p.sku);
-        if (internalSku === shopeeName || internalSku.includes(shopeeName)) {
-            bestScore = 1000;
-            bestSku = p.sku;
-            return;
+        let score = 0;
+        const mName = clean(p.product_name);
+        const mVar = clean(p.variation_name || '');
+        const mSku = clean(p.sku);
+
+        // 1. SKU Exact Match (Highest Priority) - Jika SKU ada di nama produk Shopee
+        if (mSku === sName || mSku === sVar) score += 200;
+        if (sName.includes(mSku)) score += 100;
+
+        // 2. VARIATION LOGIC (CRITICAL)
+        if (sVar.length > 0) {
+            // Kasus A: Master Produk punya data variasi
+            if (mVar.length > 0) {
+                if (mVar === sVar) {
+                    score += 100; // Cocok Sempurna
+                } else if (mVar.includes(sVar) || sVar.includes(mVar)) {
+                    score += 50; // Cocok Sebagian
+                } else {
+                    score -= 100; // PENALTI BESAR: Variasi beda (misal: "Merah" vs "Biru")
+                }
+            } 
+            // Kasus B: Master Produk TIDAK punya kolom variasi, cek di nama produk
+            else {
+                if (mName.includes(sVar)) {
+                     score += 60; // Variasi ditemukan di nama produk master
+                } else {
+                     // Netral, jangan kurangi skor karena mungkin master produk generik
+                }
+            }
+        } else {
+            // Shopee tidak punya variasi
+            if (mVar.length > 0) {
+                // Master punya variasi -> Penalti ringan, kita cari produk induk biasanya
+                score -= 20; 
+            }
         }
-        let matches = 0;
-        const internalName = clean(p.product_name);
-        shopeeTokens.forEach(token => {
-            if (internalName.includes(token)) matches += 1;
-        });
-        if (matches > bestScore) {
-          bestScore = matches;
+
+        // 3. NAME SIMILARITY (Token Jaccard)
+        const mTokens = getTokens(p.product_name);
+        const intersection = sTokens.filter(t => mTokens.includes(t));
+        const union = new Set([...sTokens, ...mTokens]);
+        
+        if (union.size > 0) {
+            const jaccard = intersection.length / union.size;
+            score += jaccard * 50; // Maksimal 50 poin dari kesamaan nama
+        }
+
+        // 4. EXACT NAME MATCH BONUS
+        if (sName === mName) score += 30;
+
+        if (score > bestScore) {
+          bestScore = score;
           bestSku = p.sku;
         }
       });
 
-      if (bestScore >= 1) setTargetSku(bestSku);
-      else setTargetSku('');
+      // Threshold: Hanya pilih jika skor positif dan cukup tinggi (>30)
+      // Ini menghindari saran ngawur jika tidak ada yang cocok sama sekali
+      if (bestScore > 30) {
+          setTargetSku(bestSku);
+      } else {
+          setTargetSku('');
+      }
     }
   }, [selectedUnmapped, products]);
 
@@ -113,6 +159,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         store_id: store.id,
         sku: newProduct.sku,
         product_name: newProduct.product_name,
+        variation_name: newProduct.variation_name || null,
         cost_price: newProduct.cost_price, 
         stock: 0
       }]);
@@ -121,10 +168,14 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       
       toast.success("Produk berhasil ditambahkan");
       setIsAddingProduct(false);
-      setNewProduct({ sku: '', product_name: '', cost_price: 0 });
+      setNewProduct({ sku: '', product_name: '', variation_name: '', cost_price: 0 });
       fetchProducts();
     } catch (err: any) {
-      toast.error(err.message);
+      if (err.message.includes('variation_name')) {
+        toast.error("Error Database: Kolom 'Variasi' belum ada. Silakan ke Pengaturan > Script Database.", { duration: 5000 });
+      } else {
+        toast.error(err.message);
+      }
     }
   };
 
@@ -134,6 +185,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       const { error } = await supabase.from('products')
         .update({ 
             product_name: editingProduct.product_name,
+            variation_name: editingProduct.variation_name,
             cost_price: editingProduct.cost_price 
         })
         .eq('sku', editingProduct.sku)
@@ -144,7 +196,11 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       setEditingProduct(null);
       fetchProducts();
     } catch (err: any) {
-      toast.error(err.message);
+      if (err.message.includes('variation_name')) {
+         toast.error("Error Database: Kolom 'Variasi' belum ada. Silakan ke Pengaturan > Script Database.", { duration: 5000 });
+      } else {
+         toast.error(err.message);
+      }
     }
   };
 
@@ -158,6 +214,57 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         setProducts(prev => prev.filter(p => p.sku !== sku));
     } catch (err: any) {
         toast.error("Gagal hapus: " + err.message, { id: toastId });
+    }
+  };
+
+  // --- BULK ACTION HANDLERS ---
+  const toggleSelectAll = () => {
+    if (selectedSkus.size === filteredProducts.length) {
+      setSelectedSkus(new Set());
+    } else {
+      const allSkus = filteredProducts.map(p => p.sku);
+      setSelectedSkus(new Set(allSkus));
+    }
+  };
+
+  const toggleSelectSku = (sku: string) => {
+    const newSelected = new Set(selectedSkus);
+    if (newSelected.has(sku)) {
+      newSelected.delete(sku);
+    } else {
+      newSelected.add(sku);
+    }
+    setSelectedSkus(newSelected);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedSkus.size === 0) return;
+    if (!window.confirm(`Yakin ingin menghapus ${selectedSkus.size} produk terpilih? Data mapping dan history SKU ini akan ikut terhapus.`)) return;
+
+    setIsBulkDeleting(true);
+    const toastId = toast.loading(`Menghapus ${selectedSkus.size} produk...`);
+
+    try {
+      // Loop delete safely (using RPC one by one to ensure deep clean)
+      const skuArray = Array.from(selectedSkus);
+      
+      // Batched Parallel Requests (Chunks of 5)
+      const chunkSize = 5;
+      for (let i = 0; i < skuArray.length; i += chunkSize) {
+          const chunk = skuArray.slice(i, i + chunkSize);
+          await Promise.all(chunk.map(sku => 
+             supabase.rpc('delete_product_safely', { p_sku: sku, p_store_id: store.id })
+          ));
+      }
+
+      toast.success("Produk terpilih berhasil dihapus", { id: toastId });
+      setSelectedSkus(new Set());
+      fetchProducts();
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Gagal hapus massal: " + err.message, { id: toastId });
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -188,15 +295,14 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                 let successCount = 0;
 
                 for (const row of data) {
-                    // Cari kolom yang cocok (case insensitive)
                     const keys = Object.keys(row);
                     const skuKey = keys.find(k => k.toLowerCase().includes('sku') || k.toLowerCase().includes('kode'));
-                    const nameKey = keys.find(k => k.toLowerCase().includes('nama') || k.toLowerCase().includes('name') || k.toLowerCase().includes('produk'));
+                    const nameKey = keys.find(k => k.toLowerCase().includes('nama') || k.toLowerCase().includes('produk'));
+                    const varKey = keys.find(k => k.toLowerCase().includes('variasi') || k.toLowerCase().includes('variation'));
                     const hppKey = keys.find(k => k.toLowerCase().includes('hpp') || k.toLowerCase().includes('cost') || k.toLowerCase().includes('modal') || k.toLowerCase().includes('harga'));
 
                     if (skuKey && row[skuKey]) {
                         const rawHpp = hppKey ? row[hppKey] : 0;
-                        // Clean currency string if needed
                         let cleanHpp = 0;
                         if (typeof rawHpp === 'string') {
                             cleanHpp = parseFloat(rawHpp.replace(/[^0-9.-]+/g, ""));
@@ -208,6 +314,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                             store_id: store.id,
                             sku: String(row[skuKey]).trim(),
                             product_name: nameKey ? String(row[nameKey]).trim() : 'Imported Product',
+                            variation_name: varKey ? String(row[varKey]).trim() : null,
                             cost_price: cleanHpp,
                             stock: 0
                         });
@@ -217,13 +324,11 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
                 if (productsToUpsert.length > 0) {
                     toast.loading(`Menyimpan ${productsToUpsert.length} produk...`, { id: toastId });
-                    
                     const { error } = await supabase
                         .from('products')
                         .upsert(productsToUpsert, { onConflict: 'sku, store_id' });
 
                     if (error) throw error;
-
                     toast.success(`Berhasil import ${productsToUpsert.length} produk!`, { id: toastId });
                     fetchProducts();
                 } else {
@@ -232,7 +337,11 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
             } catch (err: any) {
                 console.error(err);
-                toast.error("Gagal import: " + err.message, { id: toastId });
+                if (err.message.includes('variation_name') || err.message.includes('column')) {
+                   toast.error("Database Belum Update: Kolom 'variation_name' hilang. Buka menu Pengaturan -> Script Database.", { id: toastId, duration: 6000 });
+                } else {
+                   toast.error("Gagal import: " + err.message, { id: toastId });
+                }
             } finally {
                 setIsImporting(false);
                 if (fileInputRef.current) fileInputRef.current.value = '';
@@ -247,12 +356,13 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
   const handleDownloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([
-        { "SKU": "CONTOH-SKU-001", "Nama Produk": "Kaos Polos Hitam XL", "HPP": 35000 },
-        { "SKU": "CONTOH-SKU-002", "Nama Produk": "Kemeja Flannel Merah", "HPP": 75000 }
+        { "SKU": "KT-KOL-001", "Nama Produk": "Kolam Terpal Kotak Korea", "nama variasi": "Kolam Saja", "HPP": 150000 },
+        { "SKU": "KT+P-002", "Nama Produk": "Kolam Terpal Kotak Korea", "nama variasi": "+ Pembuangan Drat", "HPP": 175000 },
+        { "SKU": "TP-A12-005", "Nama Produk": "TERPAL PE A20 KOREA 2X3", "nama variasi": "A12", "HPP": 85000 }
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template");
-    XLSX.writeFile(wb, "Template_Master_Produk.xlsx");
+    XLSX.writeFile(wb, "Template_Master_Produk_Lengkap.xlsx");
   };
 
 
@@ -273,7 +383,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
     const groups: Record<string, number> = {};
     data?.forEach(item => {
-        // Use a delimiter unlikely to be in product name
         const key = `${item.product_name}|||${item.variation || ''}`;
         groups[key] = (groups[key] || 0) + 1;
     });
@@ -292,7 +401,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
      const toastId = toast.loading("Menyimpan mapping...");
 
      try {
-        // 1. Insert ke table sku_mappings (Source of Truth)
         const { error: mapError } = await supabase.from('sku_mappings').upsert([{
             store_id: store.id,
             shopee_product_name: selectedUnmapped.name,
@@ -302,11 +410,9 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         if (mapError) throw mapError;
 
-        // 2. Fetch data produk master untuk dapat harga
         const product = products.find(p => p.sku === targetSku);
         if (!product) throw new Error("Produk master tidak ditemukan");
 
-        // 3. Update Existing Orders (Bulk Update)
         const { error: updateError } = await supabase
             .from('order_items')
             .update({ 
@@ -340,6 +446,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
             store_id: store.id,
             sku: newProduct.sku,
             product_name: newProduct.product_name,
+            variation_name: newProduct.variation_name || null,
             cost_price: newProduct.cost_price,
             stock: 0
           }]);
@@ -349,7 +456,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
           await fetchProducts();
           setTargetSku(newProduct.sku);
           
-          // Re-use logic above
           const { error: mapError } = await supabase.from('sku_mappings').insert([{
             store_id: store.id,
             shopee_product_name: selectedUnmapped!.name,
@@ -374,7 +480,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         toast.success("Produk dibuat & di-mapping!", { id: toastId });
         setIsQuickCreating(false);
-        setNewProduct({ sku: '', product_name: '', cost_price: 0 });
+        setNewProduct({ sku: '', product_name: '', variation_name: '', cost_price: 0 });
         setSelectedUnmapped(null);
         fetchUnmappedItems();
 
@@ -385,6 +491,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
   const filteredProducts = products.filter(p => 
       p.product_name.toLowerCase().includes(searchProduct.toLowerCase()) || 
+      (p.variation_name || '').toLowerCase().includes(searchProduct.toLowerCase()) || 
       p.sku.toLowerCase().includes(searchProduct.toLowerCase())
   );
 
@@ -397,7 +504,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   return (
     <div className="space-y-6">
        
-       <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-fit">
+       <div className="flex flex-wrap gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-fit">
           <button 
              onClick={() => setActiveTab('mapping')}
              className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
@@ -459,7 +566,15 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                           {unmappedItems.map((item, idx) => (
                              <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                <td className="px-6 py-4 font-medium text-sm dark:text-white">{item.name}</td>
+                                <td className="px-6 py-4 font-medium text-sm dark:text-white">
+                                  {item.name}
+                                  {/* NEW: Show Suggestion Badge if Smart Logic found match */}
+                                  {products.some(p => p.sku === targetSku) && item === selectedUnmapped && (
+                                     <span className="block mt-1 text-[10px] text-orange-500 font-bold flex items-center gap-1">
+                                       <Lightbulb className="w-3 h-3" /> Auto-Suggest Available
+                                     </span>
+                                  )}
+                                </td>
                                 <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{item.variation || '-'}</td>
                                 <td className="px-6 py-4 text-center font-bold text-slate-700 dark:text-slate-300">{item.count}</td>
                                 <td className="px-6 py-4">
@@ -481,8 +596,8 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
        {selectedUnmapped && (
            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden">
-                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start">
+              <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
+                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start shrink-0">
                     <div>
                        <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Hubungkan SKU</h3>
                        <p className="text-xs text-slate-500 mt-1">Produk Shopee: <span className="font-bold text-orange-600">{selectedUnmapped.name} {selectedUnmapped.variation ? `(${selectedUnmapped.variation})` : ''}</span></p>
@@ -490,15 +605,15 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                     <button onClick={() => { setSelectedUnmapped(null); setIsQuickCreating(false); }} className="text-slate-400 hover:text-red-500"><X className="w-6 h-6" /></button>
                  </div>
                  
-                 <div className="p-6 space-y-6">
+                 <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
                     {!isQuickCreating ? (
                         <>
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-500 uppercase flex items-center justify-between">
                                   <span>Cari & Pilih Master SKU</span>
                                   {targetSku && !mappingSearchTerm && (
-                                    <span className="text-[10px] text-orange-600 flex items-center gap-1">
-                                      <Lightbulb className="w-3 h-3" /> Saran Sistem
+                                    <span className="text-[10px] text-orange-600 flex items-center gap-1 font-bold animate-pulse">
+                                      <Lightbulb className="w-3 h-3" /> Saran AI (Cek Varian)
                                     </span>
                                   )}
                                 </label>
@@ -517,13 +632,13 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 <select 
                                     value={targetSku}
                                     onChange={(e) => setTargetSku(e.target.value)}
-                                    className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-orange-500/20 max-h-48"
+                                    className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-orange-500/20"
                                     size={5} 
                                 >
                                     <option value="" className="p-2 text-slate-400">-- Pilih SKU Internal --</option>
                                     {mappingOptions.map(p => (
                                         <option key={p.sku} value={p.sku} className="p-2 border-b border-slate-100 dark:border-slate-700/50">
-                                            {p.product_name} ({p.sku}) - Rp {p.cost_price.toLocaleString()}
+                                            {p.product_name} {p.variation_name ? `[${p.variation_name}]` : ''} ({p.sku})
                                         </option>
                                     ))}
                                 </select>
@@ -535,7 +650,12 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 <button 
                                     onClick={() => {
                                         setIsQuickCreating(true);
-                                        setNewProduct({ sku: '', product_name: selectedUnmapped.name + (selectedUnmapped.variation ? ` - ${selectedUnmapped.variation}` : ''), cost_price: 0 });
+                                        setNewProduct({ 
+                                            sku: '', 
+                                            product_name: selectedUnmapped.name,
+                                            variation_name: selectedUnmapped.variation || '', 
+                                            cost_price: 0 
+                                        });
                                     }}
                                     className="text-xs font-black text-orange-600 uppercase hover:underline"
                                 >
@@ -579,6 +699,16 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                     />
                                 </div>
                                 <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase text-slate-400">Variasi (Opsional)</label>
+                                    <input 
+                                        type="text" 
+                                        value={newProduct.variation_name}
+                                        onChange={(e) => setNewProduct({...newProduct, variation_name: e.target.value})}
+                                        className="w-full p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold"
+                                        placeholder="Contoh: Merah, XL"
+                                    />
+                                </div>
+                                <div className="space-y-1">
                                     <label className="text-[10px] font-black uppercase text-slate-400">HPP (Harga Modal)</label>
                                     <input 
                                         type="number" 
@@ -603,6 +733,23 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
        {activeTab === 'master' && (
            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 relative">
                 
+                {/* FLOATING ACTION BAR FOR BULK ACTIONS */}
+                {selectedSkus.size > 0 && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-slate-900 text-white px-4 py-2 rounded-xl shadow-xl animate-in fade-in slide-in-from-top-2">
+                        <span className="text-xs font-bold whitespace-nowrap">{selectedSkus.size} terpilih</span>
+                        <div className="h-4 w-px bg-slate-700"></div>
+                        <button 
+                            onClick={handleBulkDelete}
+                            disabled={isBulkDeleting}
+                            className="flex items-center gap-1 text-xs font-bold text-red-400 hover:text-red-300"
+                        >
+                            {isBulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                            Hapus
+                        </button>
+                        <button onClick={() => setSelectedSkus(new Set())} className="ml-2 text-slate-500 hover:text-white"><X className="w-3 h-3" /></button>
+                    </div>
+                )}
+
                 <div className="flex flex-col xl:flex-row items-center justify-between gap-4 mb-6 mt-2">
                     <div className="relative w-full xl:w-64">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -666,12 +813,20 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 onChange={(e) => setNewProduct({...newProduct, sku: e.target.value.toUpperCase()})}
                                 className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold uppercase"
                             />
-                            <input 
-                                type="text" placeholder="Nama Produk" 
-                                value={newProduct.product_name}
-                                onChange={(e) => setNewProduct({...newProduct, product_name: e.target.value})}
-                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold sm:col-span-2"
-                            />
+                            <div className="sm:col-span-2 grid grid-cols-2 gap-2">
+                                <input 
+                                    type="text" placeholder="Nama Produk" 
+                                    value={newProduct.product_name}
+                                    onChange={(e) => setNewProduct({...newProduct, product_name: e.target.value})}
+                                    className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold w-full"
+                                />
+                                <input 
+                                    type="text" placeholder="Variasi (Opsional)" 
+                                    value={newProduct.variation_name}
+                                    onChange={(e) => setNewProduct({...newProduct, variation_name: e.target.value})}
+                                    className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold w-full"
+                                />
+                            </div>
                             <input 
                                 type="number" placeholder="HPP" 
                                 value={newProduct.cost_price || ''}
@@ -691,8 +846,18 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 dark:bg-slate-800">
                             <tr>
+                                {/* CHECKBOX HEADER */}
+                                <th className="px-4 py-3 w-10">
+                                    <button onClick={toggleSelectAll} className="flex items-center justify-center text-slate-400 hover:text-slate-600">
+                                        {selectedSkus.size > 0 && selectedSkus.size === filteredProducts.length 
+                                            ? <CheckSquare className="w-5 h-5 text-orange-600" />
+                                            : <Square className="w-5 h-5" />
+                                        }
+                                    </button>
+                                </th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">SKU</th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">Nama Produk</th>
+                                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">Variasi</th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">HPP</th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Aksi</th>
                             </tr>
@@ -702,7 +867,18 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 const isSelected = selectedSkus.has(p.sku);
                                 return (
                                 <tr key={p.sku} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${isSelected ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}`}>
+                                    {/* CHECKBOX ROW */}
+                                    <td className="px-4 py-3">
+                                        <button onClick={() => toggleSelectSku(p.sku)} className="flex items-center justify-center">
+                                            {isSelected 
+                                                ? <CheckSquare className="w-5 h-5 text-orange-600" />
+                                                : <Square className="w-5 h-5 text-slate-300" />
+                                            }
+                                        </button>
+                                    </td>
                                     <td className="px-4 py-3 text-xs font-bold font-mono dark:text-orange-300">{p.sku}</td>
+                                    
+                                    {/* Kolom Produk */}
                                     <td className="px-4 py-3 text-sm font-medium dark:text-white">
                                         {editingProduct?.sku === p.sku ? (
                                             <input 
@@ -713,6 +889,26 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                             />
                                         ) : p.product_name}
                                     </td>
+
+                                    {/* Kolom Variasi (BARU) */}
+                                    <td className="px-4 py-3 text-sm font-medium dark:text-white">
+                                        {editingProduct?.sku === p.sku ? (
+                                            <input 
+                                                className="w-full p-1 border rounded bg-white dark:bg-slate-900"
+                                                value={editingProduct.variation_name || ''}
+                                                onChange={(e) => setEditingProduct({...editingProduct, variation_name: e.target.value})}
+                                                placeholder="-"
+                                            />
+                                        ) : (
+                                            p.variation_name ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                    <Tag className="w-3 h-3" /> {p.variation_name}
+                                                </span>
+                                            ) : <span className="text-slate-300">-</span>
+                                        )}
+                                    </td>
+
+                                    {/* Kolom HPP */}
                                     <td className="px-4 py-3 text-sm font-medium dark:text-slate-300">
                                         {editingProduct?.sku === p.sku ? (
                                             <input 

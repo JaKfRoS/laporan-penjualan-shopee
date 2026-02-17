@@ -16,8 +16,9 @@ CREATE TABLE IF NOT EXISTS products (
     PRIMARY KEY (sku, store_id) -- Composite PK agar SKU unik per toko
 );
 
--- MIGRATION: Ensure cost_price column exists (fix for existing tables)
+-- MIGRATION: Ensure columns exists (fix for existing tables)
 ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price numeric DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS variation_name text DEFAULT NULL; -- NEW COLUMN
 
 -- Index untuk pencarian SKU cepat
 CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
