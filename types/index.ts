@@ -38,6 +38,20 @@ export interface OrderItem {
   product_total: number;
 }
 
+export interface AdPerformance {
+  id: string;
+  store_id: string;
+  report_date: string;
+  platform: 'shopee' | 'facebook' | 'tiktok';
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  conversions: number;
+  amount_spent: number; // Biaya Iklan
+  gmv_generated: number; // Omzet dari Iklan
+  created_at: string;
+}
+
 export type Mapping = Record<string, string>;
 
 export interface RawRow {

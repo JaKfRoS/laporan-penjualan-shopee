@@ -21,7 +21,6 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
 
-  // Menutup dropdown saat klik di luar
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
@@ -32,7 +31,6 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Reset page saat filter berubah
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, statusFilter]);
@@ -46,7 +44,6 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
 
   const statuses = ['All', ...Array.from(new Set(orders.map(o => o.status)))];
 
-  // Pagination Logic
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentOrders = filteredOrders.slice(startIndex, startIndex + itemsPerPage);
@@ -66,39 +63,41 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden transition-colors">
-      <div className="p-6 border-b border-slate-50 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="p-4 md:p-6 border-b border-slate-50 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h3 className="text-lg font-semibold text-slate-800 dark:text-white">Recent Orders</h3>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           
           {/* Search Input */}
-          <div className="relative flex-1 sm:flex-none">
+          <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input 
               type="text" 
               placeholder="Search ID or Buyer..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all w-full sm:w-64"
+              className="pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all w-full sm:w-64"
             />
           </div>
 
-          {/* Custom Filter Dropdown (Pengganti Select) */}
+          {/* Custom Filter Dropdown */}
           <div className="relative" ref={filterRef}>
             <button
               onClick={() => setIsFilterOpen(!isFilterOpen)}
-              className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-sm font-medium transition-all ${
+              className={`w-full sm:w-auto flex items-center justify-between sm:justify-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-all ${
                 isFilterOpen 
                   ? 'bg-orange-50 dark:bg-orange-500/10 border-orange-500 text-orange-700 dark:text-orange-400' 
                   : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
               }`}
             >
-              <Filter className={`w-4 h-4 ${isFilterOpen ? 'text-orange-500' : 'text-slate-400'}`} />
-              <span>{statusFilter === 'All' ? 'Semua Status' : statusFilter}</span>
+              <div className="flex items-center gap-2">
+                 <Filter className={`w-4 h-4 ${isFilterOpen ? 'text-orange-500' : 'text-slate-400'}`} />
+                 <span>{statusFilter === 'All' ? 'Semua Status' : statusFilter}</span>
+              </div>
               <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isFilterOpen ? 'rotate-180 text-orange-500' : ''}`} />
             </button>
 
             {isFilterOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="absolute right-0 top-full mt-2 w-full sm:w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 <div className="p-2">
                   <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 dark:border-slate-800/50 mb-1">
                     Filter Status Pesanan
@@ -134,14 +133,14 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-800/50">
-              <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Order ID</th>
+              <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider whitespace-nowrap">Order ID</th>
               {showStoreColumn && (
                 <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Toko</th>
               )}
               <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Date</th>
               <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Buyer</th>
               <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Net Revenue</th>
+              <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider whitespace-nowrap">Net Revenue</th>
               <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Action</th>
             </tr>
           </thead>
@@ -157,10 +156,10 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                     </div>
                   </td>
                 )}
-                <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{format(new Date(order.order_date), 'MMM dd, yyyy')}</td>
-                <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{order.buyer_username || '-'}</td>
+                <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">{format(new Date(order.order_date), 'MMM dd, yyyy')}</td>
+                <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={order.buyer_username || ''}>{order.buyer_username || '-'}</td>
                 <td className="px-6 py-4 text-sm">
-                  <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${
+                  <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border whitespace-nowrap ${
                     order.status === 'Selesai' 
                       ? 'bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-500/20' 
                       : order.status?.includes('Batal') || order.status?.includes('Dibatalkan')
@@ -170,7 +169,7 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                     {order.status}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-sm font-black text-slate-900 dark:text-white">
+                <td className="px-6 py-4 text-sm font-black text-slate-900 dark:text-white whitespace-nowrap">
                   Rp {order.net_revenue.toLocaleString()}
                 </td>
                 <td className="px-6 py-4 text-sm">
@@ -191,13 +190,12 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
         </div>
       )}
 
-      {/* Pagination Footer */}
       {filteredOrders.length > 0 && (
         <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 gap-4">
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-start">
             <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-              Showing <span className="font-bold text-slate-900 dark:text-white">{startIndex + 1}</span> to <span className="font-bold text-slate-900 dark:text-white">{Math.min(startIndex + itemsPerPage, filteredOrders.length)}</span> of <span className="font-bold text-slate-900 dark:text-white">{filteredOrders.length}</span> entries
+              Page <span className="font-bold text-slate-900 dark:text-white">{currentPage}</span> of <span className="font-bold text-slate-900 dark:text-white">{totalPages}</span>
             </div>
 
             <select
@@ -222,30 +220,6 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                 // Simple logic to show near current page
-                 let p = i + 1;
-                 if (totalPages > 5 && currentPage > 3) {
-                   p = currentPage - 2 + i;
-                 }
-                 if (p > totalPages) return null;
-                 
-                 return (
-                  <button
-                    key={p}
-                    onClick={() => handlePageChange(p)}
-                    className={`w-8 h-8 text-xs font-bold rounded-lg transition-all ${
-                      currentPage === p
-                        ? 'bg-orange-600 text-white shadow-md shadow-orange-500/20'
-                        : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                 );
-              })}
-            </div>
             <button
               onClick={() => handlePageChange(currentPage + 1)}
               disabled={currentPage === totalPages}

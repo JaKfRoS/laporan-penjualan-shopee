@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../../services/supabase';
 import { Store, Mapping, RawRow } from '../../types';
 import { toast } from 'react-hot-toast';
-import { FileUp, Columns, CheckCircle2, ChevronRight, Loader2, AlertCircle, FileSpreadsheet, Percent, Info, Calculator, Store as StoreIcon } from 'lucide-react';
+import { FileUp, Columns, CheckCircle2, ChevronRight, Loader2, AlertCircle, FileSpreadsheet, Percent, Info, Calculator, Store as StoreIcon, ShoppingBag, Megaphone } from 'lucide-react';
 
 interface ImportWizardProps {
   store: Store;
@@ -33,6 +33,7 @@ const DEFAULT_MAPPING: Mapping = {
 };
 
 export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete }) => {
+  const [importType, setImportType] = useState<'orders' | 'ads'>('orders');
   const [step, setStep] = useState(1);
   const [csvData, setCsvData] = useState<RawRow[]>([]);
   const [mapping, setMapping] = useState<Mapping>({});
@@ -75,10 +76,15 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
     setCsvData(data);
     const headers = Object.keys(data[0] || {});
     const newMapping: Mapping = {};
-    Object.entries(DEFAULT_MAPPING).forEach(([shopeeKey, dbKey]) => {
-      const foundHeader = headers.find(h => h.trim().toLowerCase() === shopeeKey.toLowerCase());
-      if (foundHeader) newMapping[dbKey] = foundHeader;
-    });
+    
+    // Only map automatically if it's Orders. For Ads, we'd need a different default mapping.
+    if (importType === 'orders') {
+        Object.entries(DEFAULT_MAPPING).forEach(([shopeeKey, dbKey]) => {
+          const foundHeader = headers.find(h => h.trim().toLowerCase() === shopeeKey.toLowerCase());
+          if (foundHeader) newMapping[dbKey] = foundHeader;
+        });
+    }
+    
     setMapping(newMapping);
     setStep(2);
   };
@@ -94,6 +100,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
   const processImport = async () => {
     if (!store?.id) return;
     setIsProcessing(true);
+    
+    if (importType === 'ads') {
+        toast.error("Fitur Import Iklan belum aktif sepenuhnya di sisi database. Silakan gunakan Import Pesanan untuk saat ini.", { duration: 5000 });
+        setIsProcessing(false);
+        return;
+    }
+
     try {
       const orderGroups: Record<string, { order: any, items: any[], grossProductValue: number }> = {};
       const customAdminRate = parseFloat(adminFeePercent) / 100;
@@ -148,10 +161,9 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
         orderGroups[orderId].grossProductValue += prodTotal;
         
-        // PENTING: Tambahkan store_id ke setiap item
         orderGroups[orderId].items.push({
           order_id: orderId,
-          store_id: store.id, // Menjamin item terikat ke toko yang benar
+          store_id: store.id,
           product_name: row[mapping['product_name']] || 'Produk Tanpa Nama',
           variation: row[mapping['variation']],
           quantity: qty,
@@ -163,11 +175,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       const ordersToUpsert = Object.values(orderGroups).map(g => {
         const o = g.order;
         const isCancelled = o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel');
-        
-        // GMV = Total Harga Produk kotor
         const gmv = g.grossProductValue;
         
-        // Kalkulasi Biaya berdasar GMV (Standard Shopee)
         let finalAdminFee = o.admin_fee;
         if (!isNaN(customAdminRate) && customAdminRate > 0) {
           finalAdminFee = Math.max(0, gmv * customAdminRate);
@@ -191,7 +200,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
       const itemsToUpsert = Object.values(orderGroups).flatMap(g => g.items);
 
-      // 1. Upsert Orders menggunakan Composite Key (store_id, order_id)
       const { error: orderError } = await supabase
         .from('orders')
         .upsert(ordersToUpsert, { onConflict: 'store_id, order_id' });
@@ -200,14 +208,12 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
       const orderIds = ordersToUpsert.map(o => o.order_id);
       
-      // 2. Hapus items lama HANYA untuk toko ini (mencegah menghapus items toko lain yang punya No.Pesanan sama)
       await supabase
         .from('order_items')
         .delete()
         .eq('store_id', store.id) 
         .in('order_id', orderIds);
       
-      // 3. Masukkan items baru dengan store_id
       const { error: itemError } = await supabase.from('order_items').insert(itemsToUpsert);
       if (itemError) throw itemError;
 
@@ -241,22 +247,56 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 p-8">
+        
+        {/* NEW: Import Type Selector */}
         {step === 1 && (
-          <div className="text-center py-10">
-            <div className="w-20 h-20 bg-orange-100 dark:bg-orange-500/10 rounded-3xl flex items-center justify-center mx-auto mb-6 rotate-3">
-              <FileSpreadsheet className="w-10 h-10 text-orange-600" />
+            <div className="flex justify-center gap-4 mb-10">
+                <button 
+                    onClick={() => setImportType('orders')}
+                    className={`flex-1 max-w-[200px] p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${
+                        importType === 'orders' 
+                        ? 'border-orange-500 bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400' 
+                        : 'border-slate-100 dark:border-slate-800 text-slate-400 hover:border-slate-300'
+                    }`}
+                >
+                    <ShoppingBag className={`w-8 h-8 ${importType === 'orders' ? 'text-orange-600' : 'text-slate-300'}`} />
+                    <span className="text-xs font-black uppercase tracking-wider">Laporan Pesanan</span>
+                </button>
+                <button 
+                    onClick={() => setImportType('ads')}
+                    className={`flex-1 max-w-[200px] p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${
+                        importType === 'ads' 
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400' 
+                        : 'border-slate-100 dark:border-slate-800 text-slate-400 hover:border-slate-300'
+                    }`}
+                >
+                    <Megaphone className={`w-8 h-8 ${importType === 'ads' ? 'text-blue-600' : 'text-slate-300'}`} />
+                    <span className="text-xs font-black uppercase tracking-wider">Laporan Iklan</span>
+                </button>
             </div>
-            <h2 className="text-2xl font-black mb-2 dark:text-white uppercase tracking-tight">Impor Laporan</h2>
-            <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-xs mx-auto text-sm font-medium">Upload file asli dari Shopee (CSV/Excel). Tidak perlu diedit manual.</p>
+        )}
+
+        {step === 1 && (
+          <div className="text-center py-6">
+            <h2 className="text-xl font-black mb-2 dark:text-white uppercase tracking-tight">
+                Import {importType === 'orders' ? 'Riwayat Pesanan' : 'Performa Iklan'}
+            </h2>
+            <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-xs mx-auto text-sm font-medium">
+                {importType === 'orders' 
+                 ? "Upload file 'Laporan Pesanan' dari Shopee Seller Center (CSV/Excel)."
+                 : "Upload file 'Laporan Kinerja Iklan' dari Shopee Ads (CSV/Excel)."}
+            </p>
             <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" id="sheet-upload" />
-            <label htmlFor="sheet-upload" className="px-10 py-4 bg-orange-600 text-white rounded-2xl font-black hover:bg-orange-700 transition-all cursor-pointer inline-flex items-center gap-3 shadow-xl shadow-orange-500/30 active:scale-95">
-              PILIH FILE SEKARANG
+            <label htmlFor="sheet-upload" className={`px-10 py-4 text-white rounded-2xl font-black transition-all cursor-pointer inline-flex items-center gap-3 shadow-xl active:scale-95 ${
+                importType === 'orders' ? 'bg-orange-600 hover:bg-orange-700 shadow-orange-500/30' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'
+            }`}>
+              PILIH FILE {importType === 'orders' ? 'PESANAN' : 'IKLAN'}
               <ChevronRight className="w-5 h-5" />
             </label>
           </div>
         )}
 
-        {step === 2 && (
+        {step === 2 && importType === 'orders' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="flex items-center gap-3 mb-8">
               <div className="p-2 bg-orange-100 dark:bg-orange-500/10 rounded-lg">
@@ -350,6 +390,20 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
               </button>
             </div>
           </div>
+        )}
+
+        {/* Placeholder for Ads Import Step 2 - to be implemented fully later */}
+        {step === 2 && importType === 'ads' && (
+             <div className="text-center py-10">
+                 <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-2xl mb-6">
+                    <h3 className="text-lg font-bold text-blue-800 dark:text-blue-300 mb-2">Fitur Segera Hadir</h3>
+                    <p className="text-sm text-blue-600 dark:text-blue-400">
+                        Kami sedang menyiapkan pemetaan kolom otomatis untuk Shopee Ads.
+                        Silakan kembali lagi nanti untuk menyelesaikan penggabungan data iklan.
+                    </p>
+                 </div>
+                 <button onClick={() => setStep(1)} className="text-slate-400 font-bold hover:text-slate-600 text-sm">Kembali</button>
+             </div>
         )}
 
         {step === 3 && (

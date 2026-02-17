@@ -7,16 +7,11 @@ interface DateRangePickerProps {
 }
 
 export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) => {
-  // Local state untuk input user, belum dikirim ke parent sampai klik apply
   const [localStartDate, setLocalStartDate] = useState('');
   const [localEndDate, setLocalEndDate] = useState('');
-  
-  // State untuk melacak apa yang terakhir dikirim ke parent (untuk membandingkan perubahan)
   const [appliedRange, setAppliedRange] = useState({ start: '', end: '' });
-  
   const [activePreset, setActivePreset] = useState<string>('');
 
-  // Native Date formatting helper
   const formatDate = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -24,8 +19,10 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
     return `${year}-${month}-${day}`;
   };
 
-  // 1. Handle Preset (Instant Action)
   const applyPreset = (preset: string) => {
+    // If clicking the same preset, do nothing (prevents flicker if logic was server-side, still good for UX)
+    if (activePreset === preset && preset !== '') return;
+
     setActivePreset(preset);
     const today = new Date();
     let startStr = '';
@@ -64,36 +61,37 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
         break;
     }
     
-    // Update local state visuals
     setLocalStartDate(startStr);
     setLocalEndDate(endStr);
     
-    // Update tracking state
-    setAppliedRange({ start: startStr, end: endStr });
-
-    // Trigger parent immediately for presets
-    onChange({ start: startStr, end: endStr });
+    // Only trigger onChange if the range is actually different
+    if (startStr !== appliedRange.start || endStr !== appliedRange.end) {
+        setAppliedRange({ start: startStr, end: endStr });
+        onChange({ start: startStr, end: endStr });
+    }
   };
 
-  // 2. Handle Manual Change (Delayed Action - Wait for Apply)
   const handleManualChange = (type: 'start' | 'end', value: string) => {
-    setActivePreset(''); // Clear preset highlight
+    setActivePreset(''); 
     if (type === 'start') setLocalStartDate(value);
     else setLocalEndDate(value);
   };
 
-  // 3. Handle Apply Button Click
   const handleApply = () => {
-    setAppliedRange({ start: localStartDate, end: localEndDate });
-    onChange({ start: localStartDate, end: localEndDate });
+    if (localStartDate !== appliedRange.start || localEndDate !== appliedRange.end) {
+        setAppliedRange({ start: localStartDate, end: localEndDate });
+        onChange({ start: localStartDate, end: localEndDate });
+    }
   };
 
   const handleReset = () => {
     setLocalStartDate('');
     setLocalEndDate('');
-    setAppliedRange({ start: '', end: '' });
     setActivePreset('');
-    onChange({ start: '', end: '' });
+    if (appliedRange.start !== '' || appliedRange.end !== '') {
+        setAppliedRange({ start: '', end: '' });
+        onChange({ start: '', end: '' });
+    }
   };
 
   const presets = [
@@ -103,20 +101,19 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
     { id: 'thisMonth', label: 'Bulan Ini' },
   ];
 
-  // Cek apakah ada perubahan yang belum diapply
   const hasUnappliedChanges = localStartDate !== appliedRange.start || localEndDate !== appliedRange.end;
   const hasValues = localStartDate || localEndDate;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 shadow-sm">
-      {/* Presets Row */}
-      <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar max-w-full pb-1 sm:pb-0">
-        <Calendar className="w-5 h-5 text-slate-400 ml-2 mr-2 hidden sm:block" />
+    <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 shadow-sm w-full">
+      {/* Presets Row - Scrollable on mobile */}
+      <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar w-full xl:w-auto pb-1 xl:pb-0">
+        <Calendar className="w-5 h-5 text-slate-400 ml-2 mr-2 shrink-0 hidden md:block" />
         {presets.map(p => (
           <button
             key={p.id}
             onClick={() => applyPreset(p.id)}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap transition-all ${
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap transition-all shrink-0 ${
               activePreset === p.id 
                 ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-500/20' 
                 : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent'
@@ -127,30 +124,30 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
         ))}
       </div>
 
-      <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block"></div>
+      <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden xl:block"></div>
 
-      {/* Manual Inputs */}
-      <div className="flex items-center gap-2 w-full sm:w-auto">
-        <div className="relative group flex-1 sm:flex-none">
+      {/* Manual Inputs - Stack on very small screens, row on sm */}
+      <div className="flex flex-row items-center gap-2 w-full xl:w-auto">
+        <div className="relative group flex-1">
            <input 
              type="date" 
              value={localStartDate}
              onChange={(e) => handleManualChange('start', e.target.value)}
-             className={`w-full sm:w-auto pl-3 pr-2 py-1.5 border rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-orange-500/20 transition-all cursor-pointer uppercase tracking-wider ${
+             className={`w-full min-w-0 pl-3 pr-2 py-1.5 border rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-orange-500/20 transition-all cursor-pointer uppercase tracking-wider ${
                hasUnappliedChanges 
                  ? 'bg-orange-50 border-orange-300 text-orange-900' 
                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
              }`}
            />
         </div>
-        <span className="text-slate-300 dark:text-slate-600 font-bold text-xs">s/d</span>
-        <div className="relative group flex-1 sm:flex-none">
+        <span className="text-slate-300 dark:text-slate-600 font-bold text-xs shrink-0">s/d</span>
+        <div className="relative group flex-1">
            <input 
              type="date" 
              value={localEndDate}
              min={localStartDate}
              onChange={(e) => handleManualChange('end', e.target.value)}
-             className={`w-full sm:w-auto pl-3 pr-2 py-1.5 border rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-orange-500/20 transition-all cursor-pointer uppercase tracking-wider ${
+             className={`w-full min-w-0 pl-3 pr-2 py-1.5 border rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-orange-500/20 transition-all cursor-pointer uppercase tracking-wider ${
                hasUnappliedChanges 
                  ? 'bg-orange-50 border-orange-300 text-orange-900' 
                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
@@ -159,14 +156,14 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
         </div>
         
         {/* Tombol Action */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           {hasUnappliedChanges && (
             <button
               onClick={handleApply}
               className="flex items-center gap-1 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg transition-all animate-in zoom-in duration-200 shadow-md shadow-orange-500/20"
             >
               <CheckCircle2 className="w-3 h-3" />
-              Terapkan
+              <span className="hidden sm:inline">Apply</span>
             </button>
           )}
 

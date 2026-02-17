@@ -21,7 +21,7 @@ FOREIGN KEY (store_id)
 REFERENCES stores(id)
 ON DELETE CASCADE;
 
--- 3. Agar saat Order dihapus -> Items otomatis terhapus (Sudah ada di script sebelumnya, tapi kita pastikan lagi)
+-- 3. Agar saat Order dihapus -> Items otomatis terhapus
 ALTER TABLE order_items
 DROP CONSTRAINT IF EXISTS order_items_store_order_fkey;
 
@@ -32,17 +32,31 @@ REFERENCES orders (store_id, order_id)
 ON DELETE CASCADE;
 
 
--- BAGIAN 2: FUNGSI HAPUS AKUN SENDIRI --
+-- BAGIAN 2: TABEL IKLAN (BARU) --
+CREATE TABLE IF NOT EXISTS ads_performance (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  store_id uuid REFERENCES stores(id) ON DELETE CASCADE,
+  report_date date NOT NULL,
+  platform text DEFAULT 'shopee', -- 'shopee', 'facebook', 'tiktok'
+  impressions int DEFAULT 0,
+  clicks int DEFAULT 0,
+  ctr numeric DEFAULT 0,
+  conversions int DEFAULT 0,
+  amount_spent numeric DEFAULT 0, -- PENTING: Biaya
+  gmv_generated numeric DEFAULT 0, -- PENTING: Omzet Iklan
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(store_id, report_date, platform) -- Mencegah duplikasi data harian
+);
 
--- Fungsi ini berjalan dengan hak akses superuser (SECURITY DEFINER)
--- Tugasnya menghapus user dari tabel auth.users berdasarkan ID yang sedang login
+
+-- BAGIAN 3: FUNGSI HAPUS AKUN SENDIRI --
+
 CREATE OR REPLACE FUNCTION delete_user_account()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
-  -- Hapus user dari tabel auth (Data toko & order akan ikut terhapus karena CASCADE di atas)
   DELETE FROM auth.users WHERE id = auth.uid();
 END;
 $$;
