@@ -12,25 +12,26 @@ interface ImportWizardProps {
   onComplete: () => void;
 }
 
-const DEFAULT_MAPPING: Mapping = {
-  "No. Pesanan": "order_id",
-  "Waktu Pesanan Dibuat": "order_date",
-  "Waktu Pembayaran Dilakukan": "payment_date",
-  "Status Pesanan": "status",
-  "Total Pembayaran": "total_payment",
-  "Total Diskon": "total_discount",
-  "Voucher Ditanggung Penjual": "seller_voucher",
-  "Estimasi Potongan Biaya Pengiriman": "shipping_estimated",
-  "Biaya Administrasi": "admin_fee",
-  "Biaya Layanan": "service_fee",
-  "Username (Pembeli)": "buyer_username",
-  "Nama Produk": "product_name",
-  "Jumlah": "quantity",
-  "Total Harga Produk": "product_total",
-  "Variasi": "variation",
-  "Kota/Kabupaten": "city",
-  "Provinsi": "province",
-  "Nomor Referensi SKU": "final_sku" 
+// ALIAS HEADER MAPPING (Untuk menangani format CSV Shopee yang berubah-ubah)
+const HEADER_ALIASES: Record<string, string[]> = {
+  "order_id": ["No. Pesanan", "Order ID", "No. Transaksi"],
+  "order_date": ["Waktu Pesanan Dibuat", "Order Creation Date", "Tgl Pemesanan"],
+  "payment_date": ["Waktu Pembayaran Dilakukan", "Payment Time", "Tgl Pembayaran"],
+  "status": ["Status Pesanan", "Order Status"],
+  "total_payment": ["Total Pembayaran", "Total Payment"],
+  "total_discount": ["Total Diskon", "Total Discount"],
+  "seller_voucher": ["Voucher Ditanggung Penjual", "Seller Voucher"],
+  "shipping_estimated": ["Estimasi Potongan Biaya Pengiriman", "Estimated Shipping Fee"],
+  "admin_fee": ["Biaya Administrasi", "Admin Fee"],
+  "service_fee": ["Biaya Layanan", "Service Fee"],
+  "buyer_username": ["Username (Pembeli)", "Buyer Username", "Username"],
+  "product_name": ["Nama Produk", "Product Name"],
+  "quantity": ["Jumlah", "Quantity", "Qty"],
+  "product_total": ["Total Harga Produk", "Product Subtotal", "Harga Awal"],
+  "variation": ["Variasi", "Nama Variasi", "Variation Name", "Model Name"], // UPDATE PENTING DI SINI
+  "city": ["Kota/Kabupaten", "City"],
+  "province": ["Provinsi", "Province"],
+  "final_sku": ["Nomor Referensi SKU", "SKU Reference No.", "SKU Induk"]
 };
 
 // Helper: Normalize Text for Matching (Trim & Lowercase)
@@ -86,9 +87,16 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
     const newMapping: Mapping = {};
     
     if (importType === 'orders') {
-        Object.entries(DEFAULT_MAPPING).forEach(([shopeeKey, dbKey]) => {
-          const foundHeader = headers.find(h => h.trim().toLowerCase() === shopeeKey.toLowerCase());
-          if (foundHeader) newMapping[dbKey] = foundHeader;
+        // Logika Mapping Cerdas: Cari header yang cocok dengan salah satu alias
+        Object.entries(HEADER_ALIASES).forEach(([dbKey, aliases]) => {
+          // Cari header CSV yang cocok dengan salah satu alias (case-insensitive)
+          const foundHeader = headers.find(h => 
+            aliases.some(alias => h.trim().toLowerCase() === alias.toLowerCase())
+          );
+          
+          if (foundHeader) {
+            newMapping[dbKey] = foundHeader;
+          }
         });
     }
     
@@ -191,7 +199,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         // --- MATCHING LOGIC (PRIORITY 1 -> 2 -> 3) ---
         const csvSku = normalize(row[mapping['final_sku']]); // Ref SKU from CSV
         const csvName = row[mapping['product_name']] || 'Produk Tanpa Nama';
-        const csvVariation = row[mapping['variation']] || ''; // Bisa kosong
+        // FIX: Pastikan ambil variasi jika kolomnya ada
+        const csvVariation = mapping['variation'] ? (row[mapping['variation']] || '') : ''; 
         
         // Normalized keys for lookup
         const normName = normalize(csvName);
@@ -204,9 +213,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
         // PRIORITY 1: Reference SKU from CSV exists in Products Table
         if (csvSku && productMap.has(csvSku)) {
-            finalSku = row[mapping['final_sku']]; // Use original case for display if needed, or normalized? Store normal case if possible but match normalized. 
-            // Better to fetch the official SKU casing from DB if needed, but for now use CSV val.
-            // Actually, let's use the CSV value but we know it matches.
             finalSku = row[mapping['final_sku']]; 
             hppAtTime = productMap.get(csvSku) || 0;
             isMapped = true;
@@ -352,6 +358,10 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
               PILIH FILE PESANAN
               <ChevronRight className="w-5 h-5" />
             </label>
+            
+            <p className="mt-6 text-[10px] text-slate-400 uppercase tracking-widest font-medium">
+                Sistem mendeteksi kolom: Variasi, Nama Variasi, Model Name, dll.
+            </p>
           </div>
         )}
 

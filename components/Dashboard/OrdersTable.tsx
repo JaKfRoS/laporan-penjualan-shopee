@@ -189,13 +189,17 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                               <span className="text-sm font-bold text-slate-800 dark:text-slate-200 line-clamp-2 leading-tight group-hover:text-orange-600 transition-colors">
                                   {firstItem.product_name}
                               </span>
-                              {firstItem.variation && (
-                                  <div className="flex items-center gap-1 mt-1">
-                                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                              
+                              {/* VARIATION BADGE - IMPROVED VISIBILITY */}
+                              {firstItem.variation && firstItem.variation !== '-' && (
+                                  <div className="flex items-center gap-1 mt-1.5">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-200/60 dark:bg-slate-700 px-2 py-0.5 rounded-md border border-slate-300 dark:border-slate-600">
+                                      <Tag className="w-3 h-3" />
                                       {firstItem.variation}
                                     </span>
                                   </div>
                               )}
+                              
                               {remainingCount > 0 && (
                                   <span className="text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded w-fit mt-1">
                                       +{remainingCount} produk lainnya
