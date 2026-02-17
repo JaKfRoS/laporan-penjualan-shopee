@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../../services/supabase';
 import { Store, Product } from '../../types';
 import { toast } from 'react-hot-toast';
-import { PackageSearch, Plus, Search, CheckCircle2, Link as LinkIcon, Edit2, Trash2, Save, X, Loader2, ArrowRightLeft, Lightbulb, FileSpreadsheet, CheckSquare, Square, Info, Download, Tag } from 'lucide-react';
+import { PackageSearch, Plus, Search, CheckCircle2, Link as LinkIcon, Edit2, Trash2, Save, X, Loader2, ArrowRightLeft, Lightbulb, FileSpreadsheet, CheckSquare, Square, Info, Download, Tag, DollarSign, PenSquare } from 'lucide-react';
 
 interface ProductManagerProps {
   store: Store;
@@ -21,6 +21,8 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   // Selection & Bulk Actions
   const [selectedSkus, setSelectedSkus] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isBulkEditing, setIsBulkEditing] = useState(false);
+  const [bulkEditHpp, setBulkEditHpp] = useState<number | ''>('');
   
   // Mapping State
   const [unmappedItems, setUnmappedItems] = useState<{name: string, variation: string, count: number}[]>([]);
@@ -245,16 +247,18 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     const toastId = toast.loading(`Menghapus ${selectedSkus.size} produk...`);
 
     try {
-      // Loop delete safely (using RPC one by one to ensure deep clean)
-      const skuArray = Array.from(selectedSkus);
-      
-      // Batched Parallel Requests (Chunks of 5)
-      const chunkSize = 5;
-      for (let i = 0; i < skuArray.length; i += chunkSize) {
-          const chunk = skuArray.slice(i, i + chunkSize);
-          await Promise.all(chunk.map(sku => 
-             supabase.rpc('delete_product_safely', { p_sku: sku, p_store_id: store.id })
-          ));
+      // OPTIMIZED: Use single RPC call passing ARRAY of SKUs
+      const { error } = await supabase.rpc('delete_products_bulk', { 
+        p_skus: Array.from(selectedSkus), 
+        p_store_id: store.id 
+      });
+
+      if (error) {
+        // Fallback if RPC doesnt exist yet
+        if (error.code === 'PGRST202' || error.message.includes('function not found')) {
+             throw new Error("Update database diperlukan (Script SQL)");
+        }
+        throw error;
       }
 
       toast.success("Produk terpilih berhasil dihapus", { id: toastId });
@@ -262,10 +266,45 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       fetchProducts();
     } catch (err: any) {
       console.error(err);
-      toast.error("Gagal hapus massal: " + err.message, { id: toastId });
+      if (err.message.includes('Script SQL')) {
+         toast.error("Database belum update. Buka Pengaturan -> Script Database", { id: toastId, duration: 5000 });
+      } else {
+         toast.error("Gagal hapus massal: " + err.message, { id: toastId });
+      }
     } finally {
       setIsBulkDeleting(false);
     }
+  };
+
+  const handleBulkEditHPP = async () => {
+      if (selectedSkus.size === 0) return;
+      if (bulkEditHpp === '') {
+          toast.error("Masukkan nilai HPP");
+          return;
+      }
+      
+      const toastId = toast.loading(`Mengupdate ${selectedSkus.size} produk...`);
+      setIsBulkEditing(true);
+
+      try {
+        const { error } = await supabase
+          .from('products')
+          .update({ cost_price: Number(bulkEditHpp) })
+          .eq('store_id', store.id)
+          .in('sku', Array.from(selectedSkus));
+
+        if (error) throw error;
+
+        toast.success("HPP Berhasil diupdate!", { id: toastId });
+        setBulkEditHpp('');
+        setIsBulkEditing(false);
+        setSelectedSkus(new Set()); // Opsional: clear selection
+        fetchProducts();
+      } catch (err: any) {
+        toast.error("Gagal update: " + err.message, { id: toastId });
+      } finally {
+        setIsBulkEditing(false);
+      }
   };
 
   // --- IMPORT EXCEL LOGIC ---
@@ -730,6 +769,38 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
            </div>
        )}
 
+       {/* BULK EDIT MODAL */}
+       {isBulkEditing && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+               <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-sm w-full p-6">
+                   <div className="flex justify-between items-center mb-4">
+                       <h3 className="text-lg font-black uppercase dark:text-white">Edit HPP Massal</h3>
+                       <button onClick={() => setIsBulkEditing(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+                   </div>
+                   <p className="text-sm text-slate-500 mb-4">
+                       Mengupdate HPP untuk <span className="font-bold text-slate-900 dark:text-white">{selectedSkus.size} produk</span> terpilih.
+                   </p>
+                   
+                   <div className="relative mb-6">
+                       <DollarSign className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                       <input 
+                           type="number" 
+                           placeholder="0"
+                           autoFocus
+                           value={bulkEditHpp}
+                           onChange={(e) => setBulkEditHpp(e.target.value === '' ? '' : Number(e.target.value))}
+                           className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-lg font-bold outline-none focus:ring-2 focus:ring-orange-500/20"
+                       />
+                   </div>
+
+                   <div className="flex gap-2">
+                       <button onClick={() => setIsBulkEditing(false)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold rounded-xl hover:bg-slate-200">Batal</button>
+                       <button onClick={handleBulkEditHPP} className="flex-1 py-3 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700">Simpan</button>
+                   </div>
+               </div>
+           </div>
+       )}
+
        {activeTab === 'master' && (
            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 relative">
                 
@@ -738,6 +809,19 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-slate-900 text-white px-4 py-2 rounded-xl shadow-xl animate-in fade-in slide-in-from-top-2">
                         <span className="text-xs font-bold whitespace-nowrap">{selectedSkus.size} terpilih</span>
                         <div className="h-4 w-px bg-slate-700"></div>
+                        
+                        {/* EDIT BUTTON */}
+                        <button 
+                            onClick={() => setIsBulkEditing(true)}
+                            className="flex items-center gap-1 text-xs font-bold text-blue-400 hover:text-blue-300"
+                        >
+                            <PenSquare className="w-3 h-3" />
+                            Edit HPP
+                        </button>
+                        
+                        <div className="h-4 w-px bg-slate-700"></div>
+
+                        {/* DELETE BUTTON */}
                         <button 
                             onClick={handleBulkDelete}
                             disabled={isBulkDeleting}
