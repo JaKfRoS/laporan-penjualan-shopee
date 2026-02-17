@@ -356,46 +356,43 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                    </h4>
                    <div className="space-y-3">
                       {selectedOrder.order_items?.map((item, idx) => (
-                        <div key={idx} className="flex gap-4 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                           <div className="w-12 h-12 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center border border-slate-200 dark:border-slate-700 shrink-0">
-                              <ShoppingBag className="w-6 h-6 text-slate-300" />
+                        <div key={idx} className="flex gap-4 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900/50 transition-colors shadow-sm">
+                           <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-2xl flex items-center justify-center border border-slate-300 dark:border-slate-700 shrink-0">
+                              <ShoppingBag className="w-8 h-8 text-slate-400 dark:text-slate-500" />
                            </div>
-                           <div className="flex-1 min-w-0">
-                              {/* Product Name */}
-                              <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-1.5">
+                           <div className="flex-1 min-w-0 flex flex-col justify-center">
+                              {/* Product Name + Variation Logic
+                                  Sometimes imported name includes variation. 
+                                  We try to show the full name to be safe.
+                              */}
+                              <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-2">
                                 {item.product_name}
+                                {/* If variation exists and not likely in name, append it */}
+                                {item.variation && !item.product_name.includes(item.variation) && (
+                                    <span className="text-slate-500 font-normal"> - {item.variation}</span>
+                                )}
                               </p>
                               
-                              {/* Explicit Variation Badge */}
-                              {item.variation && (
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wide bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600">
-                                    <Layers className="w-3 h-3" />
-                                    {item.variation}
-                                  </span>
-                                </div>
-                              )}
-                              
-                              <div className="flex flex-wrap items-center gap-2 mt-1">
-                                <span className="text-xs font-bold bg-white dark:bg-slate-900 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-black bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900 px-3 py-1 rounded-lg border border-slate-900 dark:border-slate-200">
                                    Qty: {item.quantity}
                                 </span>
                                 {item.is_sku_mapped ? (
-                                    <span className="text-[10px] font-bold text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded flex items-center gap-1 border border-green-200 dark:border-green-900/30">
-                                      <Link className="w-3 h-3" /> SKU: {item.final_sku}
+                                    <span className="text-xs font-bold text-green-500 dark:text-green-400 bg-green-500/10 px-3 py-1 rounded-lg flex items-center gap-1 border border-green-500/20">
+                                      <Link className="w-3 h-3" /> Terhubung: {item.final_sku}
                                     </span>
                                 ) : (
-                                    <span className="text-[10px] font-bold text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded flex items-center gap-1 border border-red-200 dark:border-red-900/30">
-                                      <AlertCircle className="w-3 h-3" /> SKU Tidak Dikenal
+                                    <span className="text-xs font-bold text-red-500 dark:text-red-400 bg-red-500/10 px-3 py-1 rounded-lg flex items-center gap-1 border border-red-500/20">
+                                      <AlertCircle className="w-3 h-3" /> Belum Mapping
                                     </span>
                                 )}
                               </div>
                            </div>
-                           <div className="text-right shrink-0">
-                              <p className="text-sm font-black text-slate-900 dark:text-white">
+                           <div className="text-right shrink-0 flex flex-col justify-center">
+                              <p className="text-lg font-black text-slate-900 dark:text-white">
                                 Rp {(item.product_total).toLocaleString()}
                               </p>
-                              <p className="text-[10px] text-slate-400 mt-1">
+                              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
                                 HPP: Rp {((item.hpp_at_time || 0) * item.quantity).toLocaleString()}
                               </p>
                            </div>
