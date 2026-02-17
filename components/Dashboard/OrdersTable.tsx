@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Order, Store } from '../../types';
 import { format } from 'date-fns';
-import { Search, Filter, ExternalLink, ChevronDown, Check, ChevronLeft, ChevronRight, Store as StoreIcon, AlertCircle, Link, Eye, X, Package, ShoppingBag } from 'lucide-react';
+import { Search, Filter, ExternalLink, ChevronDown, Check, ChevronLeft, ChevronRight, Store as StoreIcon, AlertCircle, Link, Eye, X, Package, ShoppingBag, Layers, Tag } from 'lucide-react';
 
 interface OrdersTableProps {
   orders: Order[];
@@ -190,8 +190,8 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                                   {firstItem.product_name}
                               </span>
                               {firstItem.variation && !firstItem.product_name.includes(firstItem.variation) && (
-                                  <span className="text-xs text-slate-500 font-medium mt-0.5">
-                                      Var: {firstItem.variation}
+                                  <span className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-1">
+                                      <Tag className="w-3 h-3" /> {firstItem.variation}
                                   </span>
                               )}
                               {remainingCount > 0 && (
@@ -361,25 +361,31 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                               <ShoppingBag className="w-6 h-6 text-slate-300" />
                            </div>
                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug">
+                              {/* Product Name */}
+                              <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-1.5">
                                 {item.product_name}
                               </p>
+                              
+                              {/* Explicit Variation Badge */}
                               {item.variation && (
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                  Variasi: <span className="font-medium text-slate-700 dark:text-slate-300">{item.variation}</span>
-                                </p>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wide bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600">
+                                    <Layers className="w-3 h-3" />
+                                    {item.variation}
+                                  </span>
+                                </div>
                               )}
                               
-                              <div className="flex flex-wrap items-center gap-2 mt-2">
+                              <div className="flex flex-wrap items-center gap-2 mt-1">
                                 <span className="text-xs font-bold bg-white dark:bg-slate-900 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">
                                    Qty: {item.quantity}
                                 </span>
                                 {item.is_sku_mapped ? (
-                                    <span className="text-[10px] font-bold text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded flex items-center gap-1">
-                                      <Link className="w-3 h-3" /> Terhubung: {item.final_sku}
+                                    <span className="text-[10px] font-bold text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded flex items-center gap-1 border border-green-200 dark:border-green-900/30">
+                                      <Link className="w-3 h-3" /> SKU: {item.final_sku}
                                     </span>
                                 ) : (
-                                    <span className="text-[10px] font-bold text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded flex items-center gap-1">
+                                    <span className="text-[10px] font-bold text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded flex items-center gap-1 border border-red-200 dark:border-red-900/30">
                                       <AlertCircle className="w-3 h-3" /> SKU Tidak Dikenal
                                     </span>
                                 )}
