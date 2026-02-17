@@ -6,6 +6,21 @@ export interface Store {
   created_at: string;
 }
 
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  store_id?: string;
+  product_name: string;
+  variation: string | null;
+  quantity: number;
+  unit_price: number;
+  product_total: number;
+  // New Fields for Mapping
+  final_sku?: string | null;
+  hpp_at_time?: number;
+  is_sku_mapped?: boolean;
+}
+
 export interface Order {
   id: string;
   store_id: string;
@@ -25,21 +40,7 @@ export interface Order {
   city: string | null;
   province: string | null;
   created_at: string;
-}
-
-export interface OrderItem {
-  id: string;
-  order_id: string;
-  store_id?: string;
-  product_name: string;
-  variation: string | null;
-  quantity: number;
-  unit_price: number;
-  product_total: number;
-  // New Fields for Mapping
-  final_sku?: string | null;
-  hpp_at_time?: number;
-  is_sku_mapped?: boolean;
+  order_items?: OrderItem[]; // Added relations
 }
 
 export interface Product {

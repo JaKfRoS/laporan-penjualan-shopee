@@ -78,7 +78,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     try {
       let query = supabase
         .from('orders')
-        .select('*')
+        .select('*, order_items(*)') // CHANGED: Fetch items relations
         .order('order_date', { ascending: false });
 
       // Ambil data dalam jumlah besar sekaligus (misal 5000 transaksi terakhir)
@@ -201,6 +201,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           "Waktu Pesanan", 
           "Status", 
           "Username Pembeli", 
+          "Nama Produk (Pertama)", // New Header
           "Kota", 
           "Provinsi", 
           "GMV (Harga Produk)", 
@@ -211,26 +212,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           "Keterangan"
         ];
 
-        const tableRows = sheetOrders.map(o => [
-          o.order_id,
-          o.order_date ? new Date(o.order_date).toLocaleString('id-ID') : '-',
-          o.status,
-          o.buyer_username || '-',
-          o.city || '-',
-          o.province || '-',
-          o.product_total,
-          o.seller_voucher,
-          o.admin_fee,
-          o.service_fee,
-          o.status?.toLowerCase().includes('batal') ? 0 : o.net_revenue,
-          o.status?.toLowerCase().includes('batal') ? "Pesanan Dibatalkan" : (o.status === 'Selesai' ? "Selesai" : "Dalam Proses/Pengiriman")
-        ]);
+        const tableRows = sheetOrders.map(o => {
+            const firstProduct = o.order_items && o.order_items.length > 0 ? o.order_items[0].product_name : '-';
+            return [
+              o.order_id,
+              o.order_date ? new Date(o.order_date).toLocaleString('id-ID') : '-',
+              o.status,
+              o.buyer_username || '-',
+              firstProduct,
+              o.city || '-',
+              o.province || '-',
+              o.product_total,
+              o.seller_voucher,
+              o.admin_fee,
+              o.service_fee,
+              o.status?.toLowerCase().includes('batal') ? 0 : o.net_revenue,
+              o.status?.toLowerCase().includes('batal') ? "Pesanan Dibatalkan" : (o.status === 'Selesai' ? "Selesai" : "Dalam Proses/Pengiriman")
+            ];
+        });
 
         const fullData = [...headerRows, tableHeaders, ...tableRows];
         const ws = XLSX.utils.aoa_to_sheet(fullData);
 
         ws['!cols'] = [
-          { wch: 22 }, { wch: 22 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, 
+          { wch: 22 }, { wch: 22 }, { wch: 15 }, { wch: 20 }, { wch: 30 }, { wch: 15 }, 
           { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, 
           { wch: 20 }, { wch: 30 }
         ];

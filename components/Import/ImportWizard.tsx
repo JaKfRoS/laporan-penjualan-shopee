@@ -177,10 +177,14 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
         orderGroups[orderId].grossProductValue += prodTotal;
         
-        // --- LOGIKA MAPPING SKU BARU ---
+        // --- LOGIKA MAPPING SKU ---
         const rawSku = row[mapping['final_sku']] ? String(row[mapping['final_sku']]).trim() : '';
-        const prodName = row[mapping['product_name']] || 'Produk Tanpa Nama';
+        const rawProdName = row[mapping['product_name']] || 'Produk Tanpa Nama';
         const variation = row[mapping['variation']] || '';
+        
+        // COMBINE NAME: Agar mapping lebih akurat, gabungkan nama + variasi
+        // Contoh: "Kemeja Polos" + "Merah" => "Kemeja Polos - Merah"
+        const finalProdName = variation ? `${rawProdName} - ${variation}` : rawProdName;
         
         let finalSku = null;
         let hppAtTime = 0;
@@ -194,8 +198,12 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         } 
         // 2. Jika tidak, cek Mapping Database
         else {
-            const mapKey = `${prodName}|${variation}`;
-            const mappedSku = mappingMap.get(mapKey);
+            // Cek Format Baru (Nama Gabungan)
+            const mapKeyNew = `${finalProdName}|${variation}`;
+            // Cek Format Lama (Nama Asli - Fallback agar mapping lama tidak rusak)
+            const mapKeyOld = `${rawProdName}|${variation}`;
+            
+            const mappedSku = mappingMap.get(mapKeyNew) || mappingMap.get(mapKeyOld);
             
             if (mappedSku && productMap.has(mappedSku)) {
                 finalSku = mappedSku;
@@ -211,7 +219,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         orderGroups[orderId].items.push({
           order_id: orderId,
           store_id: store.id,
-          product_name: prodName,
+          product_name: finalProdName, // Simpan nama gabungan ke database
           variation: variation,
           quantity: qty,
           product_total: prodTotal,
