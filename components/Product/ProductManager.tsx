@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../../services/supabase';
 import { Store, Product } from '../../types';
 import { toast } from 'react-hot-toast';
-import { PackageSearch, Plus, Search, CheckCircle2, Link as LinkIcon, Edit2, Trash2, Save, X, Loader2, ArrowRightLeft, Lightbulb, FileSpreadsheet, CheckSquare, Info } from 'lucide-react';
+import { PackageSearch, Plus, Search, CheckCircle2, Link as LinkIcon, Edit2, Trash2, Save, X, Loader2, ArrowRightLeft, Lightbulb, FileSpreadsheet, CheckSquare, Info, Download } from 'lucide-react';
 
 interface ProductManagerProps {
   store: Store;
@@ -89,7 +89,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
   const fetchProducts = async () => {
     setLoadingProducts(true);
-    // Note: mapped DB column `cost_price` to `cost_price` in types, renaming from hpp
     const { data, error } = await supabase
       .from('products')
       .select('*')
@@ -114,7 +113,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         store_id: store.id,
         sku: newProduct.sku,
         product_name: newProduct.product_name,
-        cost_price: newProduct.cost_price, // Changed from hpp
+        cost_price: newProduct.cost_price, 
         stock: 0
       }]);
 
@@ -161,6 +160,101 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         toast.error("Gagal hapus: " + err.message, { id: toastId });
     }
   };
+
+  // --- IMPORT EXCEL LOGIC ---
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const toastId = toast.loading("Membaca file Excel...");
+
+    try {
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+                if (data.length === 0) {
+                    throw new Error("File kosong");
+                }
+
+                // Prepare products payload
+                const productsToUpsert = [];
+                let successCount = 0;
+
+                for (const row of data) {
+                    // Cari kolom yang cocok (case insensitive)
+                    const keys = Object.keys(row);
+                    const skuKey = keys.find(k => k.toLowerCase().includes('sku') || k.toLowerCase().includes('kode'));
+                    const nameKey = keys.find(k => k.toLowerCase().includes('nama') || k.toLowerCase().includes('name') || k.toLowerCase().includes('produk'));
+                    const hppKey = keys.find(k => k.toLowerCase().includes('hpp') || k.toLowerCase().includes('cost') || k.toLowerCase().includes('modal') || k.toLowerCase().includes('harga'));
+
+                    if (skuKey && row[skuKey]) {
+                        const rawHpp = hppKey ? row[hppKey] : 0;
+                        // Clean currency string if needed
+                        let cleanHpp = 0;
+                        if (typeof rawHpp === 'string') {
+                            cleanHpp = parseFloat(rawHpp.replace(/[^0-9.-]+/g, ""));
+                        } else {
+                            cleanHpp = Number(rawHpp) || 0;
+                        }
+
+                        productsToUpsert.push({
+                            store_id: store.id,
+                            sku: String(row[skuKey]).trim(),
+                            product_name: nameKey ? String(row[nameKey]).trim() : 'Imported Product',
+                            cost_price: cleanHpp,
+                            stock: 0
+                        });
+                        successCount++;
+                    }
+                }
+
+                if (productsToUpsert.length > 0) {
+                    toast.loading(`Menyimpan ${productsToUpsert.length} produk...`, { id: toastId });
+                    
+                    const { error } = await supabase
+                        .from('products')
+                        .upsert(productsToUpsert, { onConflict: 'sku, store_id' });
+
+                    if (error) throw error;
+
+                    toast.success(`Berhasil import ${productsToUpsert.length} produk!`, { id: toastId });
+                    fetchProducts();
+                } else {
+                    toast.error("Tidak ada kolom SKU yang ditemukan di Excel", { id: toastId });
+                }
+
+            } catch (err: any) {
+                console.error(err);
+                toast.error("Gagal import: " + err.message, { id: toastId });
+            } finally {
+                setIsImporting(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
+        };
+        reader.readAsBinaryString(file);
+    } catch (err) {
+        setIsImporting(false);
+        toast.dismiss(toastId);
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const ws = XLSX.utils.json_to_sheet([
+        { "SKU": "CONTOH-SKU-001", "Nama Produk": "Kaos Polos Hitam XL", "HPP": 35000 },
+        { "SKU": "CONTOH-SKU-002", "Nama Produk": "Kemeja Flannel Merah", "HPP": 75000 }
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "Template_Master_Produk.xlsx");
+  };
+
 
   // --- MAPPING FUNCTIONS ---
 
@@ -521,13 +615,45 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                         />
                     </div>
                     
-                    <button 
-                        onClick={() => setIsAddingProduct(true)}
-                        className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-black rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2"
-                    >
-                        <Plus className="w-4 h-4" />
-                        MANUAL
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {/* INPUT FILE HIDDEN */}
+                        <input 
+                            type="file" 
+                            accept=".xlsx, .xls, .csv" 
+                            className="hidden" 
+                            ref={fileInputRef} 
+                            onChange={handleImportFile}
+                        />
+
+                        {/* TOMBOL IMPORT */}
+                        <div className="relative group">
+                            <button 
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isImporting}
+                                className="px-4 py-2 bg-green-600 text-white text-sm font-black rounded-xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+                                {isImporting ? 'LOADING...' : 'IMPORT EXCEL'}
+                            </button>
+                            {/* Download Template Tooltip/Action */}
+                            <div className="absolute top-full right-0 mt-2 w-48 p-2 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20">
+                                <button 
+                                    onClick={handleDownloadTemplate}
+                                    className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg flex items-center gap-2"
+                                >
+                                    <Download className="w-3 h-3" /> Download Template
+                                </button>
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={() => setIsAddingProduct(true)}
+                            className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-black rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2"
+                        >
+                            <Plus className="w-4 h-4" />
+                            MANUAL
+                        </button>
+                    </div>
                 </div>
                 
                 {isAddingProduct && (
