@@ -1,152 +1,93 @@
 
--- BAGIAN 1: PERBAIKAN STRUKTUR (CASCADE) --
+-- BAGIAN 1: MEMBERSIHKAN TABEL LAMA (OPSIONAL, HATI-HATI)
+-- DROP TABLE IF EXISTS sku_mappings;
+-- DROP TABLE IF EXISTS products;
 
--- 1. Agar saat User dihapus -> Toko otomatis terhapus
-ALTER TABLE stores
-DROP CONSTRAINT IF EXISTS stores_user_id_fkey;
-
-ALTER TABLE stores
-ADD CONSTRAINT stores_user_id_fkey
-FOREIGN KEY (user_id)
-REFERENCES auth.users(id)
-ON DELETE CASCADE;
-
--- 2. Agar saat Toko dihapus -> Orders otomatis terhapus
-ALTER TABLE orders
-DROP CONSTRAINT IF EXISTS orders_store_id_fkey;
-
-ALTER TABLE orders
-ADD CONSTRAINT orders_store_id_fkey
-FOREIGN KEY (store_id)
-REFERENCES stores(id)
-ON DELETE CASCADE;
-
--- 3. Agar saat Order dihapus -> Items otomatis terhapus
-ALTER TABLE order_items
-DROP CONSTRAINT IF EXISTS order_items_store_order_fkey;
-
-ALTER TABLE order_items
-ADD CONSTRAINT order_items_store_order_fkey
-FOREIGN KEY (store_id, order_id)
-REFERENCES orders (store_id, order_id)
-ON DELETE CASCADE;
-
-
--- BAGIAN 2: TABEL IKLAN (BARU) --
-CREATE TABLE IF NOT EXISTS ads_performance (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  store_id uuid REFERENCES stores(id) ON DELETE CASCADE,
-  report_date date NOT NULL,
-  platform text DEFAULT 'shopee', -- 'shopee', 'facebook', 'tiktok'
-  impressions int DEFAULT 0,
-  clicks int DEFAULT 0,
-  ctr numeric DEFAULT 0,
-  conversions int DEFAULT 0,
-  amount_spent numeric DEFAULT 0, -- PENTING: Biaya
-  gmv_generated numeric DEFAULT 0, -- PENTING: Omzet Iklan
-  created_at timestamptz DEFAULT now(),
-  UNIQUE(store_id, report_date, platform) -- Mencegah duplikasi data harian
-);
-
-
--- BAGIAN 3: FUNGSI HAPUS AKUN SENDIRI --
-
-CREATE OR REPLACE FUNCTION delete_user_account()
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-  DELETE FROM auth.users WHERE id = auth.uid();
-END;
-$$;
-
--- BAGIAN 4: PRODUCT MASTER & SKU MAPPING (BARU) --
-
--- 4.1 Tabel Master Produk (Internal HPP)
+-- BAGIAN 2: TABLE PRODUCTS (MASTER DATA)
 CREATE TABLE IF NOT EXISTS products (
-    sku text PRIMARY KEY,
-    store_id uuid REFERENCES stores(id) ON DELETE CASCADE,
-    product_name text,
-    hpp numeric DEFAULT 0,
+    sku text NOT NULL,
+    store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    product_name text NOT NULL,
+    variation_name text DEFAULT NULL, -- Opsional, untuk konteks internal
+    cost_price numeric DEFAULT 0, -- HPP
     stock int DEFAULT 0,
-    created_at timestamptz DEFAULT now()
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now(),
+    PRIMARY KEY (sku, store_id) -- Composite PK agar SKU unik per toko
 );
 
--- 4.2 Tabel Mapping (Shopee Name -> SKU)
+-- MIGRATION: Ensure cost_price column exists (fix for existing tables)
+ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price numeric DEFAULT 0;
+
+-- Index untuk pencarian SKU cepat
+CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
+
+-- BAGIAN 3: TABLE SKU MAPPINGS (HUBUNGAN NAMA SHOPEE -> SKU MASTER)
 CREATE TABLE IF NOT EXISTS sku_mappings (
     id SERIAL PRIMARY KEY,
-    store_id uuid REFERENCES stores(id) ON DELETE CASCADE,
+    store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
     shopee_product_name text NOT NULL,
     shopee_variation_name text DEFAULT '',
-    mapped_sku text REFERENCES products(sku) ON DELETE CASCADE,
+    mapped_sku text NOT NULL,
     created_at timestamptz DEFAULT now(),
-    UNIQUE(store_id, shopee_product_name, shopee_variation_name)
+    
+    -- CONSTRAINT FK: Pastikan SKU yang di-map ada di tabel products
+    CONSTRAINT fk_mapping_product 
+      FOREIGN KEY (mapped_sku, store_id) 
+      REFERENCES products (sku, store_id) 
+      ON DELETE CASCADE,
+
+    -- CONSTRAINT UNIQUE: Mencegah duplikasi mapping untuk kombinasi nama produk + variasi yang sama di toko yang sama
+    CONSTRAINT unique_mapping_per_store 
+      UNIQUE (store_id, shopee_product_name, shopee_variation_name)
 );
 
--- 4.3 Update Order Items untuk support HPP
+-- Index untuk pencarian mapping cepat saat import
+CREATE INDEX IF NOT EXISTS idx_mappings_lookup 
+ON sku_mappings(store_id, shopee_product_name, shopee_variation_name);
+
+-- BAGIAN 4: UPDATE STRUKTUR TABLE ORDER_ITEMS (SALES REPORTS)
 ALTER TABLE order_items 
 ADD COLUMN IF NOT EXISTS final_sku text,
 ADD COLUMN IF NOT EXISTS hpp_at_time numeric DEFAULT 0,
 ADD COLUMN IF NOT EXISTS is_sku_mapped boolean DEFAULT FALSE;
 
--- 4.4 RLS POLICIES (Supaya tidak error permission denied)
+-- Index untuk performa join laporan
+CREATE INDEX IF NOT EXISTS idx_order_items_product_lookup 
+ON order_items(store_id, product_name, variation);
+
+-- BAGIAN 5: DATABASE VIEW FOR PROFIT CALCULATION
+-- View ini otomatis menghitung profit berdasarkan data real-time
+CREATE OR REPLACE VIEW view_order_profits AS
+SELECT 
+    oi.id AS order_item_id,
+    oi.store_id,
+    oi.order_id,
+    o.order_date,
+    o.status,
+    oi.product_name AS shopee_product_name,
+    oi.variation AS shopee_variation_name,
+    oi.quantity,
+    oi.product_total AS sales_omzet, -- Harga Jual Total
+    oi.final_sku,
+    
+    -- Ambil HPP dari history transaksi (hpp_at_time) atau fallback ke master product saat ini
+    COALESCE(oi.hpp_at_time, p.cost_price, 0) AS unit_cost_price,
+    (COALESCE(oi.hpp_at_time, p.cost_price, 0) * oi.quantity) AS total_cost_price,
+    
+    -- Gross Profit Calculation
+    (oi.product_total - (COALESCE(oi.hpp_at_time, p.cost_price, 0) * oi.quantity)) AS gross_profit
+
+FROM order_items oi
+JOIN orders o ON oi.order_id = o.order_id AND oi.store_id = o.store_id
+LEFT JOIN products p ON oi.final_sku = p.sku AND oi.store_id = p.store_id;
+
+-- BAGIAN 6: SECURITY POLICIES (RLS)
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sku_mappings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 
--- PERBAIKAN: Drop policy lama sebelum membuat baru agar tidak error 'policy already exists'
 DROP POLICY IF EXISTS "Enable all for authenticated users" ON products;
 CREATE POLICY "Enable all for authenticated users" ON products FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Enable all for authenticated users" ON sku_mappings;
 CREATE POLICY "Enable all for authenticated users" ON sku_mappings FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON order_items;
-CREATE POLICY "Enable all for authenticated users" ON order_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-
--- 4.5 RPC: Safe Delete Product (Single)
-CREATE OR REPLACE FUNCTION delete_product_safely(p_sku text, p_store_id uuid)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-  -- 1. Hapus Mapping yang terhubung
-  DELETE FROM sku_mappings 
-  WHERE mapped_sku = p_sku AND store_id = p_store_id;
-
-  -- 2. Putuskan hubungan dengan pesanan (Set NULL)
-  UPDATE order_items 
-  SET final_sku = NULL, is_sku_mapped = FALSE
-  WHERE final_sku = p_sku AND store_id = p_store_id;
-
-  -- 3. Hapus Produk Master
-  DELETE FROM products 
-  WHERE sku = p_sku AND store_id = p_store_id;
-END;
-$$;
-
--- 4.6 RPC: Bulk Delete Products (Optimized)
--- Menghapus banyak produk sekaligus dalam satu transaksi
-CREATE OR REPLACE FUNCTION bulk_delete_products(p_skus text[], p_store_id uuid)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-  -- 1. Hapus Mapping untuk semua SKU di list
-  DELETE FROM sku_mappings 
-  WHERE mapped_sku = ANY(p_skus) AND store_id = p_store_id;
-
-  -- 2. Putuskan hubungan pesanan untuk semua SKU di list
-  UPDATE order_items 
-  SET final_sku = NULL, is_sku_mapped = FALSE
-  WHERE final_sku = ANY(p_skus) AND store_id = p_store_id;
-
-  -- 3. Hapus Produk Master untuk semua SKU di list
-  DELETE FROM products 
-  WHERE sku = ANY(p_skus) AND store_id = p_store_id;
-END;
-$$;

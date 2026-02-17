@@ -47,7 +47,8 @@ export interface Product {
   sku: string;
   store_id: string;
   product_name: string;
-  hpp: number;
+  variation_name?: string;
+  cost_price: number; // Renamed from hpp to match DB request
   stock: number;
   created_at?: string;
 }

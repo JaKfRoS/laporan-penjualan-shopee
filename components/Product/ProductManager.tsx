@@ -2,9 +2,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../services/supabase';
-import { Store, Product, OrderItem } from '../../types';
+import { Store, Product } from '../../types';
 import { toast } from 'react-hot-toast';
-import { PackageSearch, Plus, Search, AlertCircle, CheckCircle2, Link as LinkIcon, Edit2, Trash2, Save, X, Loader2, PackagePlus, ArrowRightLeft, Info, UploadCloud, FileSpreadsheet, CheckSquare, Square, MoreHorizontal, Lightbulb } from 'lucide-react';
+import { PackageSearch, Plus, Search, CheckCircle2, Link as LinkIcon, Edit2, Trash2, Save, X, Loader2, ArrowRightLeft, Lightbulb, FileSpreadsheet, CheckSquare, Info } from 'lucide-react';
 
 interface ProductManagerProps {
   store: Store;
@@ -29,13 +29,13 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   
   // Edit/Create State
   const [isAddingProduct, setIsAddingProduct] = useState(false);
-  const [newProduct, setNewProduct] = useState({ sku: '', product_name: '', hpp: 0 });
+  const [newProduct, setNewProduct] = useState({ sku: '', product_name: '', cost_price: 0 });
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   // Mapping Selection State
   const [selectedUnmapped, setSelectedUnmapped] = useState<{name: string, variation: string} | null>(null);
   const [targetSku, setTargetSku] = useState('');
-  const [mappingSearchTerm, setMappingSearchTerm] = useState(''); // New: Search inside mapping modal
+  const [mappingSearchTerm, setMappingSearchTerm] = useState('');
   
   // Quick Create State (in Mapping)
   const [isQuickCreating, setIsQuickCreating] = useState(false);
@@ -49,63 +49,38 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     if (activeTab === 'mapping') fetchUnmappedItems();
   }, [store, activeTab]);
 
-  // --- SMART SUGGESTION EFFECT (UPDATED) ---
+  // --- SMART SUGGESTION EFFECT ---
   useEffect(() => {
     if (selectedUnmapped && products.length > 0) {
-      setMappingSearchTerm(''); // Reset search when opening modal
-      
-      // 1. Prepare Shopee Tokens (Name + Variation)
-      const cleanString = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-      
-      const shopeeName = cleanString(selectedUnmapped.name);
-      const shopeeVar = cleanString(selectedUnmapped.variation || '');
-      
-      // Gabungkan nama dan variasi untuk konteks penuh
-      const shopeeFullTokens = `${shopeeName} ${shopeeVar}`.split(/\s+/).filter(w => w.length > 2);
+      setMappingSearchTerm(''); 
+      const clean = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+      const shopeeName = clean(selectedUnmapped.name);
+      const shopeeVar = clean(selectedUnmapped.variation || '');
+      const shopeeTokens = `${shopeeName} ${shopeeVar}`.split(/\s+/).filter(w => w.length > 2);
 
       let bestScore = 0;
       let bestSku = '';
 
-      // 2. Iterate Master Products
       products.forEach(p => {
-        const internalName = cleanString(p.product_name);
-        const internalSku = cleanString(p.sku);
-        
-        // Exact SKU Match (Highest Priority)
+        const internalSku = clean(p.sku);
         if (internalSku === shopeeName || internalSku.includes(shopeeName)) {
             bestScore = 1000;
             bestSku = p.sku;
             return;
         }
-
-        // Token Matching Logic
         let matches = 0;
-        const internalTokens = internalName.split(/\s+/);
-        
-        shopeeFullTokens.forEach(token => {
-            if (internalName.includes(token)) {
-                matches += 1;
-                // Bonus if exact word match
-                if (internalTokens.includes(token)) matches += 0.5;
-            }
+        const internalName = clean(p.product_name);
+        shopeeTokens.forEach(token => {
+            if (internalName.includes(token)) matches += 1;
         });
-
-        // Calculate Score relative to internal name length to avoid matching generic long descriptions
-        // But favor matches that cover most of the Shopee search terms
-        const score = matches; 
-
-        if (score > bestScore) {
-          bestScore = score;
+        if (matches > bestScore) {
+          bestScore = matches;
           bestSku = p.sku;
         }
       });
 
-      // Threshold: At least one strong word match (score > 1) to auto-select
-      if (bestScore >= 1) {
-        setTargetSku(bestSku);
-      } else {
-        setTargetSku('');
-      }
+      if (bestScore >= 1) setTargetSku(bestSku);
+      else setTargetSku('');
     }
   }, [selectedUnmapped, products]);
 
@@ -114,6 +89,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
   const fetchProducts = async () => {
     setLoadingProducts(true);
+    // Note: mapped DB column `cost_price` to `cost_price` in types, renaming from hpp
     const { data, error } = await supabase
       .from('products')
       .select('*')
@@ -123,7 +99,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     if (error) toast.error("Gagal memuat produk: " + error.message);
     else setProducts(data || []);
     
-    setSelectedSkus(new Set()); // Reset selection on refresh
+    setSelectedSkus(new Set()); 
     setLoadingProducts(false);
   };
 
@@ -138,7 +114,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         store_id: store.id,
         sku: newProduct.sku,
         product_name: newProduct.product_name,
-        hpp: newProduct.hpp,
+        cost_price: newProduct.cost_price, // Changed from hpp
         stock: 0
       }]);
 
@@ -146,7 +122,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       
       toast.success("Produk berhasil ditambahkan");
       setIsAddingProduct(false);
-      setNewProduct({ sku: '', product_name: '', hpp: 0 });
+      setNewProduct({ sku: '', product_name: '', cost_price: 0 });
       fetchProducts();
     } catch (err: any) {
       toast.error(err.message);
@@ -159,7 +135,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       const { error } = await supabase.from('products')
         .update({ 
             product_name: editingProduct.product_name,
-            hpp: editingProduct.hpp 
+            cost_price: editingProduct.cost_price 
         })
         .eq('sku', editingProduct.sku)
         .eq('store_id', store.id);
@@ -174,226 +150,15 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   };
 
   const handleDeleteProduct = async (sku: string) => {
-    if(!window.confirm("Hapus produk ini? \n\nPERINGATAN: Semua mapping yang terhubung dengan SKU ini akan terhapus.")) return;
-    
+    if(!window.confirm("Hapus produk ini?")) return;
     const toastId = toast.loading("Menghapus produk...");
     try {
-        // Gunakan RPC untuk menghapus secara atomic di sisi server
-        const { error } = await supabase.rpc('delete_product_safely', {
-            p_sku: sku,
-            p_store_id: store.id
-        });
-
-        if(error) {
-           if(error.message.includes('function not found') || error.code === 'PGRST202') {
-               throw new Error("Fitur hapus belum update. Jalankan SQL Script di Menu Pengaturan.");
-           }
-           throw error;
-        }
-        
+        const { error } = await supabase.rpc('delete_product_safely', { p_sku: sku, p_store_id: store.id });
+        if(error) throw error;
         toast.success("Produk dihapus", { id: toastId });
         setProducts(prev => prev.filter(p => p.sku !== sku));
-        setSelectedSkus(prev => {
-            const next = new Set(prev);
-            next.delete(sku);
-            return next;
-        });
     } catch (err: any) {
-        console.error(err);
         toast.error("Gagal hapus: " + err.message, { id: toastId });
-    }
-  };
-
-  // --- BULK ACTIONS ---
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      const allSkus = filteredProducts.map(p => p.sku);
-      setSelectedSkus(new Set(allSkus));
-    } else {
-      setSelectedSkus(new Set());
-    }
-  };
-
-  const handleSelectRow = (sku: string) => {
-    const newSelected = new Set(selectedSkus);
-    if (newSelected.has(sku)) {
-      newSelected.delete(sku);
-    } else {
-      newSelected.add(sku);
-    }
-    setSelectedSkus(newSelected);
-  };
-
-  const handleBulkDelete = async () => {
-    if (selectedSkus.size === 0) return;
-    if (!window.confirm(`Yakin ingin menghapus ${selectedSkus.size} produk terpilih? Data tidak bisa dikembalikan.`)) return;
-
-    const toastId = toast.loading(`Menghapus ${selectedSkus.size} produk...`);
-    try {
-      const skusArray = Array.from(selectedSkus);
-      
-      // OPTIMIZATION: Send all SKUs in a single RPC call
-      const { error } = await supabase.rpc('bulk_delete_products', {
-        p_skus: skusArray,
-        p_store_id: store.id
-      });
-
-      if (error) {
-         if(error.message.includes('function not found') || error.code === 'PGRST202') {
-             // Fallback to loop if function not exists (for backward compatibility before user updates SQL)
-             console.warn("Bulk delete RPC not found, falling back to loop...");
-             toast('Fitur delete cepat belum aktif. Sedang menghapus satu per satu... (Harap update database)', { icon: '⚠️', duration: 5000 });
-             
-             let errorCount = 0;
-             for (const sku of skusArray) {
-                const { error: singleError } = await supabase.rpc('delete_product_safely', { p_sku: sku, p_store_id: store.id });
-                if (singleError) errorCount++;
-             }
-             if (errorCount > 0) throw new Error("Beberapa data gagal dihapus (Metode Lambat). Harap update database.");
-         } else {
-             throw error;
-         }
-      }
-
-      toast.success(`${skusArray.length} produk berhasil dihapus`, { id: toastId });
-      fetchProducts();
-    } catch (err: any) {
-      toast.error("Gagal: " + err.message, { id: toastId });
-    }
-  };
-
-  const handleBulkUpdateHpp = async () => {
-    if (bulkHppValue === '') return;
-    const toastId = toast.loading("Update HPP masal...");
-    
-    try {
-      const skusArray = Array.from(selectedSkus);
-      const { error } = await supabase
-        .from('products')
-        .update({ hpp: Number(bulkHppValue) })
-        .eq('store_id', store.id)
-        .in('sku', skusArray);
-
-      if (error) throw error;
-      
-      toast.success(`HPP untuk ${skusArray.length} produk diupdate!`, { id: toastId });
-      setIsBulkEditingHpp(false);
-      setBulkHppValue('');
-      fetchProducts();
-    } catch (err: any) {
-      toast.error("Gagal: " + err.message, { id: toastId });
-    }
-  };
-
-  // --- SHOPEE PRODUCT IMPORT ---
-
-  const handleShopeeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsImporting(true);
-    const toastId = toast.loading("Membaca file produk...");
-
-    try {
-      const reader = new FileReader();
-      
-      reader.onload = async (evt) => {
-        try {
-          const bstr = evt.target?.result;
-          const wb = XLSX.read(bstr, { type: 'binary' });
-          const wsname = wb.SheetNames[0];
-          const ws = wb.Sheets[wsname];
-          const rawData = XLSX.utils.sheet_to_json(ws) as any[];
-
-          if (rawData.length === 0) throw new Error("File kosong");
-
-          const normalizedData = rawData.map(row => {
-            const newRow: any = {};
-            Object.keys(row).forEach(key => {
-              let cleanKey = String(key).toLowerCase();
-              cleanKey = cleanKey.replace(/\([^\)]*\)/g, ''); 
-              cleanKey = cleanKey.replace(/[\.\"]/g, '');
-              cleanKey = cleanKey.replace(/\s+/g, ' ').trim();
-              newRow[cleanKey] = row[key];
-            });
-            return newRow;
-          });
-
-          const productsToUpsert: any[] = [];
-          const mappingsToUpsert: any[] = [];
-          const processedSkus = new Set<string>();
-
-          normalizedData.forEach(row => {
-            const rawName = row['product name'] || row['nama produk'] || '';
-            if (!rawName) return; 
-
-            const rawVariation = row['nama variasi'] || row['variation name'] || '';
-            const shopeeKodeProduk = row['kode produk'] || row['item id'] || '';
-            const shopeeKodeVariasi = row['kode variasi'] || row['model id'] || '';
-            
-            let sku = row['sku ref no'] || row['parent sku ref no'] || row['sku induk'] || '';
-            sku = String(sku).trim();
-
-            if (!sku || sku === '-') {
-                const fallbackId = shopeeKodeVariasi || shopeeKodeProduk;
-                if (fallbackId) {
-                    sku = `SHOPEE-${fallbackId}`;
-                } else {
-                    return; 
-                }
-            }
-
-            const fullInternalName = rawVariation ? `${rawName} - ${rawVariation}` : rawName;
-
-            if (!processedSkus.has(sku)) {
-                productsToUpsert.push({
-                    store_id: store.id,
-                    sku: sku,
-                    product_name: fullInternalName,
-                    hpp: 0,
-                    stock: 0
-                });
-                processedSkus.add(sku);
-            }
-
-            mappingsToUpsert.push({
-                store_id: store.id,
-                shopee_product_name: rawName,
-                shopee_variation_name: rawVariation, 
-                mapped_sku: sku
-            });
-          });
-
-          if (productsToUpsert.length === 0) {
-             throw new Error("Tidak ada data produk yang valid ditemukan.");
-          }
-
-          toast.loading(`Menyimpan ${productsToUpsert.length} produk...`, { id: toastId });
-          
-          const { error: prodError } = await supabase.from('products').upsert(productsToUpsert, { onConflict: 'store_id, sku', ignoreDuplicates: true });
-          if (prodError) throw prodError;
-
-          const { error: mapError } = await supabase.from('sku_mappings').upsert(mappingsToUpsert, { onConflict: 'store_id, shopee_product_name, shopee_variation_name' });
-          if (mapError) throw mapError;
-
-          toast.success(`Berhasil impor ${productsToUpsert.length} produk & mapping!`, { id: toastId });
-          
-          fetchProducts();
-          fetchUnmappedItems(); 
-
-        } catch (err: any) {
-          console.error(err);
-          toast.error("Gagal proses file: " + err.message, { id: toastId });
-        } finally {
-          setIsImporting(false);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        }
-      };
-      reader.readAsBinaryString(file);
-    } catch (err: any) {
-      toast.error("Gagal inisialisasi file reader");
-      setIsImporting(false);
     }
   };
 
@@ -408,13 +173,13 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       .eq('is_sku_mapped', false);
 
     if (error) {
-        toast.error("Gagal memuat unmapped items");
         setLoadingMapping(false);
         return;
     }
 
     const groups: Record<string, number> = {};
     data?.forEach(item => {
+        // Use a delimiter unlikely to be in product name
         const key = `${item.product_name}|||${item.variation || ''}`;
         groups[key] = (groups[key] || 0) + 1;
     });
@@ -433,24 +198,27 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
      const toastId = toast.loading("Menyimpan mapping...");
 
      try {
-        const { error: mapError } = await supabase.from('sku_mappings').insert([{
+        // 1. Insert ke table sku_mappings (Source of Truth)
+        const { error: mapError } = await supabase.from('sku_mappings').upsert([{
             store_id: store.id,
             shopee_product_name: selectedUnmapped.name,
             shopee_variation_name: selectedUnmapped.variation,
             mapped_sku: targetSku
-        }]);
+        }], { onConflict: 'store_id, shopee_product_name, shopee_variation_name'});
 
         if (mapError) throw mapError;
 
+        // 2. Fetch data produk master untuk dapat harga
         const product = products.find(p => p.sku === targetSku);
         if (!product) throw new Error("Produk master tidak ditemukan");
 
+        // 3. Update Existing Orders (Bulk Update)
         const { error: updateError } = await supabase
             .from('order_items')
             .update({ 
                 final_sku: targetSku, 
                 is_sku_mapped: true, 
-                hpp_at_time: product.hpp 
+                hpp_at_time: product.cost_price 
             })
             .eq('store_id', store.id)
             .eq('product_name', selectedUnmapped.name)
@@ -478,7 +246,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
             store_id: store.id,
             sku: newProduct.sku,
             product_name: newProduct.product_name,
-            hpp: newProduct.hpp,
+            cost_price: newProduct.cost_price,
             stock: 0
           }]);
           
@@ -487,6 +255,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
           await fetchProducts();
           setTargetSku(newProduct.sku);
           
+          // Re-use logic above
           const { error: mapError } = await supabase.from('sku_mappings').insert([{
             store_id: store.id,
             shopee_product_name: selectedUnmapped!.name,
@@ -501,7 +270,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
             .update({ 
                 final_sku: newProduct.sku, 
                 is_sku_mapped: true, 
-                hpp_at_time: newProduct.hpp 
+                hpp_at_time: newProduct.cost_price 
             })
             .eq('store_id', store.id)
             .eq('product_name', selectedUnmapped!.name)
@@ -511,7 +280,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         toast.success("Produk dibuat & di-mapping!", { id: toastId });
         setIsQuickCreating(false);
-        setNewProduct({ sku: '', product_name: '', hpp: 0 });
+        setNewProduct({ sku: '', product_name: '', cost_price: 0 });
         setSelectedUnmapped(null);
         fetchUnmappedItems();
 
@@ -520,13 +289,11 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       }
   };
 
-  // --- FILTERED LISTS ---
   const filteredProducts = products.filter(p => 
       p.product_name.toLowerCase().includes(searchProduct.toLowerCase()) || 
       p.sku.toLowerCase().includes(searchProduct.toLowerCase())
   );
 
-  // Filter for Mapping Modal Dropdown
   const mappingOptions = products.filter(p => 
       !mappingSearchTerm || 
       p.product_name.toLowerCase().includes(mappingSearchTerm.toLowerCase()) ||
@@ -536,7 +303,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   return (
     <div className="space-y-6">
        
-       {/* TABS */}
        <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-fit">
           <button 
              onClick={() => setActiveTab('mapping')}
@@ -565,7 +331,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
           </button>
        </div>
 
-       {/* --- MAPPING VIEW --- */}
        {activeTab === 'mapping' && (
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
              <div className="flex items-center gap-3 mb-6">
@@ -620,7 +385,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
           </div>
        )}
 
-       {/* --- MAPPING MODAL --- */}
        {selectedUnmapped && (
            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
               <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden">
@@ -645,7 +409,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                   )}
                                 </label>
                                 
-                                {/* Search Input inside Modal */}
                                 <div className="relative mb-2">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                     <input 
@@ -661,12 +424,12 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                     value={targetSku}
                                     onChange={(e) => setTargetSku(e.target.value)}
                                     className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-orange-500/20 max-h-48"
-                                    size={5} // Tampilkan sebagai list terbuka agar lebih mudah dilihat
+                                    size={5} 
                                 >
                                     <option value="" className="p-2 text-slate-400">-- Pilih SKU Internal --</option>
                                     {mappingOptions.map(p => (
                                         <option key={p.sku} value={p.sku} className="p-2 border-b border-slate-100 dark:border-slate-700/50">
-                                            {p.product_name} ({p.sku}) - Rp {p.hpp.toLocaleString()}
+                                            {p.product_name} ({p.sku}) - Rp {p.cost_price.toLocaleString()}
                                         </option>
                                     ))}
                                 </select>
@@ -678,7 +441,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 <button 
                                     onClick={() => {
                                         setIsQuickCreating(true);
-                                        setNewProduct({ sku: '', product_name: selectedUnmapped.name + (selectedUnmapped.variation ? ` - ${selectedUnmapped.variation}` : ''), hpp: 0 });
+                                        setNewProduct({ sku: '', product_name: selectedUnmapped.name + (selectedUnmapped.variation ? ` - ${selectedUnmapped.variation}` : ''), cost_price: 0 });
                                     }}
                                     className="text-xs font-black text-orange-600 uppercase hover:underline"
                                 >
@@ -725,9 +488,9 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                     <label className="text-[10px] font-black uppercase text-slate-400">HPP (Harga Modal)</label>
                                     <input 
                                         type="number" 
-                                        value={newProduct.hpp}
+                                        value={newProduct.cost_price}
                                         onWheel={(e) => e.currentTarget.blur()}
-                                        onChange={(e) => setNewProduct({...newProduct, hpp: Number(e.target.value)})}
+                                        onChange={(e) => setNewProduct({...newProduct, cost_price: Number(e.target.value)})}
                                         className="w-full p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold"
                                     />
                                 </div>
@@ -743,56 +506,9 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
            </div>
        )}
 
-       {/* --- MASTER PRODUCT VIEW --- */}
        {activeTab === 'master' && (
            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 relative">
                 
-                {/* BULK ACTIONS FLOATING HEADER */}
-                {selectedSkus.size > 0 && (
-                  <div className="absolute top-0 left-0 right-0 z-10 bg-orange-600 text-white p-4 rounded-t-2xl animate-in slide-in-from-top-2 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                       <CheckSquare className="w-5 h-5" />
-                       <span className="font-bold text-sm">{selectedSkus.size} produk dipilih</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       {isBulkEditingHpp ? (
-                          <div className="flex items-center gap-2 bg-white/20 p-1 rounded-lg">
-                             <input 
-                                type="number" 
-                                autoFocus
-                                placeholder="Input HPP Baru" 
-                                value={bulkHppValue}
-                                onWheel={(e) => e.currentTarget.blur()}
-                                onChange={(e) => setBulkHppValue(e.target.value === '' ? '' : Number(e.target.value))}
-                                className="w-32 bg-white text-orange-600 font-bold px-2 py-1 rounded text-sm outline-none"
-                             />
-                             <button onClick={handleBulkUpdateHpp} className="px-3 py-1 bg-white text-orange-600 rounded text-xs font-black hover:bg-orange-50">SIMPAN</button>
-                             <button onClick={() => setIsBulkEditingHpp(false)} className="p-1 hover:bg-orange-700 rounded"><X className="w-4 h-4" /></button>
-                          </div>
-                       ) : (
-                          <button 
-                             onClick={() => setIsBulkEditingHpp(true)}
-                             className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-black uppercase transition-all"
-                          >
-                             Edit HPP
-                          </button>
-                       )}
-                       <button 
-                          onClick={handleBulkDelete}
-                          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-black uppercase transition-all"
-                       >
-                          Hapus Terpilih
-                       </button>
-                       <button 
-                          onClick={() => setSelectedSkus(new Set())}
-                          className="p-2 hover:bg-white/20 rounded-xl"
-                       >
-                          <X className="w-5 h-5" />
-                       </button>
-                    </div>
-                  </div>
-                )}
-
                 <div className="flex flex-col xl:flex-row items-center justify-between gap-4 mb-6 mt-2">
                     <div className="relative w-full xl:w-64">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -805,33 +521,15 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                         />
                     </div>
                     
-                    <div className="flex items-center gap-2 w-full xl:w-auto">
-                        <input 
-                            type="file" 
-                            accept=".xlsx, .xls, .csv" 
-                            ref={fileInputRef}
-                            className="hidden" 
-                            onChange={handleShopeeFileChange}
-                        />
-                        <button 
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={isImporting}
-                            className="flex-1 xl:flex-none px-4 py-2 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-sm font-black rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-all flex items-center justify-center gap-2 border border-orange-200 dark:border-orange-800"
-                        >
-                            {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-                            IMPORT DARI SHOPEE
-                        </button>
-                        <button 
-                            onClick={() => setIsAddingProduct(true)}
-                            className="flex-1 xl:flex-none px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-black rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2"
-                        >
-                            <Plus className="w-4 h-4" />
-                            MANUAL
-                        </button>
-                    </div>
+                    <button 
+                        onClick={() => setIsAddingProduct(true)}
+                        className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-black rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2"
+                    >
+                        <Plus className="w-4 h-4" />
+                        MANUAL
+                    </button>
                 </div>
                 
-                {/* Form Tambah */}
                 {isAddingProduct && (
                     <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 animate-in slide-in-from-top-2">
                         <h4 className="text-xs font-black uppercase text-slate-500 mb-3">Input Produk Baru</h4>
@@ -850,9 +548,9 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                             />
                             <input 
                                 type="number" placeholder="HPP" 
-                                value={newProduct.hpp || ''}
+                                value={newProduct.cost_price || ''}
                                 onWheel={(e) => e.currentTarget.blur()}
-                                onChange={(e) => setNewProduct({...newProduct, hpp: Number(e.target.value)})}
+                                onChange={(e) => setNewProduct({...newProduct, cost_price: Number(e.target.value)})}
                                 className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold"
                             />
                         </div>
@@ -867,14 +565,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 dark:bg-slate-800">
                             <tr>
-                                <th className="w-12 px-4 py-3 text-center">
-                                   <input 
-                                      type="checkbox" 
-                                      checked={filteredProducts.length > 0 && selectedSkus.size === filteredProducts.length}
-                                      onChange={(e) => handleSelectAll(e.target.checked)}
-                                      className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
-                                   />
-                                </th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">SKU</th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">Nama Produk</th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">HPP</th>
@@ -886,14 +576,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 const isSelected = selectedSkus.has(p.sku);
                                 return (
                                 <tr key={p.sku} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${isSelected ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}`}>
-                                    <td className="px-4 py-3 text-center">
-                                       <input 
-                                          type="checkbox" 
-                                          checked={isSelected}
-                                          onChange={() => handleSelectRow(p.sku)}
-                                          className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
-                                       />
-                                    </td>
                                     <td className="px-4 py-3 text-xs font-bold font-mono dark:text-orange-300">{p.sku}</td>
                                     <td className="px-4 py-3 text-sm font-medium dark:text-white">
                                         {editingProduct?.sku === p.sku ? (
@@ -910,13 +592,13 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                             <input 
                                                 type="number"
                                                 className="w-full p-1 border rounded bg-white dark:bg-slate-900"
-                                                value={editingProduct.hpp}
+                                                value={editingProduct.cost_price}
                                                 onWheel={(e) => e.currentTarget.blur()}
-                                                onChange={(e) => setEditingProduct({...editingProduct, hpp: Number(e.target.value)})}
+                                                onChange={(e) => setEditingProduct({...editingProduct, cost_price: Number(e.target.value)})}
                                             />
                                         ) : (
-                                            <span className={p.hpp === 0 ? "text-red-500 font-bold" : ""}>
-                                                {p.hpp === 0 ? "Set HPP!" : `Rp ${p.hpp.toLocaleString()}`}
+                                            <span className={p.cost_price === 0 ? "text-red-500 font-bold" : ""}>
+                                                {p.cost_price === 0 ? "Set HPP!" : `Rp ${p.cost_price.toLocaleString()}`}
                                             </span>
                                         )}
                                     </td>
