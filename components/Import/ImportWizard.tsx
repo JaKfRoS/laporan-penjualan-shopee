@@ -12,7 +12,7 @@ interface ImportWizardProps {
   onComplete: () => void;
 }
 
-// ALIAS HEADER MAPPING (Untuk menangani format CSV Shopee yang berubah-ubah)
+// ALIAS HEADER MAPPING (Urutan Sangat Penting: Prioritas Atas dipilih duluan)
 const HEADER_ALIASES: Record<string, string[]> = {
   "order_id": ["No. Pesanan", "Order ID", "No. Transaksi"],
   "order_date": ["Waktu Pesanan Dibuat", "Order Creation Date", "Tgl Pemesanan"],
@@ -27,6 +27,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   "buyer_username": ["Username (Pembeli)", "Buyer Username", "Username"],
   "product_name": ["Nama Produk", "Product Name"],
   "quantity": ["Jumlah", "Quantity", "Qty"],
+  // PENTING: "Total Harga Produk" harus dideteksi, jangan sampai tertukar dengan "Harga Awal"
   "product_total": ["Total Harga Produk", "Product Subtotal", "Harga Awal"],
   "variation": ["Variasi", "Nama Variasi", "Variation Name", "Model Name"], 
   "city": ["Kota/Kabupaten", "City"],
@@ -87,15 +88,17 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
     const newMapping: Mapping = {};
     
     if (importType === 'orders') {
-        // Logika Mapping Cerdas: Cari header yang cocok dengan salah satu alias
+        // PERBAIKAN LOGIKA MAPPING (STRICT PRIORITY)
+        // Sebelumnya: Loop Headers -> Cari Alias (Salah, karena 'Harga Awal' muncul duluan di CSV)
+        // Sekarang: Loop Alias -> Cari di Headers (Benar, 'Total Harga Produk' diprioritaskan)
+        
         Object.entries(HEADER_ALIASES).forEach(([dbKey, aliases]) => {
-          // Cari header CSV yang cocok dengan salah satu alias (case-insensitive)
-          const foundHeader = headers.find(h => 
-            aliases.some(alias => h.trim().toLowerCase() === alias.toLowerCase())
-          );
-          
-          if (foundHeader) {
-            newMapping[dbKey] = foundHeader;
+          for (const alias of aliases) {
+             const foundHeader = headers.find(h => h.trim().toLowerCase() === alias.toLowerCase());
+             if (foundHeader) {
+                newMapping[dbKey] = foundHeader;
+                break; // Berhenti setelah menemukan prioritas utama (misal: Total Harga Produk)
+             }
           }
         });
     }
@@ -112,7 +115,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
     return isNaN(num) ? 0 : num;
   };
 
-  // --- NEW SAFE DATE PARSER ---
+  // --- SAFE DATE PARSER ---
   const getSafeDate = (val: any): string | null => {
     if (!val) return null;
     try {
@@ -166,6 +169,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         const orderId = String(row[mapping['order_id']] || '').trim();
         if (!orderId) return;
 
+        // "product_total" mapping sekarang sudah benar mengarah ke "Total Harga Produk" (Harga Diskon x Qty)
+        // Bukan ke "Harga Awal"
         const prodTotal = parseNumberIndonesia(row[mapping['product_total']]);
         const qtyRaw = row[mapping['quantity']];
         const qty = parseInt(String(qtyRaw).replace(/\D/g, '')) || 1;
