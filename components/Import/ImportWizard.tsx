@@ -28,7 +28,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   "product_name": ["Nama Produk", "Product Name"],
   "quantity": ["Jumlah", "Quantity", "Qty"],
   "product_total": ["Total Harga Produk", "Product Subtotal", "Harga Awal"],
-  "variation": ["Variasi", "Nama Variasi", "Variation Name", "Model Name"], // UPDATE PENTING DI SINI
+  "variation": ["Variasi", "Nama Variasi", "Variation Name", "Model Name"], 
   "city": ["Kota/Kabupaten", "City"],
   "province": ["Provinsi", "Province"],
   "final_sku": ["Nomor Referensi SKU", "SKU Reference No.", "SKU Induk"]
@@ -112,6 +112,25 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
     return isNaN(num) ? 0 : num;
   };
 
+  // --- NEW SAFE DATE PARSER ---
+  const getSafeDate = (val: any): string | null => {
+    if (!val) return null;
+    try {
+      let d: Date;
+      if (typeof val === 'number') {
+        // Excel serial date
+        d = new Date((val - (25567 + 1)) * 86400 * 1000);
+      } else {
+        d = new Date(val);
+      }
+      // Check if date is valid
+      if (isNaN(d.getTime())) return null;
+      return d.toISOString();
+    } catch (e) {
+      return null;
+    }
+  };
+
   const processImport = async () => {
     if (!store?.id) return;
     setIsProcessing(true);
@@ -124,17 +143,14 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
     try {
       // 1. FETCH MASTER DATA (Lookup Tables)
-      // Products: Map SKU -> Cost Price
       const { data: products } = await supabase.from('products').select('sku, cost_price').eq('store_id', store.id);
-      
-      // Mappings: Map "Name|Variation" -> SKU
       const { data: mappings } = await supabase.from('sku_mappings').select('shopee_product_name, shopee_variation_name, mapped_sku').eq('store_id', store.id);
 
       // Create Fast Lookup Maps (Normalized Keys)
-      const productMap = new Map<string, number>(); // SKU -> Cost Price
+      const productMap = new Map<string, number>(); 
       products?.forEach(p => productMap.set(normalize(p.sku), p.cost_price));
 
-      const mappingMap = new Map<string, string>(); // "name|variation" -> SKU
+      const mappingMap = new Map<string, string>(); 
       mappings?.forEach(m => {
         const key = `${normalize(m.shopee_product_name)}|${normalize(m.shopee_variation_name)}`;
         mappingMap.set(key, m.mapped_sku);
@@ -161,22 +177,16 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
           const csvServiceFee = Math.abs(parseNumberIndonesia(row[mapping['service_fee']]));
           const status = row[mapping['status']] || 'Unknown';
           
-          let orderDate: string;
-          try {
-            const rawDate = row[mapping['order_date']];
-            if (typeof rawDate === 'number') {
-              orderDate = new Date((rawDate - (25567 + 1)) * 86400 * 1000).toISOString();
-            } else {
-              orderDate = new Date(rawDate).toISOString();
-            }
-          } catch (e) { orderDate = new Date().toISOString(); }
+          // --- ROBUST DATE PARSING ---
+          const orderDate = getSafeDate(row[mapping['order_date']]) || new Date().toISOString();
+          const paymentDate = getSafeDate(row[mapping['payment_date']]);
 
           orderGroups[orderId] = {
             order: {
               store_id: store.id,
               order_id: orderId,
               order_date: orderDate,
-              payment_date: row[mapping['payment_date']] ? new Date(row[mapping['payment_date']]).toISOString() : null,
+              payment_date: paymentDate,
               status: status,
               total_payment: parseNumberIndonesia(row[mapping['total_payment']]),
               total_discount: parseNumberIndonesia(row[mapping['total_discount']]),
@@ -196,13 +206,11 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
         orderGroups[orderId].grossProductValue += prodTotal;
         
-        // --- MATCHING LOGIC (PRIORITY 1 -> 2 -> 3) ---
-        const csvSku = normalize(row[mapping['final_sku']]); // Ref SKU from CSV
+        // --- MATCHING LOGIC ---
+        const csvSku = normalize(row[mapping['final_sku']]); 
         const csvName = row[mapping['product_name']] || 'Produk Tanpa Nama';
-        // FIX: Pastikan ambil variasi jika kolomnya ada
         const csvVariation = mapping['variation'] ? (row[mapping['variation']] || '') : ''; 
         
-        // Normalized keys for lookup
         const normName = normalize(csvName);
         const normVariation = normalize(csvVariation);
         const mappingKey = `${normName}|${normVariation}`;
@@ -221,7 +229,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         else if (mappingMap.has(mappingKey)) {
             const mappedSku = mappingMap.get(mappingKey);
             if (mappedSku) {
-                // Check if that mapped SKU still exists in products to get cost
                 const normMappedSku = normalize(mappedSku);
                 if (productMap.has(normMappedSku)) {
                     finalSku = mappedSku;
@@ -230,7 +237,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
                 }
             }
         }
-        // PRIORITY 3: Fallback (Unmapped)
         
         if (!isMapped) {
             unmappedCount++;
@@ -239,12 +245,11 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         orderGroups[orderId].items.push({
           order_id: orderId,
           store_id: store.id,
-          product_name: csvName, // Simpan nama asli Shopee
-          variation: csvVariation, // Simpan variasi asli Shopee
+          product_name: csvName, 
+          variation: csvVariation, 
           quantity: qty,
           product_total: prodTotal,
           unit_price: qty > 0 ? prodTotal / qty : 0,
-          
           final_sku: finalSku,
           hpp_at_time: hppAtTime,
           is_sku_mapped: isMapped
