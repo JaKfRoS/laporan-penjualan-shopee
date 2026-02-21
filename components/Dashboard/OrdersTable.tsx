@@ -2,7 +2,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Order, Store } from '../../types';
 import { format } from 'date-fns';
-import { Search, Filter, ExternalLink, ChevronDown, Check, ChevronLeft, ChevronRight, Store as StoreIcon, AlertCircle, Link, Eye, X, Package, ShoppingBag, Layers, Tag } from 'lucide-react';
+import { supabase } from '../../services/supabase';
+import { toast } from 'react-hot-toast';
+import { Search, Filter, ExternalLink, ChevronDown, Check, ChevronLeft, ChevronRight, Store as StoreIcon, AlertCircle, Link, Eye, X, Package, ShoppingBag, Layers, Tag, Edit3, Save } from 'lucide-react';
 
 interface OrdersTableProps {
   orders: Order[];
@@ -21,6 +23,79 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
   // State untuk custom dropdown
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
+
+  const [isEditingMapping, setIsEditingMapping] = useState(false);
+  const [mappingTargetItem, setMappingTargetItem] = useState<any>(null);
+  const [availableProducts, setAvailableProducts] = useState<any[]>([]);
+  const [productSearchTerm, setProductSearchTerm] = useState('');
+  const [selectedNewSku, setSelectedNewSku] = useState('');
+
+  const fetchProductsForMapping = async (storeId: string) => {
+    const { data } = await supabase
+      .from('products')
+      .select('sku, product_name, variation_name, cost_price')
+      .eq('store_id', storeId)
+      .order('product_name');
+    setAvailableProducts(data || []);
+  };
+
+  const handleRemapItem = async () => {
+    if (!selectedNewSku || !mappingTargetItem || !selectedOrder) return;
+    
+    const toastId = toast.loading("Updating mapping...");
+    try {
+        const product = availableProducts.find(p => p.sku === selectedNewSku);
+        if (!product) throw new Error("Produk tidak ditemukan");
+
+        // 1. Update Order Item
+        const { error } = await supabase
+            .from('order_items')
+            .update({ 
+                final_sku: selectedNewSku, 
+                is_sku_mapped: true,
+                hpp_at_time: product.cost_price
+            })
+            .eq('id', mappingTargetItem.id);
+
+        if (error) throw error;
+
+        // 2. Update SKU Mapping (Optional: agar kedepannya otomatis)
+        // Cek apakah user ingin update master mapping juga? 
+        // Untuk sekarang kita update order item saja agar aman.
+        
+        toast.success("Mapping diperbarui!", { id: toastId });
+        setIsEditingMapping(false);
+        setMappingTargetItem(null);
+        setSelectedNewSku('');
+        
+        // Refresh Order Data locally
+        const updatedItems = selectedOrder.order_items?.map(item => {
+            if (item.id === mappingTargetItem.id) {
+                return { 
+                    ...item, 
+                    final_sku: selectedNewSku, 
+                    is_sku_mapped: true, 
+                    hpp_at_time: product.cost_price 
+                };
+            }
+            return item;
+        });
+        
+        // Recalculate totals for the selected order locally
+        const newNetRevenue = selectedOrder.net_revenue; // Net revenue doesn't change with HPP change, only profit does.
+        // But we might want to update the UI to reflect the new HPP immediately.
+        
+        setSelectedOrder({ ...selectedOrder, order_items: updatedItems });
+
+    } catch (err: any) {
+        toast.error("Gagal: " + err.message, { id: toastId });
+    }
+  };
+
+  const filteredProducts = availableProducts.filter(p => 
+      p.product_name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
+      p.sku.toLowerCase().includes(productSearchTerm.toLowerCase())
+  );
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -386,14 +461,40 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                                 <span className="text-xs font-black bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900 px-3 py-1 rounded-lg border border-slate-900 dark:border-slate-200">
                                    Qty: {item.quantity}
                                 </span>
-                                {item.is_sku_mapped ? (
-                                    <span className="text-xs font-bold text-green-500 dark:text-green-400 bg-green-500/10 px-3 py-1 rounded-lg flex items-center gap-1 border border-green-500/20">
-                                      <Link className="w-3 h-3" /> Terhubung: {item.final_sku}
-                                    </span>
+                                  {item.is_sku_mapped ? (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-green-500 dark:text-green-400 bg-green-500/10 px-3 py-1 rounded-lg flex items-center gap-1 border border-green-500/20">
+                                          <Link className="w-3 h-3" /> Terhubung: {item.final_sku}
+                                        </span>
+                                        <button 
+                                            onClick={() => {
+                                                setMappingTargetItem(item);
+                                                setIsEditingMapping(true);
+                                                fetchProductsForMapping(selectedOrder.store_id);
+                                            }}
+                                            className="p-1 text-slate-400 hover:text-orange-500 transition-colors"
+                                            title="Edit Mapping"
+                                        >
+                                            <Edit3 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
                                 ) : (
-                                    <span className="text-xs font-bold text-red-500 dark:text-red-400 bg-red-500/10 px-3 py-1 rounded-lg flex items-center gap-1 border border-red-500/20">
-                                      <AlertCircle className="w-3 h-3" /> Belum Mapping
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-red-500 dark:text-red-400 bg-red-500/10 px-3 py-1 rounded-lg flex items-center gap-1 border border-red-500/20">
+                                          <AlertCircle className="w-3 h-3" /> Belum Mapping
+                                        </span>
+                                        <button 
+                                            onClick={() => {
+                                                setMappingTargetItem(item);
+                                                setIsEditingMapping(true);
+                                                fetchProductsForMapping(selectedOrder.store_id);
+                                            }}
+                                            className="p-1 text-slate-400 hover:text-orange-500 transition-colors"
+                                            title="Manual Mapping"
+                                        >
+                                            <Edit3 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
                                 )}
                               </div>
                            </div>
@@ -440,6 +541,68 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
              </div>
           </div>
         </div>
+      )}
+
+      {/* --- EDIT MAPPING MODAL --- */}
+      {isEditingMapping && mappingTargetItem && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+                  <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                      <h3 className="text-sm font-black uppercase text-slate-900 dark:text-white">Edit Mapping SKU</h3>
+                      <button onClick={() => setIsEditingMapping(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                  </div>
+                  <div className="p-5 space-y-4">
+                      <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl">
+                          <p className="text-xs text-slate-500 uppercase font-bold mb-1">Produk Shopee</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">{mappingTargetItem.product_name}</p>
+                          {mappingTargetItem.variation && <p className="text-xs text-slate-500 mt-1">Var: {mappingTargetItem.variation}</p>}
+                      </div>
+
+                      <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 uppercase">Cari SKU Baru</label>
+                          <div className="relative">
+                              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                              <input 
+                                  type="text" 
+                                  placeholder="Ketik nama produk / SKU..." 
+                                  value={productSearchTerm}
+                                  onChange={(e) => setProductSearchTerm(e.target.value)}
+                                  className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-orange-500/20"
+                                  autoFocus
+                              />
+                          </div>
+                          <div className="max-h-48 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl">
+                              {filteredProducts.length > 0 ? (
+                                  filteredProducts.map(p => (
+                                      <button 
+                                          key={p.sku}
+                                          onClick={() => setSelectedNewSku(p.sku)}
+                                          className={`w-full text-left p-3 text-xs font-medium hover:bg-orange-50 dark:hover:bg-slate-800 border-b border-slate-50 dark:border-slate-800 last:border-0 transition-colors ${selectedNewSku === p.sku ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400' : 'text-slate-600 dark:text-slate-300'}`}
+                                      >
+                                          <div className="font-bold">{p.product_name}</div>
+                                          <div className="flex justify-between mt-1">
+                                              <span className="text-slate-400">{p.sku}</span>
+                                              <span className="text-slate-500">HPP: {p.cost_price.toLocaleString()}</span>
+                                          </div>
+                                      </button>
+                                  ))
+                              ) : (
+                                  <div className="p-4 text-center text-xs text-slate-400">Produk tidak ditemukan</div>
+                              )}
+                          </div>
+                      </div>
+
+                      <button 
+                          onClick={handleRemapItem}
+                          disabled={!selectedNewSku}
+                          className="w-full py-3 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                      >
+                          <Save className="w-4 h-4" />
+                          Simpan Perubahan
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
     </>
   );

@@ -121,18 +121,56 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
   const metrics = useMemo(() => {
     const data = filteredOrders;
+    
+    // 1. Total Pesanan Masuk (Semua status)
     const totalOrdersCount = data.length;
+
+    // 2. Pesanan Batal
     const cancelledOrders = data.filter(o => 
       o.status?.toLowerCase().includes('batal') || 
       o.status?.toLowerCase().includes('cancel')
     );
     const cancelledCount = cancelledOrders.length;
-    const gmv = data.reduce((acc, o) => acc + (o.product_total || 0), 0);
-    const netRevenue = data.reduce((acc, o) => {
-      const isBatal = o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel');
-      return acc + (isBatal ? 0 : (o.net_revenue || 0));
+
+    // 3. Valid Orders (Exclude Cancelled) for Financial Metrics
+    const validOrders = data.filter(o => 
+      !o.status?.toLowerCase().includes('batal') && 
+      !o.status?.toLowerCase().includes('cancel')
+    );
+
+    // 4. GMV (Gross Merchandise Value) - Total Penjualan Shopee (Valid Only)
+    const gmv = validOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
+
+    // 5. Real Omzet = GMV - Admin Fee - Service Fee
+    const realOmzet = validOrders.reduce((acc, o) => {
+      const gross = o.product_total || 0;
+      const admin = o.admin_fee || 0;
+      const service = o.service_fee || 0;
+      // Note: Shopee API sometimes gives negative values for fees, sometimes positive. 
+      // Usually fees are deductions. If they are stored as positive numbers in DB, subtract them.
+      // If stored as negative, add them. 
+      // Assuming they are stored as positive values representing the cost.
+      return acc + (gross - admin - service);
     }, 0);
-    return { totalOrders: totalOrdersCount, cancelledCount, gmv, netRevenue };
+
+    // 6. Total HPP (Valid Only)
+    const totalHPP = validOrders.reduce((acc, o) => {
+      const orderHpp = o.order_items?.reduce((h, item) => {
+        return h + ((item.hpp_at_time || 0) * item.quantity);
+      }, 0) || 0;
+      return acc + orderHpp;
+    }, 0);
+
+    // 7. Estimasi Net Profit = Real Omzet - Total HPP
+    const netProfit = realOmzet - totalHPP;
+
+    return { 
+      totalOrders: totalOrdersCount, 
+      cancelledCount, 
+      gmv, 
+      realOmzet,
+      netProfit 
+    };
   }, [filteredOrders]);
 
   const handleExportXLSX = () => {
@@ -319,18 +357,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mt-6">
           <KPICard 
             title="Penjualan (GMV)" 
             value={`Rp ${metrics.gmv.toLocaleString()}`} 
-            trend="Total Produk"
-            icon={<ShoppingBag className="w-4 h-4 text-orange-600" />}
+            trend="Total Penjualan"
+            icon={<ShoppingBag className="w-4 h-4 text-blue-600" />}
+          />
+          <KPICard 
+            title="Real Omzet" 
+            value={`Rp ${metrics.realOmzet.toLocaleString()}`} 
+            trend="Dikurangi Admin/Layanan"
+            icon={<Wallet className="w-4 h-4 text-purple-600" />}
           />
           <KPICard 
             title="Total Pesanan" 
             value={metrics.totalOrders} 
-            trend="Masuk"
-            icon={<Info className="w-4 h-4 text-blue-600" />}
+            trend="Pesanan Masuk"
+            icon={<Info className="w-4 h-4 text-orange-600" />}
           />
           <KPICard 
             title="Pesanan Batal" 
@@ -340,11 +384,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             icon={<XCircle className="w-4 h-4 text-red-600" />}
           />
           <KPICard 
-            title="Estimasi Net" 
-            value={`Rp ${metrics.netRevenue.toLocaleString()}`} 
-            trend="Estimasi Profit"
+            title="Estimasi Net Profit" 
+            value={`Rp ${metrics.netProfit.toLocaleString()}`} 
+            trend="Real Omzet - HPP"
             isHighlight
-            icon={<Wallet className="w-4 h-4 text-green-600" />}
+            icon={<Wallet className="w-4 h-4 text-emerald-600" />}
           />
         </div>
 
@@ -353,7 +397,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           <div className="text-xs text-amber-800 dark:text-amber-300 font-medium leading-relaxed">
             <p className="font-bold mb-1 uppercase tracking-tight">Penting: Laporan Pesanan Bersifat Estimasi</p>
             <p>
-              Nilai <b>Estimasi Net</b> mencakup pesanan yang belum selesai. Angka ini akan menjadi penghasilan final hanya setelah pembeli mengklik "Pesanan Diterima".
+              <b>Real Omzet</b> adalah GMV dikurangi Biaya Admin & Layanan. <br/>
+              <b>Estimasi Net Profit</b> adalah Real Omzet dikurangi Total HPP produk terjual (tidak termasuk biaya operasional lain/iklan).
             </p>
           </div>
         </div>
