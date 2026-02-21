@@ -416,6 +416,26 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     XLSX.writeFile(wb, "Template_Master_Produk_Lengkap.xlsx");
   };
 
+  const handleBackupHPP = () => {
+    if (products.length === 0) {
+        toast.error("Tidak ada data produk untuk dibackup");
+        return;
+    }
+
+    const exportData = products.map(p => ({
+        "SKU": p.sku,
+        "Nama Produk": p.product_name,
+        "Variasi": p.variation_name || "",
+        "HPP": p.cost_price
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Backup HPP");
+    XLSX.writeFile(wb, `Backup_HPP_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success("Backup HPP berhasil didownload!");
+  };
+
 
   // --- MAPPING FUNCTIONS ---
 
@@ -885,6 +905,12 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                     className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg flex items-center gap-2"
                                 >
                                     <Download className="w-3 h-3" /> Download Template
+                                </button>
+                                <button 
+                                    onClick={handleBackupHPP}
+                                    className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg flex items-center gap-2"
+                                >
+                                    <Save className="w-3 h-3" /> Backup Data HPP
                                 </button>
                             </div>
                         </div>
