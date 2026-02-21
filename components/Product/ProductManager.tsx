@@ -31,7 +31,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   // Edit/Create State
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [newProduct, setNewProduct] = useState({ sku: '', product_name: '', variation_name: '', cost_price: 0 });
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProductGroup, setEditingProductGroup] = useState<Product[] | null>(null);
 
   // Mapping Selection State
   const [selectedUnmapped, setSelectedUnmapped] = useState<{name: string, variation: string} | null>(null);
@@ -181,28 +181,40 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     }
   };
 
-  const handleUpdateProduct = async () => {
-    if (!editingProduct) return;
-    try {
-      const { error } = await supabase.from('products')
-        .update({ 
-            product_name: editingProduct.product_name,
-            variation_name: editingProduct.variation_name,
-            cost_price: editingProduct.cost_price 
-        })
-        .eq('sku', editingProduct.sku)
-        .eq('store_id', store.id);
+  const handleEditGroup = (product: Product) => {
+    const group = products.filter(p => 
+        p.product_name.trim().toLowerCase() === product.product_name.trim().toLowerCase()
+    );
+    // Deep copy to avoid mutating state directly
+    setEditingProductGroup(JSON.parse(JSON.stringify(group.length > 0 ? group : [product])));
+  };
 
-      if (error) throw error;
-      toast.success("Produk diperbarui");
-      setEditingProduct(null);
-      fetchProducts();
+  const handleSaveGroup = async () => {
+    if (!editingProductGroup) return;
+    
+    const toastId = toast.loading("Menyimpan perubahan...");
+    try {
+        const updates = editingProductGroup.map(p => 
+            supabase.from('products')
+            .update({
+                product_name: p.product_name,
+                variation_name: p.variation_name,
+                cost_price: p.cost_price
+            })
+            .eq('sku', p.sku)
+            .eq('store_id', store.id)
+        );
+
+        const results = await Promise.all(updates);
+        const errors = results.filter(r => r.error).map(r => r.error);
+        
+        if (errors.length > 0) throw errors[0];
+
+        toast.success("Produk berhasil diupdate", { id: toastId });
+        setEditingProductGroup(null);
+        fetchProducts();
     } catch (err: any) {
-      if (err.message.includes('variation_name')) {
-         toast.error("Error Database: Kolom 'Variasi' belum ada. Silakan ke Pengaturan > Script Database.", { duration: 5000 });
-      } else {
-         toast.error(err.message);
-      }
+        toast.error("Gagal update: " + err.message, { id: toastId });
     }
   };
 
@@ -926,6 +938,102 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                     </div>
                 )}
 
+                {/* GROUP EDIT MODAL */}
+                {editingProductGroup && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[90vh]">
+                            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-lg font-black uppercase dark:text-white">Set HPP Produk</h3>
+                                    <p className="text-xs text-slate-500">Atur HPP untuk semua variasi produk ini.</p>
+                                </div>
+                                <button onClick={() => setEditingProductGroup(null)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6"/></button>
+                            </div>
+                            
+                            <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
+                                {/* Shared Product Name */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Nama Produk (Berlaku untuk semua variasi)</label>
+                                    <input 
+                                        type="text" 
+                                        value={editingProductGroup[0].product_name}
+                                        onChange={(e) => {
+                                            const newName = e.target.value;
+                                            setEditingProductGroup(prev => prev ? prev.map(p => ({ ...p, product_name: newName })) : null);
+                                        }}
+                                        className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
+                                    />
+                                </div>
+
+                                {/* Variations List */}
+                                <div className="space-y-3">
+                                    <label className="text-xs font-bold text-slate-500 uppercase block">Daftar Variasi & HPP</label>
+                                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                                        <table className="w-full text-left">
+                                            <thead className="bg-slate-50 dark:bg-slate-800">
+                                                <tr>
+                                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">SKU</th>
+                                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">Variasi</th>
+                                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase w-40">HPP (Modal)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                {editingProductGroup.map((product, idx) => (
+                                                    <tr key={product.sku} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                                        <td className="px-4 py-3 text-xs font-mono text-slate-500">{product.sku}</td>
+                                                        <td className="px-4 py-3">
+                                                            <input 
+                                                                type="text"
+                                                                value={product.variation_name || ''}
+                                                                placeholder="-"
+                                                                onChange={(e) => {
+                                                                    const newVar = e.target.value;
+                                                                    setEditingProductGroup(prev => {
+                                                                        if (!prev) return null;
+                                                                        const newGroup = [...prev];
+                                                                        newGroup[idx] = { ...newGroup[idx], variation_name: newVar };
+                                                                        return newGroup;
+                                                                    });
+                                                                }}
+                                                                className="w-full bg-transparent border-b border-transparent focus:border-orange-500 outline-none text-sm font-medium"
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <div className="relative">
+                                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">Rp</span>
+                                                                <input 
+                                                                    type="number"
+                                                                    value={product.cost_price}
+                                                                    onWheel={(e) => e.currentTarget.blur()}
+                                                                    onChange={(e) => {
+                                                                        const newPrice = Number(e.target.value);
+                                                                        setEditingProductGroup(prev => {
+                                                                            if (!prev) return null;
+                                                                            const newGroup = [...prev];
+                                                                            newGroup[idx] = { ...newGroup[idx], cost_price: newPrice };
+                                                                            return newGroup;
+                                                                        });
+                                                                    }}
+                                                                    className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-orange-500/20"
+                                                                />
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800/50 rounded-b-3xl">
+                                <button onClick={() => setEditingProductGroup(null)} className="px-6 py-3 text-sm font-bold text-slate-500 hover:bg-white rounded-xl transition-all">Batal</button>
+                                <button onClick={handleSaveGroup} className="px-6 py-3 bg-orange-600 text-white text-sm font-bold rounded-xl hover:bg-orange-700 shadow-lg shadow-orange-600/20 transition-all">Simpan Perubahan</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 dark:bg-slate-800">
@@ -964,62 +1072,31 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                     
                                     {/* Kolom Produk */}
                                     <td className="px-4 py-3 text-sm font-medium dark:text-white">
-                                        {editingProduct?.sku === p.sku ? (
-                                            <input 
-                                                autoFocus
-                                                className="w-full p-1 border rounded bg-white dark:bg-slate-900"
-                                                value={editingProduct.product_name}
-                                                onChange={(e) => setEditingProduct({...editingProduct, product_name: e.target.value})}
-                                            />
-                                        ) : p.product_name}
+                                        {p.product_name}
                                     </td>
 
                                     {/* Kolom Variasi (BARU) */}
                                     <td className="px-4 py-3 text-sm font-medium dark:text-white">
-                                        {editingProduct?.sku === p.sku ? (
-                                            <input 
-                                                className="w-full p-1 border rounded bg-white dark:bg-slate-900"
-                                                value={editingProduct.variation_name || ''}
-                                                onChange={(e) => setEditingProduct({...editingProduct, variation_name: e.target.value})}
-                                                placeholder="-"
-                                            />
-                                        ) : (
-                                            p.variation_name ? (
-                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                                    <Tag className="w-3 h-3" /> {p.variation_name}
-                                                </span>
-                                            ) : <span className="text-slate-300">-</span>
-                                        )}
+                                        {p.variation_name ? (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                <Tag className="w-3 h-3" /> {p.variation_name}
+                                            </span>
+                                        ) : <span className="text-slate-300">-</span>}
                                     </td>
 
                                     {/* Kolom HPP */}
                                     <td className="px-4 py-3 text-sm font-medium dark:text-slate-300">
-                                        {editingProduct?.sku === p.sku ? (
-                                            <input 
-                                                type="number"
-                                                className="w-full p-1 border rounded bg-white dark:bg-slate-900"
-                                                value={editingProduct.cost_price}
-                                                onWheel={(e) => e.currentTarget.blur()}
-                                                onChange={(e) => setEditingProduct({...editingProduct, cost_price: Number(e.target.value)})}
-                                            />
-                                        ) : (
-                                            <span className={p.cost_price === 0 ? "text-red-500 font-bold" : ""}>
-                                                {p.cost_price === 0 ? "Set HPP!" : `Rp ${p.cost_price.toLocaleString()}`}
-                                            </span>
-                                        )}
+                                        <span className={p.cost_price === 0 ? "text-red-500 font-bold" : ""}>
+                                            {p.cost_price === 0 ? "Set HPP!" : `Rp ${p.cost_price.toLocaleString()}`}
+                                        </span>
                                     </td>
                                     <td className="px-4 py-3 text-right flex justify-end gap-2">
-                                        {editingProduct?.sku === p.sku ? (
-                                            <>
-                                                <button onClick={handleUpdateProduct} className="p-1.5 bg-green-100 text-green-600 rounded-lg hover:bg-green-200"><Save className="w-4 h-4" /></button>
-                                                <button onClick={() => setEditingProduct(null)} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200"><X className="w-4 h-4" /></button>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <button onClick={() => setEditingProduct(p)} className="p-1.5 text-slate-400 hover:text-orange-600"><Edit2 className="w-4 h-4" /></button>
-                                                <button onClick={() => handleDeleteProduct(p.sku)} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-                                            </>
-                                        )}
+                                        <button onClick={() => handleEditGroup(p)} className="p-1.5 text-slate-400 hover:text-orange-600 bg-slate-50 dark:bg-slate-800 rounded-lg border border-transparent hover:border-orange-200 transition-all">
+                                            <Edit2 className="w-4 h-4" />
+                                        </button>
+                                        <button onClick={() => handleDeleteProduct(p.sku)} className="p-1.5 text-slate-400 hover:text-red-600 bg-slate-50 dark:bg-slate-800 rounded-lg border border-transparent hover:border-red-200 transition-all">
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
                                     </td>
                                 </tr>
                             )})}
