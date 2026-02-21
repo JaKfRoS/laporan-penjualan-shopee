@@ -8,7 +8,7 @@ import { RevenueChart } from './RevenueChart';
 import { ProductChart } from './ProductChart';
 import { OrdersTable } from './OrdersTable';
 import { DateRangePicker } from './DateRangePicker';
-import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet } from 'lucide-react';
+import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings } from 'lucide-react';
 import { getSalesInsights } from '../../services/gemini';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -132,28 +132,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     );
     const cancelledCount = cancelledOrders.length;
 
-    // 3. Valid Orders (Exclude Cancelled) for Financial Metrics
+    // 3. Pesanan Retur (Pengembalian)
+    const returnedOrders = data.filter(o => 
+      o.status?.toLowerCase().includes('retur') || 
+      o.status?.toLowerCase().includes('pengembalian')
+    );
+    const returnedCount = returnedOrders.length;
+
+    // 4. Valid Orders (Exclude Cancelled & Returned for Revenue?)
+    // Usually returned orders are deducted. For now, let's keep the logic simple:
+    // If status is 'Selesai', it's counted. If 'Retur', usually GMV is 0 or deducted.
+    // Existing logic excludes 'batal'/'cancel'. Let's also exclude 'retur' from GMV/Revenue if that's the standard.
+    // However, Shopee export might have 'Pengembalian' status.
+    
     const validOrders = data.filter(o => 
       !o.status?.toLowerCase().includes('batal') && 
-      !o.status?.toLowerCase().includes('cancel')
+      !o.status?.toLowerCase().includes('cancel') &&
+      !o.status?.toLowerCase().includes('pengembalian') &&
+      !o.status?.toLowerCase().includes('retur')
     );
 
-    // 4. GMV (Gross Merchandise Value) - Total Penjualan Shopee (Valid Only)
+    // 5. GMV (Gross Merchandise Value) - Total Penjualan Shopee (Valid Only)
     const gmv = validOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
 
-    // 5. Real Omzet = GMV - Admin Fee - Service Fee
+    // 6. Real Omzet = GMV - Admin Fee - Service Fee
     const realOmzet = validOrders.reduce((acc, o) => {
       const gross = o.product_total || 0;
       const admin = o.admin_fee || 0;
       const service = o.service_fee || 0;
-      // Note: Shopee API sometimes gives negative values for fees, sometimes positive. 
-      // Usually fees are deductions. If they are stored as positive numbers in DB, subtract them.
-      // If stored as negative, add them. 
-      // Assuming they are stored as positive values representing the cost.
       return acc + (gross - admin - service);
     }, 0);
 
-    // 6. Total HPP (Valid Only)
+    // 7. Total HPP (Valid Only)
     const totalHPP = validOrders.reduce((acc, o) => {
       const orderHpp = o.order_items?.reduce((h, item) => {
         return h + ((item.hpp_at_time || 0) * item.quantity);
@@ -161,15 +171,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       return acc + orderHpp;
     }, 0);
 
-    // 7. Estimasi Net Profit = Real Omzet - Total HPP
-    const netProfit = realOmzet - totalHPP;
+    // 8. Estimasi Net Profit = Real Omzet - Total HPP
+    // (Adjustment is not yet in DB, so we assume 0 for now)
+    const adjustment = 0; 
+    const netProfit = realOmzet - totalHPP - adjustment;
 
     return { 
       totalOrders: totalOrdersCount, 
       cancelledCount, 
+      returnedCount,
       gmv, 
       realOmzet,
-      netProfit 
+      netProfit,
+      adjustment
     };
   }, [filteredOrders]);
 
@@ -357,11 +371,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mt-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
           <KPICard 
             title="Penjualan (GMV)" 
             value={`Rp ${metrics.gmv.toLocaleString()}`} 
-            trend="Total Penjualan"
+            trend="Total Penjualan Valid"
             icon={<ShoppingBag className="w-4 h-4 text-blue-600" />}
           />
           <KPICard 
@@ -371,11 +385,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             icon={<Wallet className="w-4 h-4 text-purple-600" />}
           />
           <KPICard 
+            title="Estimasi Net Profit" 
+            value={`Rp ${metrics.netProfit.toLocaleString()}`} 
+            trend="Real Omzet - HPP"
+            isHighlight
+            icon={<Wallet className="w-4 h-4 text-emerald-600" />}
+          />
+           <KPICard 
             title="Total Pesanan" 
             value={metrics.totalOrders} 
-            trend="Pesanan Masuk"
+            trend="Semua Status"
             icon={<Info className="w-4 h-4 text-orange-600" />}
           />
+          
+          {/* Row 2 */}
           <KPICard 
             title="Pesanan Batal" 
             value={metrics.cancelledCount} 
@@ -384,11 +407,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             icon={<XCircle className="w-4 h-4 text-red-600" />}
           />
           <KPICard 
-            title="Estimasi Net Profit" 
-            value={`Rp ${metrics.netProfit.toLocaleString()}`} 
-            trend="Real Omzet - HPP"
-            isHighlight
-            icon={<Wallet className="w-4 h-4 text-emerald-600" />}
+            title="Pesanan Retur" 
+            value={metrics.returnedCount} 
+            trend="Pengembalian"
+            isNegative
+            icon={<ArrowRightLeft className="w-4 h-4 text-orange-600" />}
+          />
+          <KPICard 
+            title="Penyesuaian" 
+            value={`Rp ${metrics.adjustment.toLocaleString()}`} 
+            trend="Manual Adjustment"
+            icon={<Settings className="w-4 h-4 text-slate-600" />}
           />
         </div>
 
