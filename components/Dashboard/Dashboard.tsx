@@ -333,8 +333,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         const rows = [];
 
         // Header Section
-        rows.push(["LAPORAN PROYEK"]);
-        rows.push(["powered by ShopeeSales"]);
+        rows.push([`LAPORAN TOKO ${sheetStoreName.toUpperCase()}`]);
+        rows.push(["powered by OneWaymedia"]);
         rows.push([""]);
         rows.push(["Platform:", "Shopee"]);
         rows.push(["Tipe Kalkulasi:", "Berbasis Pesanan"]);
@@ -491,12 +491,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       // 1. Header
       doc.setFontSize(22);
       doc.setFont('helvetica', 'bold');
-      doc.text("LAPORAN PROYEK", 14, 22);
+      const reportTitle = `LAPORAN TOKO ${store.id === 'all' ? 'GABUNGAN' : store.name.toUpperCase()}`;
+      doc.text(reportTitle, 14, 22);
       
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100);
-      doc.text("powered by ShopeeSales", 14, 30);
+      doc.text("powered by OneWaymedia", 14, 30);
+
+      if (store.id === 'all' && allStores) {
+        doc.setFontSize(8);
+        doc.text(`Detail Toko: ${allStores.map(s => s.name).join(', ')}`, 14, 35);
+      }
 
       doc.setTextColor(0);
       doc.setFontSize(11);
@@ -615,6 +621,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
         styles: { fontSize: 7 },
       });
+
+      // 5. Final Summary Page (Matching Image)
+      doc.addPage();
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 41, 59); // slate-800
+      doc.text("Ringkasan", 20, 30);
+
+      const summaryYStart = 60;
+      const rowHeight = 15;
+      doc.setFontSize(14);
+      
+      // Total Transaksi
+      doc.text("Total Transaksi", 30, summaryYStart);
+      doc.text(totalTransaksi.toString(), 250, summaryYStart, { align: 'right' });
+
+      // Total Omzet
+      doc.text("Total Omzet", 30, summaryYStart + rowHeight);
+      doc.text(`Rp ${totalOmzet.toLocaleString()}`, 250, summaryYStart + rowHeight, { align: 'right' });
+
+      // Total Keuntungan
+      doc.text("Total Keuntungan", 30, summaryYStart + (rowHeight * 2));
+      doc.text(`Rp ${totalKeuntungan.toLocaleString()}`, 250, summaryYStart + (rowHeight * 2), { align: 'right' });
+
+      // Margin Keuntungan
+      doc.text("Margin Keuntungan", 30, summaryYStart + (rowHeight * 3));
+      doc.text(`${margin.toFixed(2)} %`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
+
+      // Footer for the final page
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(148, 163, 184); // slate-400
+      const footerY = 190;
+      doc.text(`Digenerate pada ${exportTime}`, 20, footerY);
+      doc.text("ShopeeSales - E-Commerce Analytics Platform", 277, footerY, { align: 'right' });
 
       const fileName = `Laporan_Proyek_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);

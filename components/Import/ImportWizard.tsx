@@ -428,6 +428,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       const { error: itemError } = await supabase.from('order_items').insert(itemsToUpsert);
       if (itemError) throw itemError;
 
+      // 6. UPDATE LAST IMPORT TIMESTAMP
+      const now = new Date().toISOString();
+      await supabase
+        .from('stores')
+        .update({ last_import_at: now })
+        .eq('id', store.id);
+
       toast.success(`Berhasil sinkron ${ordersToUpsert.length} pesanan.`);
       setStep(3);
 
@@ -451,11 +458,18 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         ))}
       </div>
 
-      <div className="bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 rounded-2xl p-4 mb-8 flex items-center justify-center gap-3">
-        <StoreIcon className="w-5 h-5 text-orange-600" />
-        <span className="text-sm text-orange-800 dark:text-orange-200 font-medium">
-          Mengimpor data untuk toko: <span className="font-black uppercase tracking-wide">{store.name}</span>
-        </span>
+      <div className="bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 rounded-2xl p-4 mb-8 flex flex-col items-center justify-center gap-1">
+        <div className="flex items-center gap-3">
+          <StoreIcon className="w-5 h-5 text-orange-600" />
+          <span className="text-sm text-orange-800 dark:text-orange-200 font-medium">
+            Mengimpor data untuk toko: <span className="font-black uppercase tracking-wide">{store.name}</span>
+          </span>
+        </div>
+        {store.last_import_at && (
+          <span className="text-[10px] text-orange-600/70 dark:text-orange-400/70 font-bold uppercase tracking-widest">
+            Terakhir diperbarui: {new Date(store.last_import_at).toLocaleString('id-ID')}
+          </span>
+        )}
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 p-8">

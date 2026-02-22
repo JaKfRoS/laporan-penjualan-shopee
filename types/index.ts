@@ -4,6 +4,7 @@ export interface Store {
   user_id: string;
   name: string;
   created_at: string;
+  last_import_at?: string;
 }
 
 export interface OrderItem {
