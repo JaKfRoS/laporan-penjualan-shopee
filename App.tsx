@@ -382,7 +382,9 @@ export default function App() {
                   <pre className="bg-slate-900 text-orange-400 p-4 rounded-xl text-[10px] md:text-xs overflow-x-auto font-mono mb-4 border border-slate-800 select-all whitespace-pre-wrap break-all">
 {`-- BAGIAN PENTING: KOLOM BARU --
 ALTER TABLE products ADD COLUMN IF NOT EXISTS variation_name text DEFAULT NULL;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS processing_fee numeric DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS fee_details jsonb DEFAULT '{}'::jsonb;
+ALTER TABLE stores ADD COLUMN IF NOT EXISTS last_import_at timestamptz DEFAULT NULL;
 
 -- BAGIAN 4.5: RPC Safe Delete & Policies --
 
@@ -437,8 +439,8 @@ $$;`}
             />
           )}
 
-          {activeTab === 'calculator' && (
-             <PriceCalculator />
+          {activeTab === 'calculator' && currentStore && (
+             <PriceCalculator store={currentStore} />
           )}
 
           {activeTab === 'products' && currentStore && (

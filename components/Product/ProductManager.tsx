@@ -30,7 +30,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   
   // Edit/Create State
   const [isAddingProduct, setIsAddingProduct] = useState(false);
-  const [newProduct, setNewProduct] = useState({ sku: '', product_name: '', variation_name: '', cost_price: 0 });
+  const [newProduct, setNewProduct] = useState({ sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
   const [editingProductGroup, setEditingProductGroup] = useState<Product[] | null>(null);
 
   // Mapping Selection State
@@ -163,6 +163,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         product_name: newProduct.product_name,
         variation_name: newProduct.variation_name || null,
         cost_price: newProduct.cost_price, 
+        processing_fee: newProduct.processing_fee,
         stock: 0
       }]);
 
@@ -170,7 +171,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       
       toast.success("Produk berhasil ditambahkan");
       setIsAddingProduct(false);
-      setNewProduct({ sku: '', product_name: '', variation_name: '', cost_price: 0 });
+      setNewProduct({ sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
       fetchProducts();
     } catch (err: any) {
       if (err.message.includes('variation_name')) {
@@ -199,7 +200,8 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
             .update({
                 product_name: p.product_name,
                 variation_name: p.variation_name,
-                cost_price: p.cost_price
+                cost_price: p.cost_price,
+                processing_fee: p.processing_fee
             })
             .eq('sku', p.sku)
             .eq('store_id', store.id)
@@ -351,6 +353,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                     const nameKey = keys.find(k => k.toLowerCase().includes('nama') || k.toLowerCase().includes('produk'));
                     const varKey = keys.find(k => k.toLowerCase().includes('variasi') || k.toLowerCase().includes('variation'));
                     const hppKey = keys.find(k => k.toLowerCase().includes('hpp') || k.toLowerCase().includes('cost') || k.toLowerCase().includes('modal') || k.toLowerCase().includes('harga'));
+                    const procKey = keys.find(k => k.toLowerCase().includes('proses') || k.toLowerCase().includes('processing') || k.toLowerCase().includes('fee'));
 
                     if (skuKey && row[skuKey]) {
                         const rawHpp = hppKey ? row[hppKey] : 0;
@@ -361,12 +364,21 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                             cleanHpp = Number(rawHpp) || 0;
                         }
 
+                        const rawProc = procKey ? row[procKey] : 0;
+                        let cleanProc = 0;
+                        if (typeof rawProc === 'string') {
+                            cleanProc = parseFloat(rawProc.replace(/[^0-9.-]+/g, ""));
+                        } else {
+                            cleanProc = Number(rawProc) || 0;
+                        }
+
                         productsToUpsert.push({
                             store_id: store.id,
                             sku: String(row[skuKey]).trim(),
                             product_name: nameKey ? String(row[nameKey]).trim() : 'Imported Product',
                             variation_name: varKey ? String(row[varKey]).trim() : null,
                             cost_price: cleanHpp,
+                            processing_fee: cleanProc,
                             stock: 0
                         });
                         successCount++;
@@ -407,9 +419,9 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
   const handleDownloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([
-        { "SKU": "KT-KOL-001", "Nama Produk": "Kolam Terpal Kotak Korea", "nama variasi": "Kolam Saja", "HPP": 150000 },
-        { "SKU": "KT+P-002", "Nama Produk": "Kolam Terpal Kotak Korea", "nama variasi": "+ Pembuangan Drat", "HPP": 175000 },
-        { "SKU": "TP-A12-005", "Nama Produk": "TERPAL PE A20 KOREA 2X3", "nama variasi": "A12", "HPP": 85000 }
+        { "SKU": "KT-KOL-001", "Nama Produk": "Kolam Terpal Kotak Korea", "nama variasi": "Kolam Saja", "HPP": 150000, "Biaya Proses": 5000 },
+        { "SKU": "KT+P-002", "Nama Produk": "Kolam Terpal Kotak Korea", "nama variasi": "+ Pembuangan Drat", "HPP": 175000, "Biaya Proses": 5000 },
+        { "SKU": "TP-A12-005", "Nama Produk": "TERPAL PE A20 KOREA 2X3", "nama variasi": "A12", "HPP": 85000, "Biaya Proses": 2000 }
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template");
@@ -426,7 +438,8 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         "SKU": p.sku,
         "Nama Produk": p.product_name,
         "Variasi": p.variation_name || "",
-        "HPP": p.cost_price
+        "HPP": p.cost_price,
+        "Biaya Proses": p.processing_fee || 0
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -519,6 +532,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
             product_name: newProduct.product_name,
             variation_name: newProduct.variation_name || null,
             cost_price: newProduct.cost_price,
+            processing_fee: newProduct.processing_fee,
             stock: 0
           }]);
           
@@ -551,7 +565,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         toast.success("Produk dibuat & di-mapping!", { id: toastId });
         setIsQuickCreating(false);
-        setNewProduct({ sku: '', product_name: '', variation_name: '', cost_price: 0 });
+        setNewProduct({ sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
         setSelectedUnmapped(null);
         fetchUnmappedItems();
 
@@ -725,7 +739,8 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                             sku: '', 
                                             product_name: selectedUnmapped.name,
                                             variation_name: selectedUnmapped.variation || '', 
-                                            cost_price: 0 
+                                            cost_price: 0,
+                                            processing_fee: 1250
                                         });
                                     }}
                                     className="text-xs font-black text-orange-600 uppercase hover:underline"
@@ -786,6 +801,16 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                         value={newProduct.cost_price}
                                         onWheel={(e) => e.currentTarget.blur()}
                                         onChange={(e) => setNewProduct({...newProduct, cost_price: Number(e.target.value)})}
+                                        className="w-full p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase text-slate-400">Biaya Proses</label>
+                                    <input 
+                                        type="number" 
+                                        value={newProduct.processing_fee || ''}
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        onChange={(e) => setNewProduct({...newProduct, processing_fee: Number(e.target.value)})}
                                         className="w-full p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold"
                                     />
                                 </div>
@@ -954,6 +979,13 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 value={newProduct.cost_price || ''}
                                 onWheel={(e) => e.currentTarget.blur()}
                                 onChange={(e) => setNewProduct({...newProduct, cost_price: Number(e.target.value)})}
+                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold"
+                            />
+                            <input 
+                                type="number" placeholder="Biaya Proses" 
+                                value={newProduct.processing_fee || ''}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                onChange={(e) => setNewProduct({...newProduct, processing_fee: Number(e.target.value)})}
                                 className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold"
                             />
                         </div>

@@ -1,6 +1,8 @@
 
-import React, { useState, useMemo } from 'react';
-import { ShoppingBag, DollarSign, Package, Activity, TrendingUp, TriangleAlert, BarChart3, Info, Sparkles, Layers, Briefcase } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { ShoppingBag, DollarSign, Package, Activity, TrendingUp, TriangleAlert, BarChart3, Info, Sparkles, Layers, Briefcase, Search, CheckCircle2 } from 'lucide-react';
+import { supabase } from '../../services/supabase';
+import { Store, Product } from '../../types';
 
 // --- Utilities ---
 const formatRupiah = (value: number) => {
@@ -107,7 +109,16 @@ const ResultCard: React.FC<{
 
 // --- Main Calculator Component ---
 
-export const PriceCalculator: React.FC = () => {
+interface PriceCalculatorProps {
+  store: Store;
+}
+
+export const PriceCalculator: React.FC<PriceCalculatorProps> = ({ store }) => {
+  // Master Products State
+  const [products, setProducts] = useState<Product[]>([]);
+  const [searchSku, setSearchSku] = useState('');
+  const [showSkuDropdown, setShowSkuDropdown] = useState(false);
+
   // Input States
   const [price, setPrice] = useState<number | ''>(''); 
   const [voucher, setVoucher] = useState<number | ''>(''); 
@@ -117,6 +128,51 @@ export const PriceCalculator: React.FC = () => {
   const [overheadPercent, setOverheadPercent] = useState<number | ''>(''); 
   const [adsProfitPercent, setAdsProfitPercent] = useState<number | ''>(''); 
   
+  // Fetch Products
+  useEffect(() => {
+    const fetchProducts = async () => {
+      const { data } = await supabase
+        .from('products')
+        .select('*')
+        .eq('store_id', store.id)
+        .order('product_name');
+      if (data) setProducts(data);
+    };
+    fetchProducts();
+  }, [store.id]);
+
+  const filteredProducts = useMemo(() => {
+    if (!searchSku) return [];
+    return products.filter(p => 
+      p.sku.toLowerCase().includes(searchSku.toLowerCase()) ||
+      p.product_name.toLowerCase().includes(searchSku.toLowerCase())
+    ).slice(0, 5);
+  }, [searchSku, products]);
+
+  const handleSelectProduct = async (product: Product) => {
+    setHpp(product.cost_price);
+    setProcessingCost(product.processing_fee || 1250);
+    setSearchSku(`${product.sku} - ${product.product_name}`);
+    setShowSkuDropdown(false);
+
+    // Fetch last selling price from order_items
+    try {
+      const { data, error } = await supabase
+        .from('order_items')
+        .select('unit_price')
+        .eq('final_sku', product.sku)
+        .eq('store_id', store.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (data && data.length > 0) {
+        setPrice(data[0].unit_price);
+      }
+    } catch (err) {
+      console.error("Error fetching last selling price:", err);
+    }
+  };
+
   // Toggle State
   const [accelerationMode, setAccelerationMode] = useState<boolean>(false);
 
@@ -232,6 +288,47 @@ export const PriceCalculator: React.FC = () => {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-8">
+            <div className="md:col-span-3">
+              <div className="relative">
+                <label className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest ml-1 mb-2 block">Cari Produk Master (Auto-Fill HPP)</label>
+                <div className="relative group">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 group-focus-within:text-orange-500 transition-colors" />
+                  <input
+                    type="text"
+                    placeholder="Ketik SKU atau Nama Produk..."
+                    value={searchSku}
+                    onChange={(e) => {
+                      setSearchSku(e.target.value);
+                      setShowSkuDropdown(true);
+                    }}
+                    onFocus={() => setShowSkuDropdown(true)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-4 pl-12 pr-4 font-bold text-slate-900 dark:text-white outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
+                  />
+                  {showSkuDropdown && filteredProducts.length > 0 && (
+                    <div className="absolute z-50 left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                      {filteredProducts.map((p) => (
+                        <button
+                          key={p.sku}
+                          onClick={() => handleSelectProduct(p)}
+                          className="w-full text-left p-4 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-colors"
+                        >
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className="font-black text-slate-900 dark:text-white text-sm">{p.sku}</p>
+                              <p className="text-xs text-slate-500 font-medium">{p.product_name} {p.variation_name ? `(${p.variation_name})` : ''}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs font-black text-emerald-500">HPP: {formatRupiah(p.cost_price)}</p>
+                              <p className="text-[10px] text-slate-400 font-bold">Proses: {formatRupiah(p.processing_fee || 0)}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
             <InputGroup label="Harga Jual Final" id="inputA" value={price} onChange={setPrice} prefix="Rp" />
             <InputGroup label="Voucher Seller" id="inputB" value={voucher} onChange={setVoucher} prefix="Rp" />
             <InputGroup label="Biaya Admin (%)" id="inputC" value={adminFee} onChange={setAdminFee} suffix="%" step="0.1" />

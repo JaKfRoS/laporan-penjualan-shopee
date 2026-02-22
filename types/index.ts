@@ -51,6 +51,7 @@ export interface Product {
   product_name: string;
   variation_name?: string;
   cost_price: number; // Renamed from hpp to match DB request
+  processing_fee?: number; // Added processing_fee
   stock: number;
   created_at?: string;
 }
