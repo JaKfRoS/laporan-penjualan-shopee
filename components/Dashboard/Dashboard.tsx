@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { supabase } from '../../services/supabase';
 import { Store, Order } from '../../types';
 import { KPICard } from './KPICard';
@@ -424,6 +426,172 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     }
   };
 
+  const handleExportPDF = () => {
+    if (filteredOrders.length === 0) {
+      toast.error("Tidak ada data untuk diekspor");
+      return;
+    }
+
+    const toastId = toast.loading("Menyiapkan Laporan PDF...");
+
+    try {
+      const doc = new jsPDF();
+      const exportTime = new Date().toLocaleString('id-ID');
+      
+      let startDateStr = dateRange.start;
+      let endDateStr = dateRange.end;
+      if (!startDateStr && filteredOrders.length > 0) {
+        const sortedDates = [...filteredOrders].sort((a, b) => new Date(a.order_date).getTime() - new Date(b.order_date).getTime());
+        startDateStr = sortedDates[0].order_date.split('T')[0];
+      }
+      if (!endDateStr && filteredOrders.length > 0) {
+        const sortedDates = [...filteredOrders].sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
+        endDateStr = sortedDates[0].order_date.split('T')[0];
+      }
+      const formatDate = (dateStr: string) => {
+        try { return format(new Date(dateStr), 'dd/MM/yyyy'); } 
+        catch { return dateStr; }
+      };
+      const displayPeriod = `${formatDate(startDateStr || '')} - ${formatDate(endDateStr || '')}`;
+
+      // 1. Header
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.text("LAPORAN PROYEK", 14, 22);
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100);
+      doc.text("powered by ShopeeSales", 14, 30);
+
+      doc.setTextColor(0);
+      doc.setFontSize(11);
+      doc.text(`Platform: Shopee`, 14, 45);
+      doc.text(`Tipe Kalkulasi: Berbasis Pesanan`, 14, 52);
+      doc.text(`Tanggal Export: ${exportTime}`, 14, 59);
+      doc.text(`Periode: ${displayPeriod}`, 14, 66);
+      doc.text(`Filter: Tanggal Dibuat`, 14, 73);
+
+      // 2. Ringkasan Analytics
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Ringkasan Analytics", 14, 90);
+
+      const settledOrders = filteredOrders.filter(o => (o.status || '').toLowerCase() === 'selesai' || (o.status || '').toLowerCase() === 'pengembalian');
+      const totalOmzet = settledOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
+      const totalPemasukan = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
+      const totalHPP = settledOrders.reduce((acc, o) => {
+           const orderHpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
+           return acc + orderHpp;
+      }, 0);
+      const totalKeuntungan = totalPemasukan - totalHPP;
+      const totalTransaksi = filteredOrders.length;
+      const transaksiBatal = filteredOrders.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel')).length;
+      const transaksiRetur = filteredOrders.filter(o => o.status?.toLowerCase().includes('retur') || o.status?.toLowerCase().includes('pengembalian')).length;
+      const avgOrderValue = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0;
+      const margin = totalOmzet > 0 ? (totalKeuntungan / totalOmzet) * 100 : 0;
+
+      autoTable(doc, {
+        startY: 95,
+        head: [['Metrik', 'Nilai']],
+        body: [
+          ['Total Omzet', `Rp ${totalOmzet.toLocaleString()}`],
+          ['Total Pemasukan', `Rp ${totalPemasukan.toLocaleString()}`],
+          ['Total Keuntungan', `Rp ${totalKeuntungan.toLocaleString()}`],
+          ['Total HPP', `Rp ${totalHPP.toLocaleString()}`],
+          ['Total Transaksi', totalTransaksi.toString()],
+          ['Transaksi Batal', transaksiBatal.toString()],
+          ['Transaksi Retur', transaksiRetur.toString()],
+          ['Rata-rata Nilai Order', `Rp ${avgOrderValue.toLocaleString()}`],
+          ['Margin Keuntungan', `${margin.toFixed(2)}%`],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [37, 99, 235] },
+      });
+
+      // 3. Fee Breakdown
+      let feeBreakdown = { admin: 0, ams: 0, service: 0, shippingRebate: 0, refund: 0, shippingForwarded: 0, returnShipping: 0, premium: 0, voucher: 0 };
+      filteredOrders.forEach(o => {
+          if (o.fee_details) {
+              feeBreakdown.admin += (o.fee_details.admin_fee || 0);
+              feeBreakdown.ams += (o.fee_details.ams_commission || 0);
+              feeBreakdown.service += (o.fee_details.service_fee || 0);
+              feeBreakdown.shippingRebate += (o.fee_details.shipping_rebate || 0);
+              feeBreakdown.refund += (o.fee_details.refund_amount || 0);
+              feeBreakdown.shippingForwarded += (o.fee_details.shipping_forwarded || 0);
+              feeBreakdown.returnShipping += (o.fee_details.return_shipping_fee || 0);
+              feeBreakdown.premium += (o.fee_details.premium_fee || 0);
+              feeBreakdown.voucher += (o.fee_details.seller_voucher || 0);
+          }
+      });
+
+      doc.addPage();
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Fee Breakdown (Shopee)", 14, 22);
+
+      autoTable(doc, {
+        startY: 27,
+        head: [['Jenis Fee', 'Jumlah', 'Tipe']],
+        body: [
+          ['Biaya Administrasi', `-Rp ${feeBreakdown.admin.toLocaleString()}`, 'Biaya'],
+          ['Biaya Komisi AMS', `-Rp ${feeBreakdown.ams.toLocaleString()}`, 'Biaya'],
+          ['Biaya Layanan', `-Rp ${feeBreakdown.service.toLocaleString()}`, 'Biaya'],
+          ['Gratis Ongkir dari Shopee', `+Rp ${feeBreakdown.shippingRebate.toLocaleString()}`, 'Pemasukan'],
+          ['Jumlah Pengembalian Dana ke Pembeli', `-Rp ${feeBreakdown.refund.toLocaleString()}`, 'Biaya'],
+          ['Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim', `-Rp ${feeBreakdown.shippingForwarded.toLocaleString()}`, 'Biaya'],
+          ['Ongkos Kirim Pengembalian Barang', `-Rp ${feeBreakdown.returnShipping.toLocaleString()}`, 'Biaya'],
+          ['Premi', `-Rp ${feeBreakdown.premium.toLocaleString()}`, 'Biaya'],
+          ['Voucher disponsor oleh Penjual', `-Rp ${feeBreakdown.voucher.toLocaleString()}`, 'Biaya'],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [239, 68, 68] },
+      });
+
+      // 4. Detail Transaksi
+      doc.addPage();
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Detail Transaksi", 14, 22);
+      doc.setFontSize(10);
+      doc.text(`Total ${filteredOrders.length} transaksi`, 14, 28);
+
+      const tableData = filteredOrders.map(o => {
+        const firstItem = o.order_items && o.order_items.length > 0 ? o.order_items[0] : null;
+        const hpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
+        const profit = o.status?.toLowerCase().includes('batal') ? 0 : ((o.net_revenue || 0) - hpp);
+        return [
+          o.order_id,
+          formatDate(o.order_date),
+          firstItem ? firstItem.product_name.substring(0, 30) + '...' : '-',
+          o.order_items ? o.order_items.reduce((s, i) => s + i.quantity, 0) : 0,
+          o.status,
+          `Rp ${(o.product_total || 0).toLocaleString()}`,
+          `-Rp ${Math.abs(o.service_fee || 0).toLocaleString()}`,
+          `Rp ${hpp.toLocaleString()}`,
+          `Rp ${profit.toLocaleString()}`
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 33,
+        head: [['Order ID', 'Tanggal', 'Produk', 'Qty', 'Status', 'Harga Jual', 'Total Biaya', 'HPP', 'Profit']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
+        styles: { fontSize: 7 },
+      });
+
+      const fileName = `Laporan_Proyek_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+
+      toast.success("Laporan PDF berhasil dibuat!", { id: toastId });
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Gagal mengekspor PDF: " + err.message, { id: toastId });
+    }
+  };
+
   const generateAIInsights = async () => {
     setIsGeneratingInsights(true);
     const summary = filteredOrders.slice(0, 50).map(o => ({ date: o.order_date, revenue: o.net_revenue, status: o.status }));
@@ -465,7 +633,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-black uppercase shadow-sm group w-full sm:w-auto"
             >
               <FileSpreadsheet className="w-4 h-4 text-green-600 group-hover:scale-110 transition-transform" />
-              Export Excel
+              Excel
+            </button>
+            <button 
+              onClick={handleExportPDF}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-black uppercase shadow-sm group w-full sm:w-auto"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-red-600 group-hover:scale-110 transition-transform" />
+              PDF
             </button>
           </div>
         </div>
