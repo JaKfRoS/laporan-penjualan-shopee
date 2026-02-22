@@ -1113,7 +1113,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                     {/* Kolom HPP */}
                                     <td className="px-4 py-3 text-sm font-medium dark:text-slate-300">
                                         <span className={p.cost_price === 0 ? "text-red-500 font-bold" : ""}>
-                                            {p.cost_price === 0 ? "Set HPP!" : `Rp ${p.cost_price.toLocaleString()}`}
+                                            {p.cost_price === 0 ? "Set HPP!" : `Rp ${(p.cost_price || 0).toLocaleString()}`}
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-right flex justify-end gap-2">

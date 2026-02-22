@@ -83,7 +83,14 @@ export default function App() {
 
       if (data && data.length > 0) {
         setStores(data);
-        if (!currentStore || (currentStore.id !== 'all' && !data.find(s => s.id === currentStore.id))) {
+        
+        // Check for saved store in localStorage
+        const savedStoreId = localStorage.getItem('lastSelectedStoreId');
+        const savedStore = data.find(s => s.id === savedStoreId);
+
+        if (savedStore) {
+             setCurrentStore(savedStore);
+        } else if (!currentStore || (currentStore.id !== 'all' && !data.find(s => s.id === currentStore.id))) {
           setCurrentStore(data[0]);
         }
       } else {
@@ -93,6 +100,13 @@ export default function App() {
       toast.error("Gagal memuat toko: " + err.message);
     }
   };
+
+  // Persist selected store
+  useEffect(() => {
+    if (currentStore?.id) {
+      localStorage.setItem('lastSelectedStoreId', currentStore.id);
+    }
+  }, [currentStore]);
 
   const createDefaultStore = async (userId: string) => {
     const { data: newStore, error } = await supabase

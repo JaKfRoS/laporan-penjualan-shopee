@@ -323,14 +323,14 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                   {/* Total HPP Column */}
                   <td className="px-6 py-4 text-sm font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">
                      {totalHPP > 0 ? (
-                         <span>Rp {totalHPP.toLocaleString()}</span>
+                         <span>Rp {(totalHPP || 0).toLocaleString()}</span>
                      ) : (
                          <span className="text-slate-400 dark:text-slate-600 font-bold text-xs">Rp 0</span>
                      )}
                   </td>
 
                   <td className="px-6 py-4 text-sm font-black text-slate-900 dark:text-white whitespace-nowrap">
-                    Rp {order.net_revenue.toLocaleString()}
+                    Rp {(order.net_revenue || 0).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 text-sm">
                     <button 
@@ -500,10 +500,10 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                            </div>
                            <div className="text-right shrink-0 flex flex-col justify-center">
                               <p className="text-lg font-black text-slate-900 dark:text-white">
-                                Rp {(item.product_total).toLocaleString()}
+                                Rp {(item.product_total || 0).toLocaleString()}
                               </p>
                               <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                                HPP: Rp {((item.hpp_at_time || 0) * item.quantity).toLocaleString()}
+                                HPP: Rp {((item.hpp_at_time || 0) * (item.quantity || 0)).toLocaleString()}
                               </p>
                            </div>
                         </div>
@@ -516,24 +516,23 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                     <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl space-y-2">
                        <div className="flex justify-between text-xs text-slate-500">
                           <span>Total Produk (GMV)</span>
-                          <span className="font-bold text-slate-700 dark:text-slate-300">Rp {selectedOrder.product_total.toLocaleString()}</span>
+                          <span className="font-bold text-slate-700 dark:text-slate-300">Rp {(selectedOrder.product_total || 0).toLocaleString()}</span>
                        </div>
                        <div className="flex justify-between text-xs text-slate-500">
-                          <span>Voucher Toko</span>
-                          <span className="font-bold text-red-500">- Rp {selectedOrder.seller_voucher.toLocaleString()}</span>
+                          <span>Total Potongan Marketplace</span>
+                          <span className="font-bold text-red-500">- Rp {((selectedOrder.admin_fee || 0) + (selectedOrder.service_fee || 0)).toLocaleString()}</span>
                        </div>
-                       <div className="flex justify-between text-xs text-slate-500">
-                          <span>Biaya Admin & Layanan</span>
-                          <span className="font-bold text-red-500">- Rp {(selectedOrder.admin_fee + selectedOrder.service_fee).toLocaleString()}</span>
+                       <div className="text-[10px] text-slate-400 italic text-right">
+                          (Termasuk Admin, Layanan, Ongkir, Voucher, dll)
                        </div>
                     </div>
                     
                     <div className="bg-orange-50 dark:bg-orange-900/10 p-4 rounded-2xl flex flex-col justify-center border border-orange-100 dark:border-orange-500/20">
                        <span className="text-xs font-black uppercase text-orange-400 tracking-widest mb-1">Net Revenue</span>
                        <span className="text-2xl font-black text-orange-600 dark:text-orange-500">
-                          Rp {selectedOrder.net_revenue.toLocaleString()}
+                          Rp {(selectedOrder.net_revenue || 0).toLocaleString()}
                        </span>
-                       {selectedOrder.status.includes('Batal') && (
+                       {(selectedOrder.status || '').includes('Batal') && (
                           <span className="text-[10px] font-bold text-red-500 mt-1">*Pesanan Dibatalkan (Rp 0)</span>
                        )}
                     </div>
@@ -582,7 +581,7 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                                           <div className="font-bold">{p.product_name}</div>
                                           <div className="flex justify-between mt-1">
                                               <span className="text-slate-400">{p.sku}</span>
-                                              <span className="text-slate-500">HPP: {p.cost_price.toLocaleString()}</span>
+                                              <span className="text-slate-500">HPP: {(p.cost_price || 0).toLocaleString()}</span>
                                           </div>
                                       </button>
                                   ))

@@ -8,7 +8,7 @@ import { RevenueChart } from './RevenueChart';
 import { ProductChart } from './ProductChart';
 import { OrdersTable } from './OrdersTable';
 import { DateRangePicker } from './DateRangePicker';
-import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings } from 'lucide-react';
+import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch } from 'lucide-react';
 import { getSalesInsights } from '../../services/gemini';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -127,63 +127,92 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
     // 2. Pesanan Batal
     const cancelledOrders = data.filter(o => 
-      o.status?.toLowerCase().includes('batal') || 
-      o.status?.toLowerCase().includes('cancel')
+      (o.status || '').toLowerCase().includes('batal') || 
+      (o.status || '').toLowerCase().includes('cancel')
     );
     const cancelledCount = cancelledOrders.length;
 
-    // 3. Pesanan Retur (Pengembalian)
-    const returnedOrders = data.filter(o => 
-      o.status?.toLowerCase().includes('retur') || 
-      o.status?.toLowerCase().includes('pengembalian')
-    );
-    const returnedCount = returnedOrders.length;
-
-    // 4. Valid Orders (Exclude Cancelled & Returned for Revenue?)
-    // Usually returned orders are deducted. For now, let's keep the logic simple:
-    // If status is 'Selesai', it's counted. If 'Retur', usually GMV is 0 or deducted.
-    // Existing logic excludes 'batal'/'cancel'. Let's also exclude 'retur' from GMV/Revenue if that's the standard.
-    // However, Shopee export might have 'Pengembalian' status.
+    // 4. METRICS CALCULATION (SETTLED DATA FOCUS)
+    // Filter: Hanya Transaksi Selesai untuk Omzet & Laba Kotor
+    const completedOrders = data.filter(o => o.status === 'Selesai');
     
-    const validOrders = data.filter(o => 
-      !o.status?.toLowerCase().includes('batal') && 
-      !o.status?.toLowerCase().includes('cancel') &&
-      !o.status?.toLowerCase().includes('pengembalian') &&
-      !o.status?.toLowerCase().includes('retur')
+    // Filter: Transaksi Retur untuk Penyesuaian
+    const returnedOrders = data.filter(o => 
+      (o.status || '').toLowerCase().includes('retur') || 
+      (o.status || '').toLowerCase().includes('pengembalian')
     );
 
-    // 5. GMV (Gross Merchandise Value) - Total Penjualan Shopee (Valid Only)
-    const gmv = validOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
+    // 1. Filter: Hanya Order yang SUDAH SELESAI atau PENGEMBALIAN (Retur)
+    // Reference: Includes orders with Profit/Loss (Selesai) and Returns (which have fees)
+    const settledOrders = data.filter(o => {
+        const s = (o.status || '').toLowerCase();
+        return s === 'selesai' || s === 'pengembalian';
+    });
 
-    // 6. Real Omzet = GMV - Admin Fee - Service Fee
-    const realOmzet = validOrders.reduce((acc, o) => {
-      const gross = o.product_total || 0;
-      const admin = o.admin_fee || 0;
-      const service = o.service_fee || 0;
-      return acc + (gross - admin - service);
-    }, 0);
+    // 2. Filter: Order dengan Net Revenue < 0 (Refund/Penyesuaian)
+    // Not used for main calculation as per reference, but kept for potential future use
+    // const adjustmentOrders = data.filter(o => o.net_revenue < 0);
 
-    // 7. Total HPP (Valid Only)
-    const totalHPP = validOrders.reduce((acc, o) => {
+    // A. Total Omzet (GMV) - Hanya yang sudah SELESAI
+    const totalOmzet = settledOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
+
+    // B. Uang Cair (Net Revenue) - Sum dari Net Revenue order yang SELESAI
+    const netRevenueSelesai = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
+
+    // C. Total Potongan Marketplace
+    const totalPotongan = settledOrders.reduce((acc, o) => acc + (o.service_fee || 0), 0);
+
+    // D. Total HPP (Hanya untuk order yang SELESAI)
+    const totalHPPSelesai = settledOrders.reduce((acc, o) => {
       const orderHpp = o.order_items?.reduce((h, item) => {
         return h + ((item.hpp_at_time || 0) * item.quantity);
       }, 0) || 0;
       return acc + orderHpp;
     }, 0);
 
-    // 8. Estimasi Net Profit = Real Omzet - Total HPP
-    // (Adjustment is not yet in DB, so we assume 0 for now)
-    const adjustment = 0; 
-    const netProfit = realOmzet - totalHPP - adjustment;
+    // E. Total Keuntungan (Profit) = Uang Cair - HPP
+    // Formula User: "Total Keuntungan = uang cair - total hpp"
+    const totalKeuntungan = netRevenueSelesai - totalHPPSelesai;
+
+    // F. Total Penyesuaian (0 based on reference)
+    const totalPenyesuaian = 0;
+
+    // G. Keuntungan Setelah Penyesuaian
+    const keuntunganSetelahPenyesuaian = totalKeuntungan + totalPenyesuaian;
+
+    // H. Uang yang Berpotensi Cair
+    // Filter Valid Orders (Exclude Batal/Cancel)
+    const validOrders = data.filter(o => {
+        const s = (o.status || '').toLowerCase();
+        return !s.includes('batal') && !s.includes('cancel');
+    });
+    const totalGmvValid = validOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
+    
+    // Formula User: "Uang yang Berpotensi Cair = total gmv valid - total omzet"
+    const uangPotensiCair = totalGmvValid - totalOmzet;
+
+    // I. Persentase
+    const marginKeuntungan = totalOmzet > 0 ? (totalKeuntungan / totalOmzet) * 100 : 0;
+    const rataRataPotongan = totalOmzet > 0 ? (totalPotongan / totalOmzet) * 100 : 0;
 
     return { 
-      totalOrders: totalOrdersCount, 
-      cancelledCount, 
-      returnedCount,
-      gmv, 
-      realOmzet,
-      netProfit,
-      adjustment
+      totalOrders: completedOrders.length,
+      returnedCount: returnedOrders.length,
+      totalOmzet,
+      netRevenueSelesai, // Uang Cair
+      totalPotongan,
+      totalHPPSelesai,
+      labaKotor: totalKeuntungan, // Gross Profit
+      totalPenyesuaian,
+      labaBersih: keuntunganSetelahPenyesuaian, // Net Profit
+      totalKeuntungan,
+      keuntunganSetelahPenyesuaian,
+      marginKeuntungan,
+      rataRataPotongan,
+      uangPotensiCair,
+      percentLabaKotor: marginKeuntungan,
+      percentLabaBersih: marginKeuntungan,
+      percentPotongan: rataRataPotongan
     };
   }, [filteredOrders]);
 
@@ -371,64 +400,81 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+          {/* Row 1 */}
           <KPICard 
-            title="Penjualan (GMV)" 
-            value={`Rp ${metrics.gmv.toLocaleString()}`} 
-            trend="Total Penjualan Valid"
-            icon={<ShoppingBag className="w-4 h-4 text-blue-600" />}
-          />
-          <KPICard 
-            title="Real Omzet" 
-            value={`Rp ${metrics.realOmzet.toLocaleString()}`} 
-            trend="Dikurangi Admin/Layanan"
-            icon={<Wallet className="w-4 h-4 text-purple-600" />}
+            title="Total Omzet" 
+            value={`Rp ${(metrics.totalOmzet || 0).toLocaleString()}`} 
+            trend="Transaksi Selesai"
+            icon={<ShoppingBag className="w-4 h-4 text-green-600" />}
           />
           <KPICard 
-            title="Estimasi Net Profit" 
-            value={`Rp ${metrics.netProfit.toLocaleString()}`} 
-            trend="Real Omzet - HPP"
-            isHighlight
-            icon={<Wallet className="w-4 h-4 text-emerald-600" />}
+            title="Total Potongan Marketplace" 
+            value={`-Rp ${(metrics.totalPotongan || 0).toLocaleString()}`} 
+            trend="Biaya Platform"
+            isNegative
+            icon={<Percent className="w-4 h-4 text-red-600" />}
           />
-           <KPICard 
-            title="Total Pesanan" 
-            value={metrics.totalOrders} 
-            trend="Semua Status"
-            icon={<Info className="w-4 h-4 text-orange-600" />}
+          <KPICard 
+            title="Total Omzet Dipotong Biaya Marketplace" 
+            value={`Rp ${(metrics.netRevenueSelesai || 0).toLocaleString()}`} 
+            trend="Net Revenue"
+            icon={<Wallet className="w-4 h-4 text-blue-600" />}
           />
-          
+
           {/* Row 2 */}
           <KPICard 
-            title="Pesanan Batal" 
-            value={metrics.cancelledCount} 
-            trend="Dibatalkan"
-            isNegative
-            icon={<XCircle className="w-4 h-4 text-red-600" />}
+            title="Total Keuntungan" 
+            value={`Rp ${(metrics.totalKeuntungan || 0).toLocaleString()}`} 
+            trend="Profit"
+            icon={<Wallet className="w-4 h-4 text-green-600" />}
           />
           <KPICard 
-            title="Pesanan Retur" 
-            value={metrics.returnedCount} 
-            trend="Pengembalian"
-            isNegative
-            icon={<ArrowRightLeft className="w-4 h-4 text-orange-600" />}
+            title="Keuntungan Setelah Penyesuaian" 
+            value={`Rp ${(metrics.keuntunganSetelahPenyesuaian || 0).toLocaleString()}`} 
+            trend="Final Profit"
+            icon={<Wallet className="w-4 h-4 text-emerald-600" />}
           />
           <KPICard 
-            title="Penyesuaian" 
-            value={`Rp ${metrics.adjustment.toLocaleString()}`} 
-            trend="Manual Adjustment"
-            icon={<Settings className="w-4 h-4 text-slate-600" />}
+            title="Margin Keuntungan" 
+            value={`${(metrics.marginKeuntungan || 0).toFixed(1)}%`} 
+            trend="% dari Omzet"
+            icon={<CheckCircle2 className="w-4 h-4 text-green-600" />}
+          />
+
+          {/* Row 3 */}
+          <KPICard 
+            title="Rata-Rata Potongan Marketplace" 
+            value={`${(metrics.rataRataPotongan || 0).toFixed(1)}%`} 
+            trend="% Biaya"
+            isNegative
+            icon={<Percent className="w-4 h-4 text-red-600" />}
+          />
+          <KPICard 
+            title="Total HPP" 
+            value={`Rp ${(metrics.totalHPPSelesai || 0).toLocaleString()}`} 
+            trend="Modal Produk"
+            isNegative
+            icon={<PackageSearch className="w-4 h-4 text-orange-600" />}
+          />
+           <KPICard 
+            title="Uang yang Berpotensi Cair" 
+            value={`Rp ${(metrics.uangPotensiCair || 0).toLocaleString()}`} 
+            trend="Total GMV Valid"
+            icon={<Wallet className="w-4 h-4 text-teal-600" />}
           />
         </div>
 
-        <div className="p-4 bg-amber-50 dark:bg-amber-500/5 border border-amber-100 dark:border-amber-900/30 rounded-2xl flex items-start gap-3 mt-6">
-          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="text-xs text-amber-800 dark:text-amber-300 font-medium leading-relaxed">
-            <p className="font-bold mb-1 uppercase tracking-tight">Penting: Laporan Pesanan Bersifat Estimasi</p>
-            <p>
-              <b>Real Omzet</b> adalah GMV dikurangi Biaya Admin & Layanan. <br/>
-              <b>Estimasi Net Profit</b> adalah Real Omzet dikurangi Total HPP produk terjual (tidak termasuk biaya operasional lain/iklan).
-            </p>
+        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-2xl flex items-start gap-3 mt-6">
+          <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+          <div className="text-xs text-blue-800 dark:text-blue-300 font-medium leading-relaxed">
+            <p className="font-bold mb-1 uppercase tracking-tight">Metodologi Perhitungan (Basis Kas/Cair)</p>
+            <ul className="list-disc pl-4 space-y-1">
+                <li><b>Total Omzet:</b> Total harga produk dari pesanan berstatus "Selesai".</li>
+                <li><b>Uang Cair:</b> Total penghasilan bersih dari marketplace (setelah admin/layanan/ongkir).</li>
+                <li><b>Laba Kotor:</b> Uang Cair dikurangi HPP produk terjual.</li>
+                <li><b>Laba Bersih:</b> Laba Kotor ditambah Total Penyesuaian (Retur/Refund).</li>
+            </ul>
           </div>
         </div>
 
