@@ -310,7 +310,7 @@ export default function App() {
   if (!session) return <AuthView />;
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       <Sidebar 
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
@@ -382,6 +382,7 @@ export default function App() {
                   <pre className="bg-slate-900 text-orange-400 p-4 rounded-xl text-[10px] md:text-xs overflow-x-auto font-mono mb-4 border border-slate-800 select-all whitespace-pre-wrap break-all">
 {`-- BAGIAN PENTING: KOLOM BARU --
 ALTER TABLE products ADD COLUMN IF NOT EXISTS variation_name text DEFAULT NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS fee_details jsonb DEFAULT '{}'::jsonb;
 
 -- BAGIAN 4.5: RPC Safe Delete & Policies --
 

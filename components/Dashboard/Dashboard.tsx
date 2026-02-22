@@ -226,8 +226,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
     try {
       const exportTime = new Date().toLocaleString('id-ID');
-      
-      // Gunakan filteredOrders agar Excel sesuai dengan apa yang dilihat user
       const dataToExport = filteredOrders;
 
       let startDateStr = dateRange.start;
@@ -248,77 +246,165 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         catch { return dateStr; }
       };
 
-      const displayPeriod = `${formatDate(startDateStr || '')} s/d ${formatDate(endDateStr || '')}`;
+      const displayPeriod = `${formatDate(startDateStr || '')} - ${formatDate(endDateStr || '')}`;
       const wb = XLSX.utils.book_new();
 
       const createSheetData = (sheetOrders: Order[], sheetStoreName: string) => {
-        // Recalculate metrics for this sheet specifically
-        const totalOrdersCount = sheetOrders.length;
-        const cancelledCount = sheetOrders.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel')).length;
-        const gmv = sheetOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
-        const netRevenue = sheetOrders.reduce((acc, o) => {
-             const isBatal = o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel');
-             return acc + (isBatal ? 0 : (o.net_revenue || 0));
+        // 1. Calculate Summary Metrics
+        const settledOrders = sheetOrders.filter(o => (o.status || '').toLowerCase() === 'selesai' || (o.status || '').toLowerCase() === 'pengembalian');
+        const validOrders = sheetOrders.filter(o => !o.status?.toLowerCase().includes('batal') && !o.status?.toLowerCase().includes('cancel'));
+        
+        const totalOmzet = settledOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
+        const totalPemasukan = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0); // Uang Cair / Net Revenue
+        const totalHPP = settledOrders.reduce((acc, o) => {
+             const orderHpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
+             return acc + orderHpp;
         }, 0);
+        const totalKeuntungan = totalPemasukan - totalHPP; // Profit = Net Revenue - HPP
 
-        const headerRows = [
-          ["LAPORAN ESTIMASI PESANAN SHOPEE"],
-          ["Toko:", sheetStoreName],
-          ["Periode Laporan:", displayPeriod],
-          ["Waktu Ekspor:", exportTime],
-          ["Status Data:", "ESTIMASI (Berdasarkan filter saat ini)"],
-          [""], 
-          ["RINGKASAN PERFORMA"],
-          ["Total Penjualan (GMV Produk)", gmv],
-          ["Total Estimasi Penghasilan", netRevenue],
-          ["Total Pesanan", totalOrdersCount],
-          ["Pesanan Dibatalkan", cancelledCount],
-          [""], 
-          ["RINCIAN TRANSAKSI PESANAN"]
-        ];
+        const totalPenyesuaian = 0; // As per current logic
+        const totalTransaksi = sheetOrders.length; // Total all orders in list
+        const transaksiBatal = sheetOrders.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel')).length;
+        const transaksiRetur = sheetOrders.filter(o => o.status?.toLowerCase().includes('retur') || o.status?.toLowerCase().includes('pengembalian')).length;
+        const avgOrderValue = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0; 
 
-        const tableHeaders = [
-          "No. Pesanan", 
-          "Waktu Pesanan", 
-          "Status", 
-          "Username Pembeli", 
-          "Nama Produk (Pertama)", // New Header
-          "Kota", 
-          "Provinsi", 
-          "GMV (Harga Produk)", 
-          "Voucher Toko", 
-          "Biaya Admin", 
-          "Biaya Layanan", 
-          "Estimasi Penghasilan", 
-          "Keterangan"
-        ];
+        // 2. Calculate Fee Breakdown
+        let feeBreakdown = {
+            admin: 0,
+            ams: 0,
+            service: 0,
+            shippingRebate: 0, // Gratis Ongkir (Pemasukan/Subsidi)
+            refund: 0,
+            shippingForwarded: 0,
+            returnShipping: 0,
+            premium: 0,
+            voucher: 0,
+            processing: 0
+        };
 
-        const tableRows = sheetOrders.map(o => {
-            const firstProduct = o.order_items && o.order_items.length > 0 ? o.order_items[0].product_name : '-';
-            return [
-              o.order_id,
-              o.order_date ? new Date(o.order_date).toLocaleString('id-ID') : '-',
-              o.status,
-              o.buyer_username || '-',
-              firstProduct,
-              o.city || '-',
-              o.province || '-',
-              o.product_total,
-              o.seller_voucher,
-              o.admin_fee,
-              o.service_fee,
-              o.status?.toLowerCase().includes('batal') ? 0 : o.net_revenue,
-              o.status?.toLowerCase().includes('batal') ? "Pesanan Dibatalkan" : (o.status === 'Selesai' ? "Selesai" : "Dalam Proses/Pengiriman")
-            ];
+        sheetOrders.forEach(o => {
+            if (o.fee_details) {
+                feeBreakdown.admin += (o.fee_details.admin_fee || 0);
+                feeBreakdown.ams += (o.fee_details.ams_commission || 0);
+                feeBreakdown.service += (o.fee_details.service_fee || 0);
+                feeBreakdown.shippingRebate += (o.fee_details.shipping_rebate || 0);
+                feeBreakdown.refund += (o.fee_details.refund_amount || 0);
+                feeBreakdown.shippingForwarded += (o.fee_details.shipping_forwarded || 0);
+                feeBreakdown.returnShipping += (o.fee_details.return_shipping_fee || 0);
+                feeBreakdown.premium += (o.fee_details.premium_fee || 0);
+                feeBreakdown.voucher += (o.fee_details.seller_voucher || 0);
+                feeBreakdown.processing += (o.fee_details.processing_fee || 0);
+            }
         });
 
-        const fullData = [...headerRows, tableHeaders, ...tableRows];
-        const ws = XLSX.utils.aoa_to_sheet(fullData);
+        // 3. Construct Excel Rows
+        const rows = [];
 
+        // Header Section
+        rows.push(["LAPORAN PROYEK"]);
+        rows.push(["powered by ShopeeSales"]);
+        rows.push([""]);
+        rows.push(["Platform:", "Shopee"]);
+        rows.push(["Tipe Kalkulasi:", "Berbasis Pesanan"]);
+        rows.push(["Tanggal Export:", exportTime]);
+        rows.push(["Periode:", displayPeriod]);
+        rows.push(["Filter:", "Tanggal Dibuat"]);
+        rows.push([""]);
+
+        // Ringkasan Analytics
+        rows.push(["Ringkasan Analytics"]);
+        rows.push(["Metrik", "Nilai"]);
+        rows.push(["Total Omzet", totalOmzet]);
+        rows.push(["Total Pemasukan", totalPemasukan]); 
+        rows.push(["Total Keuntungan", totalKeuntungan]);
+        rows.push(["Total HPP", totalHPP]);
+        rows.push(["Total Penyesuaian", totalPenyesuaian]);
+        rows.push(["Total Transaksi", totalTransaksi]);
+        rows.push(["Transaksi Batal", transaksiBatal]);
+        rows.push(["Transaksi Retur", transaksiRetur]);
+        rows.push(["Rata-rata Nilai Order", avgOrderValue]);
+        rows.push([""]);
+
+        // Margin & Persentase
+        const margin = totalOmzet > 0 ? (totalKeuntungan / totalOmzet) : 0;
+        const costPercent = totalOmzet > 0 ? ((totalOmzet - totalPemasukan) / totalOmzet) * -1 : 0; 
+        
+        rows.push(["Margin Keuntungan", margin]); 
+        rows.push(["Persentase Biaya", costPercent]);
+        rows.push([""]);
+
+        // Fee Breakdown
+        rows.push(["Fee Breakdown (Shopee)"]);
+        rows.push(["Jenis Fee", "Jumlah", "Tipe"]);
+        rows.push(["Biaya Administrasi", -feeBreakdown.admin, "Biaya"]);
+        rows.push(["Biaya Komisi AMS", -feeBreakdown.ams, "Biaya"]);
+        rows.push(["Biaya Layanan", -feeBreakdown.service, "Biaya"]);
+        rows.push(["Gratis Ongkir dari Shopee", feeBreakdown.shippingRebate, "Pemasukan"]);
+        rows.push(["Jumlah Pengembalian Dana ke Pembeli", -feeBreakdown.refund, "Biaya"]);
+        rows.push(["Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim", -feeBreakdown.shippingForwarded, "Biaya"]);
+        rows.push(["Ongkos Kirim Pengembalian Barang", -feeBreakdown.returnShipping, "Biaya"]);
+        rows.push(["Premi", -feeBreakdown.premium, "Biaya"]);
+        rows.push(["Voucher disponsor oleh Penjual", -feeBreakdown.voucher, "Biaya"]);
+        rows.push([""]);
+
+        // Detail Transaksi
+        rows.push(["Detail Transaksi"]);
+        rows.push([`Total ${sheetOrders.length} transaksi`]);
+        rows.push([
+            "Order ID", 
+            "Tanggal", 
+            "Produk", 
+            "Qty", 
+            "Status", 
+            "Harga Jual", 
+            "Total Biaya", 
+            "HPP", 
+            "Profit"
+        ]);
+
+        sheetOrders.forEach(o => {
+            const firstItem = o.order_items && o.order_items.length > 0 ? o.order_items[0] : null;
+            const productName = firstItem ? firstItem.product_name : '-';
+            const qty = o.order_items ? o.order_items.reduce((s, i) => s + i.quantity, 0) : 0;
+            
+            const hpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
+            // Profit per row = Net Revenue - HPP
+            const profit = o.status?.toLowerCase().includes('batal') ? 0 : ((o.net_revenue || 0) - hpp);
+            
+            rows.push([
+                o.order_id,
+                formatDate(o.order_date),
+                productName,
+                qty,
+                o.status,
+                o.product_total || 0,
+                -Math.abs(o.service_fee || 0), 
+                hpp,
+                profit
+            ]);
+        });
+
+        // Ringkasan Footer
+        rows.push([""]);
+        rows.push(["Ringkasan"]);
+        rows.push(["Total Transaksi", totalTransaksi]);
+        rows.push(["Total Omzet", totalOmzet]);
+        rows.push(["Total Keuntungan", totalKeuntungan]);
+        rows.push(["Margin Keuntungan", margin]);
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // Styling Columns
         ws['!cols'] = [
-          { wch: 22 }, { wch: 22 }, { wch: 15 }, { wch: 20 }, { wch: 30 }, { wch: 15 }, 
-          { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, 
-          { wch: 20 }, { wch: 30 }
+            { wch: 20 }, // Order ID
+            { wch: 15 }, // Tanggal
+            { wch: 40 }, // Produk
+            { wch: 5 },  // Qty
+            { wch: 15 }, // Status
+            { wch: 15 }, // Harga Jual
+            { wch: 15 }, // Total Biaya
+            { wch: 15 }, // HPP
+            { wch: 15 }  // Profit
         ];
 
         return ws;
@@ -328,11 +414,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const mainWs = createSheetData(dataToExport, store.name);
       XLSX.utils.book_append_sheet(wb, mainWs, mainSheetName);
 
-      const fileName = `Laporan_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const fileName = `Laporan_Proyek_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
 
       toast.success("Laporan Excel berhasil dibuat!", { id: toastId });
     } catch (err: any) {
+      console.error(err);
       toast.error("Gagal mengekspor: " + err.message, { id: toastId });
     }
   };

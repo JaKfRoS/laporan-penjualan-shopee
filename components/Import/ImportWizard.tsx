@@ -372,6 +372,20 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          const totalMarketplaceFee = (adminFee + amsFee + serviceFee + procFee + premFee + shippingForwarded + returnShippingFee + sellerVoucher + refundAmount) - shippingRebate;
          
          orderGroups[orderId].order.service_fee = totalMarketplaceFee;
+
+         // NEW: Store Detailed Fee Breakdown for Export
+         orderGroups[orderId].order.fee_details = {
+            admin_fee: adminFee,
+            ams_commission: amsFee,
+            service_fee: serviceFee,
+            shipping_rebate: shippingRebate, // Gratis Ongkir (Positive value usually, but treated as subsidy)
+            refund_amount: refundAmount,
+            shipping_forwarded: shippingForwarded,
+            return_shipping_fee: returnShippingFee,
+            premium_fee: premFee,
+            seller_voucher: sellerVoucher,
+            processing_fee: procFee
+         };
          orderGroups[orderId].order.admin_fee = 0; // Reset admin_fee as we use service_fee for total
          
          // Check for Refund

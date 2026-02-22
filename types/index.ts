@@ -41,6 +41,7 @@ export interface Order {
   province: string | null;
   created_at: string;
   order_items?: OrderItem[]; // Added relations
+  fee_details?: any; // JSONB for detailed fee breakdown
 }
 
 export interface Product {

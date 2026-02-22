@@ -53,6 +53,10 @@ ADD COLUMN IF NOT EXISTS final_sku text,
 ADD COLUMN IF NOT EXISTS hpp_at_time numeric DEFAULT 0,
 ADD COLUMN IF NOT EXISTS is_sku_mapped boolean DEFAULT FALSE;
 
+-- BAGIAN 4.5: UPDATE STRUKTUR TABLE ORDERS (FEE BREAKDOWN)
+ALTER TABLE orders 
+ADD COLUMN IF NOT EXISTS fee_details jsonb DEFAULT '{}'::jsonb;
+
 -- Index untuk performa join laporan
 CREATE INDEX IF NOT EXISTS idx_order_items_product_lookup 
 ON order_items(store_id, product_name, variation);
