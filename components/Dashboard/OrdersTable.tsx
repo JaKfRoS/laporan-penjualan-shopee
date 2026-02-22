@@ -30,6 +30,9 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [selectedNewSku, setSelectedNewSku] = useState('');
 
+  const [editingHppItemId, setEditingHppItemId] = useState<string | null>(null);
+  const [tempHppValue, setTempHppValue] = useState<number>(0);
+
   const fetchProductsForMapping = async (storeId: string) => {
     const { data } = await supabase
       .from('products')
@@ -89,6 +92,50 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
 
     } catch (err: any) {
         toast.error("Gagal: " + err.message, { id: toastId });
+    }
+  };
+
+  const handleUpdateHpp = async (itemId: string) => {
+    const toastId = toast.loading("Updating HPP...");
+    try {
+      // 1. Update the specific order item
+      const { error } = await supabase
+        .from('order_items')
+        .update({ hpp_at_time: tempHppValue })
+        .eq('id', itemId);
+
+      if (error) throw error;
+
+      // 2. Update the master product HPP if it's mapped
+      if (selectedOrder) {
+        const itemToUpdate = selectedOrder.order_items?.find(i => i.id === itemId);
+        if (itemToUpdate && itemToUpdate.final_sku) {
+          const { error: productError } = await supabase
+            .from('products')
+            .update({ cost_price: tempHppValue })
+            .eq('sku', itemToUpdate.final_sku)
+            .eq('store_id', selectedOrder.store_id);
+          
+          if (productError) {
+            console.error("Gagal update master produk:", productError);
+            // We don't throw here to allow the order item update to be considered "success" 
+            // but we could notify the user.
+          }
+        }
+      }
+
+      toast.success("HPP diperbarui!", { id: toastId });
+      setEditingHppItemId(null);
+
+      // Update local state
+      if (selectedOrder) {
+        const updatedItems = selectedOrder.order_items?.map(item => 
+          item.id === itemId ? { ...item, hpp_at_time: tempHppValue } : item
+        );
+        setSelectedOrder({ ...selectedOrder, order_items: updatedItems });
+      }
+    } catch (err: any) {
+      toast.error("Gagal: " + err.message, { id: toastId });
     }
   };
 
@@ -502,9 +549,47 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                               <p className="text-lg font-black text-slate-900 dark:text-white">
                                 Rp {(item.product_total || 0).toLocaleString()}
                               </p>
-                              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                                HPP: Rp {((item.hpp_at_time || 0) * (item.quantity || 0)).toLocaleString()}
-                              </p>
+                              <div className="flex items-center justify-end gap-2 mt-1">
+                                {editingHppItemId === item.id ? (
+                                  <div className="flex items-center gap-1">
+                                    <input 
+                                      type="number"
+                                      value={tempHppValue}
+                                      onChange={(e) => setTempHppValue(Number(e.target.value))}
+                                      className="w-20 px-2 py-1 text-xs font-bold bg-white dark:bg-slate-800 border border-orange-500 rounded-lg outline-none"
+                                      autoFocus
+                                    />
+                                    <button 
+                                      onClick={() => handleUpdateHpp(item.id)}
+                                      className="p-1 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                    >
+                                      <Check className="w-3 h-3" />
+                                    </button>
+                                    <button 
+                                      onClick={() => setEditingHppItemId(null)}
+                                      className="p-1 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1 group/hpp">
+                                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                                      HPP: Rp {((item.hpp_at_time || 0) * (item.quantity || 0)).toLocaleString()}
+                                    </p>
+                                    <button 
+                                      onClick={() => {
+                                        setEditingHppItemId(item.id);
+                                        setTempHppValue(item.hpp_at_time || 0);
+                                      }}
+                                      className="p-1 text-slate-300 hover:text-orange-500 opacity-0 group-hover/hpp:opacity-100 transition-all"
+                                      title="Edit HPP"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                            </div>
                         </div>
                       ))}

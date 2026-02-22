@@ -197,6 +197,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     const marginKeuntungan = totalOmzet > 0 ? (totalKeuntungan / totalOmzet) * 100 : 0;
     const rataRataPotongan = totalOmzet > 0 ? (totalPotongan / totalOmzet) * 100 : 0;
 
+    // J. Fee Breakdown
+    let feeBreakdown = {
+      admin: 0,
+      ams: 0,
+      service: 0,
+      shippingRebate: 0,
+      refund: 0,
+      shippingForwarded: 0,
+      returnShipping: 0,
+      premium: 0,
+      voucher: 0,
+      processing: 0
+    };
+
+    settledOrders.forEach(o => {
+      if (o.fee_details) {
+        feeBreakdown.admin += (o.fee_details.admin_fee || 0);
+        feeBreakdown.ams += (o.fee_details.ams_commission || 0);
+        feeBreakdown.service += (o.fee_details.service_fee || 0);
+        feeBreakdown.shippingRebate += (o.fee_details.shipping_rebate || 0);
+        feeBreakdown.refund += (o.fee_details.refund_amount || 0);
+        feeBreakdown.shippingForwarded += (o.fee_details.shipping_forwarded || 0);
+        feeBreakdown.returnShipping += (o.fee_details.return_shipping_fee || 0);
+        feeBreakdown.premium += (o.fee_details.premium_fee || 0);
+        feeBreakdown.voucher += (o.fee_details.seller_voucher || 0);
+        feeBreakdown.processing += (o.fee_details.processing_fee || 0);
+      }
+    });
+
     return { 
       totalOrders: completedOrders.length,
       returnedCount: returnedOrders.length,
@@ -214,7 +243,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       uangPotensiCair,
       percentLabaKotor: marginKeuntungan,
       percentLabaBersih: marginKeuntungan,
-      percentPotongan: rataRataPotongan
+      percentPotongan: rataRataPotongan,
+      feeBreakdown
     };
   }, [filteredOrders]);
 
@@ -435,7 +465,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     const toastId = toast.loading("Menyiapkan Laporan PDF...");
 
     try {
-      const doc = new jsPDF();
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
       const exportTime = new Date().toLocaleString('id-ID');
       
       let startDateStr = dateRange.start;
@@ -725,6 +759,80 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             trend="Total GMV Valid"
             icon={<Wallet className="w-4 h-4 text-teal-600" />}
           />
+        </div>
+
+        {/* Fee Breakdown Dashboard Section */}
+        <div className="mt-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-slate-50 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-xl">
+                <Percent className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">Breakdown Biaya Platform</h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Detail Potongan Marketplace (Shopee)</p>
+              </div>
+            </div>
+          </div>
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-medium">Biaya Administrasi</span>
+                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.admin.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-medium">Biaya Komisi AMS</span>
+                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.ams.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-medium">Biaya Layanan</span>
+                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.service.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-medium">Gratis Ongkir (Subsidi)</span>
+                <span className="text-xs font-bold text-green-600">+Rp {metrics.feeBreakdown.shippingRebate.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-medium">Pengembalian Dana</span>
+                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.refund.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-medium">Ongkir Diteruskan</span>
+                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.shippingForwarded.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-medium">Ongkir Pengembalian</span>
+                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.returnShipping.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-medium">Premi</span>
+                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.premium.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-medium">Voucher Penjual</span>
+                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.voucher.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl flex flex-col justify-center">
+              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Potongan</span>
+              <span className="text-xl font-black text-red-600">
+                -Rp {metrics.totalPotongan.toLocaleString()}
+              </span>
+              <div className="mt-2 h-1 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-red-500" 
+                  style={{ width: `${Math.min(100, (metrics.totalPotongan / (metrics.totalOmzet || 1)) * 100)}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-slate-400 mt-1 font-bold">
+                {((metrics.totalPotongan / (metrics.totalOmzet || 1)) * 100).toFixed(1)}% dari Omzet
+              </span>
+            </div>
+          </div>
         </div>
 
         <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-2xl flex items-start gap-3 mt-6">
