@@ -475,153 +475,163 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
              </div>
 
              {/* Content */}
-             <div className="overflow-y-auto p-6 space-y-6 custom-scrollbar">
-                
-                {/* List Produk */}
-                <div>
-                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                      <Package className="w-4 h-4" /> Rincian Produk
-                   </h4>
-                   <div className="space-y-3">
-                      {selectedOrder.order_items?.map((item, idx) => (
-                        <div key={idx} className="flex gap-4 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900/50 transition-colors shadow-sm">
-                           <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-2xl flex items-center justify-center border border-slate-300 dark:border-slate-700 shrink-0">
-                              <ShoppingBag className="w-8 h-8 text-slate-400 dark:text-slate-500" />
-                           </div>
-                           <div className="flex-1 min-w-0 flex flex-col justify-center">
-                              {/* Product Name */}
-                              <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-1">
-                                {item.product_name}
-                              </p>
-                              
-                              {/* Explicit Variation Display */}
-                              {item.variation && (
-                                <div className="mt-1.5 mb-2">
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/30 text-xs font-bold text-orange-800 dark:text-orange-300">
-                                    <Layers className="w-3.5 h-3.5" />
-                                    Variasi: {item.variation}
-                                  </span>
-                                </div>
-                              )}
-                              
-                              <div className="flex flex-wrap items-center gap-2 mt-1">
-                                <span className="text-xs font-black bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900 px-3 py-1 rounded-lg border border-slate-900 dark:border-slate-200">
-                                   Qty: {item.quantity}
-                                </span>
-                                  {item.is_sku_mapped ? (
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs font-bold text-green-500 dark:text-green-400 bg-green-500/10 px-3 py-1 rounded-lg flex items-center gap-1 border border-green-500/20">
-                                          <Link className="w-3 h-3" /> Terhubung: {item.final_sku}
-                                        </span>
-                                        <button 
-                                            onClick={() => {
-                                                setMappingTargetItem(item);
-                                                setIsEditingMapping(true);
-                                                fetchProductsForMapping(selectedOrder.store_id);
-                                            }}
-                                            className="p-1 text-slate-400 hover:text-orange-500 transition-colors"
-                                            title="Edit Mapping"
-                                        >
-                                            <Edit3 className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs font-bold text-red-500 dark:text-red-400 bg-red-500/10 px-3 py-1 rounded-lg flex items-center gap-1 border border-red-500/20">
-                                          <AlertCircle className="w-3 h-3" /> Belum Mapping
-                                        </span>
-                                        <button 
-                                            onClick={() => {
-                                                setMappingTargetItem(item);
-                                                setIsEditingMapping(true);
-                                                fetchProductsForMapping(selectedOrder.store_id);
-                                            }}
-                                            className="p-1 text-slate-400 hover:text-orange-500 transition-colors"
-                                            title="Manual Mapping"
-                                        >
-                                            <Edit3 className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                )}
-                              </div>
-                           </div>
-                           <div className="text-right shrink-0 flex flex-col justify-center">
-                              <p className="text-lg font-black text-slate-900 dark:text-white">
-                                Rp {(item.product_total || 0).toLocaleString()}
-                              </p>
-                              <div className="flex items-center justify-end gap-2 mt-1">
-                                {editingHppItemId === item.id ? (
-                                  <div className="flex items-center gap-1">
-                                    <input 
-                                      type="number"
-                                      value={tempHppValue}
-                                      onChange={(e) => setTempHppValue(Number(e.target.value))}
-                                      className="w-20 px-2 py-1 text-xs font-bold bg-white dark:bg-slate-800 border border-orange-500 rounded-lg outline-none"
-                                      autoFocus
-                                    />
-                                    <button 
-                                      onClick={() => handleUpdateHpp(item.id)}
-                                      className="p-1 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                                    >
-                                      <Check className="w-3 h-3" />
-                                    </button>
-                                    <button 
-                                      onClick={() => setEditingHppItemId(null)}
-                                      className="p-1 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg"
-                                    >
-                                      <X className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center gap-1 group/hpp">
-                                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                                      HPP: Rp {(isCancelled ? 0 : ((item.hpp_at_time || 0) * (item.quantity || 0))).toLocaleString()}
+              <div className="overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                {/* Define isCancelled for the modal scope */}
+                {(() => {
+                  const isCancelled = selectedOrder.status?.toLowerCase().includes('batal') || 
+                                     selectedOrder.status?.toLowerCase().includes('cancel') || 
+                                     selectedOrder.status?.toLowerCase().includes('pengembalian');
+                  
+                  return (
+                    <>
+                      {/* List Produk */}
+                      <div>
+                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <Package className="w-4 h-4" /> Rincian Produk
+                         </h4>
+                         <div className="space-y-3">
+                            {selectedOrder.order_items?.map((item, idx) => (
+                              <div key={idx} className="flex gap-4 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900/50 transition-colors shadow-sm">
+                                 <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-2xl flex items-center justify-center border border-slate-300 dark:border-slate-700 shrink-0">
+                                    <ShoppingBag className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+                                 </div>
+                                 <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                    {/* Product Name */}
+                                    <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-1">
+                                      {item.product_name}
                                     </p>
-                                    <button 
-                                      onClick={() => {
-                                        setEditingHppItemId(item.id);
-                                        setTempHppValue(item.hpp_at_time || 0);
-                                      }}
-                                      className="p-1 text-slate-300 hover:text-orange-500 opacity-0 group-hover/hpp:opacity-100 transition-all"
-                                      title="Edit HPP"
-                                    >
-                                      <Edit3 className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                )}
+                                    
+                                    {/* Explicit Variation Display */}
+                                    {item.variation && (
+                                      <div className="mt-1.5 mb-2">
+                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/30 text-xs font-bold text-orange-800 dark:text-orange-300">
+                                          <Layers className="w-3.5 h-3.5" />
+                                          Variasi: {item.variation}
+                                        </span>
+                                      </div>
+                                    )}
+                                    
+                                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                                      <span className="text-xs font-black bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900 px-3 py-1 rounded-lg border border-slate-900 dark:border-slate-200">
+                                         Qty: {item.quantity}
+                                      </span>
+                                        {item.is_sku_mapped ? (
+                                          <div className="flex items-center gap-2">
+                                              <span className="text-xs font-bold text-green-500 dark:text-green-400 bg-green-500/10 px-3 py-1 rounded-lg flex items-center gap-1 border border-green-500/20">
+                                                <Link className="w-3 h-3" /> Terhubung: {item.final_sku}
+                                              </span>
+                                              <button 
+                                                  onClick={() => {
+                                                      setMappingTargetItem(item);
+                                                      setIsEditingMapping(true);
+                                                      fetchProductsForMapping(selectedOrder.store_id);
+                                                  }}
+                                                  className="p-1 text-slate-400 hover:text-orange-500 transition-colors"
+                                                  title="Edit Mapping"
+                                              >
+                                                  <Edit3 className="w-3.5 h-3.5" />
+                                              </button>
+                                          </div>
+                                      ) : (
+                                          <div className="flex items-center gap-2">
+                                              <span className="text-xs font-bold text-red-500 dark:text-red-400 bg-red-500/10 px-3 py-1 rounded-lg flex items-center gap-1 border border-red-500/20">
+                                                <AlertCircle className="w-3 h-3" /> Belum Mapping
+                                              </span>
+                                              <button 
+                                                  onClick={() => {
+                                                      setMappingTargetItem(item);
+                                                      setIsEditingMapping(true);
+                                                      fetchProductsForMapping(selectedOrder.store_id);
+                                                  }}
+                                                  className="p-1 text-slate-400 hover:text-orange-500 transition-colors"
+                                                  title="Manual Mapping"
+                                              >
+                                                  <Edit3 className="w-3.5 h-3.5" />
+                                              </button>
+                                          </div>
+                                      )}
+                                    </div>
+                                 </div>
+                                 <div className="text-right shrink-0 flex flex-col justify-center">
+                                    <p className="text-lg font-black text-slate-900 dark:text-white">
+                                      Rp {(item.product_total || 0).toLocaleString()}
+                                    </p>
+                                    <div className="flex items-center justify-end gap-2 mt-1">
+                                      {editingHppItemId === item.id ? (
+                                        <div className="flex items-center gap-1">
+                                          <input 
+                                            type="number"
+                                            value={tempHppValue}
+                                            onChange={(e) => setTempHppValue(Number(e.target.value))}
+                                            className="w-20 px-2 py-1 text-xs font-bold bg-white dark:bg-slate-800 border border-orange-500 rounded-lg outline-none"
+                                            autoFocus
+                                          />
+                                          <button 
+                                            onClick={() => handleUpdateHpp(item.id)}
+                                            className="p-1 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                          >
+                                            <Check className="w-3 h-3" />
+                                          </button>
+                                          <button 
+                                            onClick={() => setEditingHppItemId(null)}
+                                            className="p-1 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg"
+                                          >
+                                            <X className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-1 group/hpp">
+                                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                                            HPP: Rp {(isCancelled ? 0 : ((item.hpp_at_time || 0) * (item.quantity || 0))).toLocaleString()}
+                                          </p>
+                                          <button 
+                                            onClick={() => {
+                                              setEditingHppItemId(item.id);
+                                              setTempHppValue(item.hpp_at_time || 0);
+                                            }}
+                                            className="p-1 text-slate-300 hover:text-orange-500 opacity-0 group-hover/hpp:opacity-100 transition-all"
+                                            title="Edit HPP"
+                                          >
+                                            <Edit3 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                 </div>
                               </div>
-                           </div>
-                        </div>
-                      ))}
-                   </div>
-                </div>
+                            ))}
+                         </div>
+                      </div>
 
-                {/* Financial Summary */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl space-y-2">
-                       <div className="flex justify-between text-xs text-slate-500">
-                          <span>Total Produk (GMV)</span>
-                          <span className="font-bold text-slate-700 dark:text-slate-300">Rp {(selectedOrder.product_total || 0).toLocaleString()}</span>
-                       </div>
-                       <div className="flex justify-between text-xs text-slate-500">
-                          <span>Total Potongan Marketplace</span>
-                          <span className="font-bold text-red-500">- Rp {((selectedOrder.admin_fee || 0) + (selectedOrder.service_fee || 0)).toLocaleString()}</span>
-                       </div>
-                       <div className="text-[10px] text-slate-400 italic text-right">
-                          (Termasuk Admin, Layanan, Ongkir, Voucher, dll)
-                       </div>
-                    </div>
-                    
-                    <div className="bg-orange-50 dark:bg-orange-900/10 p-4 rounded-2xl flex flex-col justify-center border border-orange-100 dark:border-orange-500/20">
-                       <span className="text-xs font-black uppercase text-orange-400 tracking-widest mb-1">Net Revenue</span>
-                       <span className="text-2xl font-black text-orange-600 dark:text-orange-500">
-                          Rp {(selectedOrder.net_revenue || 0).toLocaleString()}
-                       </span>
-                       {(selectedOrder.status || '').includes('Batal') && (
-                          <span className="text-[10px] font-bold text-red-500 mt-1">*Pesanan Dibatalkan (Rp 0)</span>
-                       )}
-                    </div>
-                </div>
+                      {/* Financial Summary */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                          <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl space-y-2">
+                             <div className="flex justify-between text-xs text-slate-500">
+                                <span>Total Produk (GMV)</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-300">Rp {(selectedOrder.product_total || 0).toLocaleString()}</span>
+                             </div>
+                             <div className="flex justify-between text-xs text-slate-500">
+                                <span>Total Potongan Marketplace</span>
+                                <span className="font-bold text-red-500">- Rp {((selectedOrder.admin_fee || 0) + (selectedOrder.service_fee || 0)).toLocaleString()}</span>
+                             </div>
+                             <div className="text-[10px] text-slate-400 italic text-right">
+                                (Termasuk Admin, Layanan, Ongkir, Voucher, dll)
+                             </div>
+                          </div>
+                          
+                          <div className="bg-orange-50 dark:bg-orange-900/10 p-4 rounded-2xl flex flex-col justify-center border border-orange-100 dark:border-orange-500/20">
+                             <span className="text-xs font-black uppercase text-orange-400 tracking-widest mb-1">Net Revenue</span>
+                             <span className="text-2xl font-black text-orange-600 dark:text-orange-500">
+                                Rp {(selectedOrder.net_revenue || 0).toLocaleString()}
+                             </span>
+                             {isCancelled && (
+                                <span className="text-[10px] font-bold text-red-500 mt-1">*{selectedOrder.status} (HPP Rp 0)</span>
+                             )}
+                          </div>
+                      </div>
+                    </>
+                  );
+                })()}
              </div>
           </div>
         </div>
