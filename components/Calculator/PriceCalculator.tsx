@@ -305,22 +305,20 @@ export const PriceCalculator: React.FC<PriceCalculatorProps> = ({ store }) => {
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-4 pl-12 pr-4 font-bold text-slate-900 dark:text-white outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
                   />
                   {showSkuDropdown && filteredProducts.length > 0 && (
-                    <div className="absolute z-50 left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="absolute z-50 left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 max-h-[60vh] overflow-y-auto custom-scrollbar">
                       {filteredProducts.map((p) => (
                         <button
                           key={p.sku}
                           onClick={() => handleSelectProduct(p)}
-                          className="w-full text-left p-4 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-colors"
+                          className="w-full text-left p-4 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-colors flex items-center justify-between gap-4"
                         >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <p className="font-black text-slate-900 dark:text-white text-sm">{p.sku}</p>
-                              <p className="text-xs text-slate-500 font-medium">{p.product_name} {p.variation_name ? `(${p.variation_name})` : ''}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-xs font-black text-emerald-500">HPP: {formatRupiah(p.cost_price)}</p>
-                              <p className="text-[10px] text-slate-400 font-bold">Proses: {formatRupiah(p.processing_fee || 0)}</p>
-                            </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-black text-slate-900 dark:text-white text-sm truncate">{p.sku}</p>
+                            <p className="text-[10px] md:text-xs text-slate-500 font-medium truncate">{p.product_name} {p.variation_name ? `(${p.variation_name})` : ''}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs font-black text-emerald-500">{formatRupiah(p.cost_price)}</p>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Fee: {formatRupiah(p.processing_fee || 0)}</p>
                           </div>
                         </button>
                       ))}

@@ -184,7 +184,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
   const handleEditGroup = (product: Product) => {
     const group = products.filter(p => 
-        p.product_name.trim().toLowerCase() === product.product_name.trim().toLowerCase()
+        (p.product_name || '').trim().toLowerCase() === (product.product_name || '').trim().toLowerCase()
     );
     // Deep copy to avoid mutating state directly
     setEditingProductGroup(JSON.parse(JSON.stringify(group.length > 0 ? group : [product])));
@@ -575,15 +575,15 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   };
 
   const filteredProducts = products.filter(p => 
-      p.product_name.toLowerCase().includes(searchProduct.toLowerCase()) || 
-      (p.variation_name || '').toLowerCase().includes(searchProduct.toLowerCase()) || 
-      p.sku.toLowerCase().includes(searchProduct.toLowerCase())
+      (p.product_name || '').toLowerCase().includes((searchProduct || '').toLowerCase()) || 
+      (p.variation_name || '').toLowerCase().includes((searchProduct || '').toLowerCase()) || 
+      (p.sku || '').toLowerCase().includes((searchProduct || '').toLowerCase())
   );
 
   const mappingOptions = products.filter(p => 
       !mappingSearchTerm || 
-      p.product_name.toLowerCase().includes(mappingSearchTerm.toLowerCase()) ||
-      p.sku.toLowerCase().includes(mappingSearchTerm.toLowerCase())
+      (p.product_name || '').toLowerCase().includes((mappingSearchTerm || '').toLowerCase()) ||
+      (p.sku || '').toLowerCase().includes((mappingSearchTerm || '').toLowerCase())
   );
 
   return (
@@ -680,58 +680,60 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
        )}
 
        {selectedUnmapped && (
-           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
-                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start shrink-0">
+           <div className="fixed inset-0 z-[60] flex items-center justify-center p-2 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[95vh]">
+                 <div className="p-5 md:p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start shrink-0 bg-slate-50/50 dark:bg-slate-800/30">
                     <div>
-                       <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Hubungkan SKU</h3>
-                       <p className="text-xs text-slate-500 mt-1">Produk Shopee: <span className="font-bold text-orange-600">{selectedUnmapped.name} {selectedUnmapped.variation ? `(${selectedUnmapped.variation})` : ''}</span></p>
+                       <h3 className="text-base md:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Hubungkan SKU</h3>
+                       <p className="text-[10px] md:text-xs text-slate-500 mt-1">Produk Shopee: <span className="font-bold text-orange-600">{selectedUnmapped.name} {selectedUnmapped.variation ? `(${selectedUnmapped.variation})` : ''}</span></p>
                     </div>
-                    <button onClick={() => { setSelectedUnmapped(null); setIsQuickCreating(false); }} className="text-slate-400 hover:text-red-500"><X className="w-6 h-6" /></button>
+                    <button onClick={() => { setSelectedUnmapped(null); setIsQuickCreating(false); }} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><X className="w-6 h-6" /></button>
                  </div>
                  
-                 <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+                 <div className="p-5 md:p-6 space-y-6 overflow-y-auto custom-scrollbar">
                     {!isQuickCreating ? (
                         <>
                             <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center justify-between">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between ml-1">
                                   <span>Cari & Pilih Master SKU</span>
                                   {targetSku && !mappingSearchTerm && (
-                                    <span className="text-[10px] text-orange-600 flex items-center gap-1 font-bold animate-pulse">
-                                      <Lightbulb className="w-3 h-3" /> Saran AI (Cek Varian)
+                                    <span className="text-[9px] text-orange-600 flex items-center gap-1 font-bold animate-pulse">
+                                      <Lightbulb className="w-3 h-3" /> Saran AI
                                     </span>
                                   )}
                                 </label>
                                 
-                                <div className="relative mb-2">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <div className="relative group">
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
                                     <input 
                                         type="text"
                                         placeholder="Ketik untuk mencari produk..."
                                         value={mappingSearchTerm}
                                         onChange={(e) => setMappingSearchTerm(e.target.value)}
-                                        className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-orange-500/20"
+                                        className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
                                     />
                                 </div>
 
-                                <select 
-                                    value={targetSku}
-                                    onChange={(e) => setTargetSku(e.target.value)}
-                                    className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-orange-500/20"
-                                    size={5} 
-                                >
-                                    <option value="" className="p-2 text-slate-400">-- Pilih SKU Internal --</option>
-                                    {mappingOptions.map(p => (
-                                        <option key={p.sku} value={p.sku} className="p-2 border-b border-slate-100 dark:border-slate-700/50">
-                                            {p.product_name} {p.variation_name ? `[${p.variation_name}]` : ''} ({p.sku})
-                                        </option>
-                                    ))}
-                                </select>
-                                <p className="text-[10px] text-slate-400 text-right">Menampilkan {mappingOptions.length} produk</p>
+                                 <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm bg-slate-50 dark:bg-slate-800/50">
+                                    <select 
+                                        value={targetSku}
+                                        onChange={(e) => setTargetSku(e.target.value)}
+                                        className="w-full p-2 bg-transparent outline-none font-bold text-slate-700 dark:text-white text-sm"
+                                        size={5} 
+                                    >
+                                        <option value="" className="p-3 text-slate-400">-- Pilih SKU Internal --</option>
+                                        {mappingOptions.map(p => (
+                                            <option key={p.sku} value={p.sku} className="p-3 border-b border-slate-100 dark:border-slate-700/50 hover:bg-orange-50 dark:hover:bg-orange-500/10 cursor-pointer">
+                                                {p.product_name} {p.variation_name ? `[${p.variation_name}]` : ''} ({p.sku})
+                                            </option>
+                                        ))}
+                                    </select>
+                                 </div>
+                                <p className="text-[10px] text-slate-400 text-right font-bold uppercase tracking-widest">Menampilkan {mappingOptions.length} produk</p>
                             </div>
                             
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs text-slate-400 font-bold">Produk belum ada di database?</span>
+                            <div className="flex items-center justify-between p-4 bg-orange-50 dark:bg-orange-500/10 rounded-2xl border border-orange-100 dark:border-orange-500/20">
+                                <span className="text-[10px] md:text-xs text-slate-500 font-bold uppercase tracking-wide">Produk belum ada?</span>
                                 <button 
                                     onClick={() => {
                                         setIsQuickCreating(true);
@@ -743,80 +745,82 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                             processing_fee: 1250
                                         });
                                     }}
-                                    className="text-xs font-black text-orange-600 uppercase hover:underline"
+                                    className="text-xs font-black text-orange-600 uppercase hover:underline tracking-widest"
                                 >
-                                    + Buat Produk Baru
+                                    + Buat Baru
                                 </button>
                             </div>
 
                             <button 
                                 onClick={handleApplyMapping}
                                 disabled={!targetSku}
-                                className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                                className="w-full py-4 bg-slate-900 dark:bg-orange-600 text-white font-black rounded-2xl hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-3 shadow-xl shadow-slate-900/20 dark:shadow-orange-600/20 uppercase tracking-widest text-sm"
                             >
-                                <LinkIcon className="w-4 h-4" />
+                                <LinkIcon className="w-5 h-5" />
                                 SIMPAN MAPPING
                             </button>
                         </>
                     ) : (
-                        <div className="animate-in slide-in-from-right duration-300">
-                             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-medium mb-4 flex gap-2">
-                                <Info className="w-4 h-4 shrink-0" />
+                        <div className="animate-in slide-in-from-right duration-300 space-y-6">
+                             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-2xl text-xs font-bold flex gap-3 border border-blue-100 dark:border-blue-900/30">
+                                <Info className="w-5 h-5 shrink-0" />
                                 Produk ini akan disimpan ke Master Data dan otomatis terhubung.
                              </div>
                              <div className="space-y-4">
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black uppercase text-slate-400">SKU (Kode Unik)</label>
+                                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">SKU (Kode Unik)</label>
                                     <input 
                                         type="text" 
                                         value={newProduct.sku}
                                         onChange={(e) => setNewProduct({...newProduct, sku: e.target.value.toUpperCase()})}
-                                        className="w-full p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold uppercase"
+                                        className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-black uppercase text-sm outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
                                         placeholder="CONTOH-SKU-001"
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black uppercase text-slate-400">Nama Produk Internal</label>
+                                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">Nama Produk Internal</label>
                                     <input 
                                         type="text" 
                                         value={newProduct.product_name}
                                         onChange={(e) => setNewProduct({...newProduct, product_name: e.target.value})}
-                                        className="w-full p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold"
+                                        className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-sm outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black uppercase text-slate-400">Variasi (Opsional)</label>
+                                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">Variasi (Opsional)</label>
                                     <input 
                                         type="text" 
                                         value={newProduct.variation_name}
                                         onChange={(e) => setNewProduct({...newProduct, variation_name: e.target.value})}
-                                        className="w-full p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold"
+                                        className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-sm outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
                                         placeholder="Contoh: Merah, XL"
                                     />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black uppercase text-slate-400">HPP (Harga Modal)</label>
-                                    <input 
-                                        type="number" 
-                                        value={newProduct.cost_price}
-                                        onWheel={(e) => e.currentTarget.blur()}
-                                        onChange={(e) => setNewProduct({...newProduct, cost_price: Number(e.target.value)})}
-                                        className="w-full p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold"
-                                    />
+                                <div className="grid grid-cols-2 gap-4">
+                                   <div className="space-y-1">
+                                       <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">HPP (Modal)</label>
+                                       <input 
+                                           type="number" 
+                                           value={newProduct.cost_price}
+                                           onWheel={(e) => e.currentTarget.blur()}
+                                           onChange={(e) => setNewProduct({...newProduct, cost_price: Number(e.target.value)})}
+                                           className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-sm outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
+                                       />
+                                   </div>
+                                   <div className="space-y-1">
+                                       <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-1">Biaya Proses</label>
+                                       <input 
+                                           type="number" 
+                                           value={newProduct.processing_fee ?? ''}
+                                           onWheel={(e) => e.currentTarget.blur()}
+                                           onChange={(e) => setNewProduct({...newProduct, processing_fee: Number(e.target.value)})}
+                                           className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-sm outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
+                                       />
+                                   </div>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black uppercase text-slate-400">Biaya Proses</label>
-                                    <input 
-                                        type="number" 
-                                        value={newProduct.processing_fee || ''}
-                                        onWheel={(e) => e.currentTarget.blur()}
-                                        onChange={(e) => setNewProduct({...newProduct, processing_fee: Number(e.target.value)})}
-                                        className="w-full p-3 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold"
-                                    />
-                                </div>
-                                <div className="flex gap-2 pt-2">
-                                    <button onClick={() => setIsQuickCreating(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl">Kembali</button>
-                                    <button onClick={handleQuickCreateAndMap} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">Simpan & Map</button>
+                                <div className="flex flex-col sm:flex-row gap-3 pt-4">
+                                    <button onClick={() => setIsQuickCreating(false)} className="order-2 sm:order-1 flex-1 py-4 text-slate-500 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-all text-sm">Kembali</button>
+                                    <button onClick={handleQuickCreateAndMap} className="order-1 sm:order-2 flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 shadow-xl shadow-blue-600/20 transition-all text-sm uppercase tracking-widest">Simpan & Map</button>
                                 </div>
                              </div>
                         </div>
@@ -828,31 +832,32 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
        {/* BULK EDIT MODAL */}
        {isBulkEditing && (
-           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-               <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-sm w-full p-6">
-                   <div className="flex justify-between items-center mb-4">
-                       <h3 className="text-lg font-black uppercase dark:text-white">Edit HPP Massal</h3>
-                       <button onClick={() => setIsBulkEditing(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+           <div className="fixed inset-0 z-[60] flex items-center justify-center p-2 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+               <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl max-w-sm w-full p-6 md:p-8">
+                   <div className="flex justify-between items-center mb-6">
+                       <h3 className="text-lg font-black uppercase dark:text-white tracking-tight">Edit HPP Massal</h3>
+                       <button onClick={() => setIsBulkEditing(false)} className="p-2 text-slate-400 hover:text-slate-600 transition-colors"><X className="w-5 h-5"/></button>
                    </div>
-                   <p className="text-sm text-slate-500 mb-4">
-                       Mengupdate HPP untuk <span className="font-bold text-slate-900 dark:text-white">{selectedSkus.size} produk</span> terpilih.
+                   <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                       Mengupdate HPP untuk <span className="font-black text-slate-900 dark:text-white">{selectedSkus.size} produk</span> terpilih secara sekaligus.
                    </p>
                    
-                   <div className="relative mb-6">
-                       <DollarSign className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                   <div className="relative mb-8 group">
+                       <DollarSign className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
                        <input 
                            type="number" 
                            placeholder="0"
                            autoFocus
                            value={bulkEditHpp}
+                           onWheel={(e) => e.currentTarget.blur()}
                            onChange={(e) => setBulkEditHpp(e.target.value === '' ? '' : Number(e.target.value))}
-                           className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-lg font-bold outline-none focus:ring-2 focus:ring-orange-500/20"
+                           className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xl font-black outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
                        />
                    </div>
 
-                   <div className="flex gap-2">
-                       <button onClick={() => setIsBulkEditing(false)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold rounded-xl hover:bg-slate-200">Batal</button>
-                       <button onClick={handleBulkEditHPP} className="flex-1 py-3 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700">Simpan</button>
+                   <div className="flex gap-3">
+                       <button onClick={() => setIsBulkEditing(false)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Batal</button>
+                       <button onClick={handleBulkEditHPP} className="flex-1 py-4 bg-orange-600 text-white font-black rounded-2xl hover:bg-orange-700 shadow-lg shadow-orange-600/20 transition-all uppercase tracking-wider text-sm">Simpan</button>
                    </div>
                </div>
            </div>
@@ -976,14 +981,14 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                             </div>
                             <input 
                                 type="number" placeholder="HPP" 
-                                value={newProduct.cost_price || ''}
+                                value={newProduct.cost_price ?? ''}
                                 onWheel={(e) => e.currentTarget.blur()}
                                 onChange={(e) => setNewProduct({...newProduct, cost_price: Number(e.target.value)})}
                                 className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold"
                             />
                             <input 
                                 type="number" placeholder="Biaya Proses" 
-                                value={newProduct.processing_fee || ''}
+                                value={newProduct.processing_fee ?? ''}
                                 onWheel={(e) => e.currentTarget.blur()}
                                 onChange={(e) => setNewProduct({...newProduct, processing_fee: Number(e.target.value)})}
                                 className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold"
@@ -998,101 +1003,85 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
                 {/* GROUP EDIT MODAL */}
                 {editingProductGroup && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-                        <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[90vh]">
-                            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-2 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl max-w-2xl w-full flex flex-col max-h-[95vh] overflow-hidden">
+                            <div className="p-5 md:p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30">
                                 <div>
-                                    <h3 className="text-lg font-black uppercase dark:text-white">Set HPP Produk</h3>
-                                    <p className="text-xs text-slate-500">Atur HPP untuk semua variasi produk ini.</p>
+                                    <h3 className="text-base md:text-lg font-black uppercase dark:text-white tracking-tight">Set HPP Produk</h3>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Atur HPP untuk semua variasi produk ini.</p>
                                 </div>
-                                <button onClick={() => setEditingProductGroup(null)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6"/></button>
+                                <button onClick={() => setEditingProductGroup(null)} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><X className="w-6 h-6"/></button>
                             </div>
                             
-                            <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
+                            <div className="p-5 md:p-6 overflow-y-auto custom-scrollbar space-y-6">
                                 {/* Shared Product Name */}
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Nama Produk (Berlaku untuk semua variasi)</label>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block ml-1">Nama Produk (Berlaku untuk semua variasi)</label>
                                     <input 
                                         type="text" 
-                                        value={editingProductGroup[0].product_name}
+                                        value={editingProductGroup[0].product_name || ''}
                                         onChange={(e) => {
                                             const newName = e.target.value;
                                             setEditingProductGroup(prev => prev ? prev.map(p => ({ ...p, product_name: newName })) : null);
                                         }}
-                                        className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold"
+                                        className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-sm outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
                                     />
                                 </div>
 
-                                {/* Variations List */}
-                                <div className="space-y-3">
-                                    <label className="text-xs font-bold text-slate-500 uppercase block">Daftar Variasi & HPP</label>
-                                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                                        <table className="w-full text-left">
-                                            <thead className="bg-slate-50 dark:bg-slate-800">
-                                                <tr>
-                                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">SKU</th>
-                                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">Variasi</th>
-                                                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase w-40">HPP (Modal)</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                                {editingProductGroup.map((product, idx) => (
-                                                    <tr key={product.sku} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                                        <td className="px-4 py-3 text-xs font-mono text-slate-500">{product.sku}</td>
-                                                        <td className="px-4 py-3">
-                                                            <input 
-                                                                type="text"
-                                                                value={product.variation_name || ''}
-                                                                placeholder="-"
-                                                                onChange={(e) => {
-                                                                    const newVar = e.target.value;
-                                                                    setEditingProductGroup(prev => {
-                                                                        if (!prev) return null;
-                                                                        const newGroup = [...prev];
-                                                                        newGroup[idx] = { ...newGroup[idx], variation_name: newVar };
-                                                                        return newGroup;
-                                                                    });
-                                                                }}
-                                                                className="w-full bg-transparent border-b border-transparent focus:border-orange-500 outline-none text-sm font-medium"
-                                                            />
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <div className="relative">
-                                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">Rp</span>
-                                                                <input 
-                                                                    type="number"
-                                                                    value={product.cost_price}
-                                                                    onWheel={(e) => e.currentTarget.blur()}
-                                                                    onChange={(e) => {
-                                                                        const newPrice = Number(e.target.value);
-                                                                        setEditingProductGroup(prev => {
-                                                                            if (!prev) return null;
-                                                                            const newGroup = [...prev];
-                                                                            newGroup[idx] = { ...newGroup[idx], cost_price: newPrice };
-                                                                            return newGroup;
-                                                                        });
-                                                                    }}
-                                                                    className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-orange-500/20"
-                                                                />
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block ml-1">Daftar Variasi & HPP</label>
+                                    <div className="space-y-3">
+                                        {editingProductGroup.map((product, idx) => (
+                                            <div key={product.sku} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700/50 flex flex-col sm:flex-row sm:items-center gap-4">
+                                                <div className="flex-1">
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{product.sku}</p>
+                                                    <p className="text-sm font-bold text-slate-700 dark:text-white">{product.variation_name || 'No Variation'}</p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <div className="relative flex-1 sm:w-32">
+                                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">Rp</span>
+                                                        <input 
+                                                            type="number" 
+                                                            value={product.cost_price ?? ''}
+                                                            onWheel={(e) => e.currentTarget.blur()}
+                                                            onChange={(e) => {
+                                                                const newVal = Number(e.target.value);
+                                                                setEditingProductGroup(prev => prev ? prev.map((p, i) => i === idx ? { ...p, cost_price: newVal } : p) : null);
+                                                            }}
+                                                            className="w-full pl-8 pr-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-black outline-none focus:ring-2 focus:ring-orange-500/20"
+                                                            placeholder="HPP"
+                                                        />
+                                                    </div>
+                                                    <div className="relative flex-1 sm:w-32">
+                                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">Rp</span>
+                                                        <input 
+                                                            type="number" 
+                                                            value={product.processing_fee ?? ''}
+                                                            onWheel={(e) => e.currentTarget.blur()}
+                                                            onChange={(e) => {
+                                                                const newVal = Number(e.target.value);
+                                                                setEditingProductGroup(prev => prev ? prev.map((p, i) => i === idx ? { ...p, processing_fee: newVal } : p) : null);
+                                                            }}
+                                                            className="w-full pl-8 pr-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-black outline-none focus:ring-2 focus:ring-orange-500/20"
+                                                            placeholder="Fee"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800/50 rounded-b-3xl">
-                                <button onClick={() => setEditingProductGroup(null)} className="px-6 py-3 text-sm font-bold text-slate-500 hover:bg-white rounded-xl transition-all">Batal</button>
-                                <button onClick={handleSaveGroup} className="px-6 py-3 bg-orange-600 text-white text-sm font-bold rounded-xl hover:bg-orange-700 shadow-lg shadow-orange-600/20 transition-all">Simpan Perubahan</button>
+                            <div className="p-5 md:p-6 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row gap-3 bg-slate-50/50 dark:bg-slate-800/30">
+                                <button onClick={() => setEditingProductGroup(null)} className="order-2 sm:order-1 flex-1 py-4 text-slate-500 font-bold hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all text-sm">Batal</button>
+                                <button onClick={handleSaveGroup} className="order-1 sm:order-2 flex-1 py-4 bg-slate-900 dark:bg-orange-600 text-white font-black rounded-2xl hover:opacity-90 shadow-xl shadow-slate-900/20 dark:shadow-orange-600/20 transition-all text-sm uppercase tracking-widest">Simpan Perubahan</button>
                             </div>
                         </div>
                     </div>
                 )}
 
-                <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+                <div className="hidden md:block overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 dark:bg-slate-800">
                             <tr>
@@ -1160,6 +1149,47 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                             )})}
                         </tbody>
                     </table>
+                </div>
+
+                {/* MOBILE VIEW: CARD LAYOUT */}
+                <div className="md:hidden space-y-3">
+                    {filteredProducts.map(p => {
+                        const isSelected = selectedSkus.has(p.sku);
+                        return (
+                            <div key={p.sku} className={`p-4 rounded-2xl border transition-all ${isSelected ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/10 dark:border-orange-800' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'}`}>
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => toggleSelectSku(p.sku)} className="flex items-center justify-center">
+                                            {isSelected 
+                                                ? <CheckSquare className="w-5 h-5 text-orange-600" />
+                                                : <Square className="w-5 h-5 text-slate-300" />
+                                            }
+                                        </button>
+                                        <span className="text-[10px] font-bold font-mono text-slate-400 uppercase">{p.sku}</span>
+                                    </div>
+                                    <div className="flex gap-1">
+                                        <button onClick={() => handleEditGroup(p)} className="p-2 text-orange-600 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
+                                            <Edit2 className="w-4 h-4" />
+                                        </button>
+                                        <button onClick={() => handleDeleteProduct(p.sku)} className="p-2 text-red-600 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <p className="text-sm font-bold text-slate-900 dark:text-white mb-1">{p.product_name}</p>
+                                <div className="flex items-center justify-between mt-2">
+                                    {p.variation_name ? (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-[10px] text-slate-500 border border-slate-200 dark:border-slate-700">
+                                            <Tag className="w-3 h-3" /> {p.variation_name}
+                                        </span>
+                                    ) : <span className="text-slate-300">-</span>}
+                                    <span className={`text-sm font-black ${p.cost_price === 0 ? "text-red-500" : "text-slate-900 dark:text-orange-400"}`}>
+                                        {p.cost_price === 0 ? "Set HPP!" : `Rp ${(p.cost_price || 0).toLocaleString()}`}
+                                    </span>
+                                </div>
+                            </div>
+                        )
+                    })}
                 </div>
            </div>
        )}
