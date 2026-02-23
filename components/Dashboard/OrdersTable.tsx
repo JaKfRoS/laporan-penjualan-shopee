@@ -514,7 +514,7 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
 
       {/* --- ORDER DETAILS MODAL --- */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[2rem] md:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] md:max-h-[90vh]">
              {/* Header */}
              <div className="p-5 md:p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start bg-slate-50/50 dark:bg-slate-800/30 shrink-0">
@@ -712,7 +712,7 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
 
       {/* --- EDIT MAPPING MODAL --- */}
       {isEditingMapping && mappingTargetItem && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-2 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
               <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] md:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
                   <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30 shrink-0">
                       <h3 className="text-xs md:text-sm font-black uppercase text-slate-900 dark:text-white tracking-widest">Edit Mapping SKU</h3>
