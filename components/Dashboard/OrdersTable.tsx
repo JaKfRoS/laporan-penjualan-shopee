@@ -575,7 +575,7 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                                 ) : (
                                   <div className="flex items-center gap-1 group/hpp">
                                     <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                                      HPP: Rp {((item.hpp_at_time || 0) * (item.quantity || 0)).toLocaleString()}
+                                      HPP: Rp {(isCancelled ? 0 : ((item.hpp_at_time || 0) * (item.quantity || 0))).toLocaleString()}
                                     </p>
                                     <button 
                                       onClick={() => {

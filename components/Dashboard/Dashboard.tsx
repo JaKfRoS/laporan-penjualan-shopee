@@ -166,6 +166,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
     // D. Total HPP (Hanya untuk order yang SELESAI)
     const totalHPPSelesai = settledOrders.reduce((acc, o) => {
+      const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
+      if (isReturned) return acc; // HPP 0 for returns
+
       const orderHpp = o.order_items?.reduce((h, item) => {
         return h + ((item.hpp_at_time || 0) * item.quantity);
       }, 0) || 0;
@@ -289,6 +292,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         const totalOmzet = settledOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
         const totalPemasukan = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0); // Uang Cair / Net Revenue
         const totalHPP = settledOrders.reduce((acc, o) => {
+             const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
+             if (isReturned) return acc;
              const orderHpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
              return acc + orderHpp;
         }, 0);
@@ -399,7 +404,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             const productName = firstItem ? firstItem.product_name : '-';
             const qty = o.order_items ? o.order_items.reduce((s, i) => s + i.quantity, 0) : 0;
             
-            const hpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
+            const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
+            const hpp = isReturned ? 0 : (o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0);
             // Profit per row = Net Revenue - HPP
             const profit = o.status?.toLowerCase().includes('batal') ? 0 : ((o.net_revenue || 0) - hpp);
             
@@ -521,6 +527,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const totalOmzet = settledOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
       const totalPemasukan = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
       const totalHPP = settledOrders.reduce((acc, o) => {
+           const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
+           if (isReturned) return acc;
            const orderHpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
            return acc + orderHpp;
       }, 0);
@@ -598,7 +606,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
       const tableData = filteredOrders.map(o => {
         const firstItem = o.order_items && o.order_items.length > 0 ? o.order_items[0] : null;
-        const hpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
+        const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
+        const hpp = isReturned ? 0 : (o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0);
         const profit = o.status?.toLowerCase().includes('batal') ? 0 : ((o.net_revenue || 0) - hpp);
         return [
           o.order_id,
