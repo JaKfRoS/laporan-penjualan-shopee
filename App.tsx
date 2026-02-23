@@ -625,7 +625,7 @@ $$;`}
       </main>
 
       {/* Mobile Bottom Navigation (Glassmorphism) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-safe">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-safe">
         <div className="grid grid-cols-6 gap-0.5 p-2 max-w-md mx-auto">
           <MobileNavItem id="dashboard" label="Home" icon={LayoutDashboard} />
           <MobileNavItem id="products" label="Produk" icon={PackageSearch} />
