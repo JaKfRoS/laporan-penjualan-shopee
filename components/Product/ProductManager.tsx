@@ -71,35 +71,40 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         const mVar = clean(p.variation_name || '');
         const mSku = clean(p.sku);
 
-        // 1. SKU Exact Match (Highest Priority) - Jika SKU ada di nama produk Shopee
-        if (mSku === sName || mSku === sVar) score += 200;
-        if (sName.includes(mSku)) score += 100;
+        // 1. SKU Exact Match (Highest Priority)
+        if (mSku && (mSku === sName || mSku === sVar)) score += 200;
+        else if (mSku && (sName.includes(mSku) || sVar.includes(mSku))) score += 100;
 
         // 2. VARIATION LOGIC (CRITICAL)
         if (sVar.length > 0) {
-            // Kasus A: Master Produk punya data variasi
             if (mVar.length > 0) {
                 if (mVar === sVar) {
-                    score += 100; // Cocok Sempurna
+                    score += 100; // Exact match
                 } else if (mVar.includes(sVar) || sVar.includes(mVar)) {
-                    score += 50; // Cocok Sebagian
+                    score += 50; // Partial match
                 } else {
-                    score -= 100; // PENALTI BESAR: Variasi beda (misal: "Merah" vs "Biru")
+                    // Check token overlap for variations
+                    const sVarTokens = getTokens(selectedUnmapped.variation || '');
+                    const mVarTokens = getTokens(p.variation_name || '');
+                    const varIntersection = sVarTokens.filter(t => mVarTokens.includes(t));
+                    if (varIntersection.length > 0) {
+                        score += (varIntersection.length / Math.max(sVarTokens.length, mVarTokens.length)) * 50;
+                    } else {
+                        score -= 100; // Penalty for completely different variations
+                    }
                 }
-            } 
-            // Kasus B: Master Produk TIDAK punya kolom variasi, cek di nama produk
-            else {
+            } else {
                 if (mName.includes(sVar)) {
-                     score += 60; // Variasi ditemukan di nama produk master
-                } else {
-                     // Netral, jangan kurangi skor karena mungkin master produk generik
+                     score += 60;
                 }
             }
         } else {
-            // Shopee tidak punya variasi
             if (mVar.length > 0) {
-                // Master punya variasi -> Penalti ringan, kita cari produk induk biasanya
-                score -= 20; 
+                if (sName.includes(mVar)) {
+                    score += 60;
+                } else {
+                    score -= 20; 
+                }
             }
         }
 
@@ -110,11 +115,12 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         
         if (union.size > 0) {
             const jaccard = intersection.length / union.size;
-            score += jaccard * 50; // Maksimal 50 poin dari kesamaan nama
+            score += jaccard * 50;
         }
 
         // 4. EXACT NAME MATCH BONUS
         if (sName === mName) score += 30;
+        else if (sName.includes(mName) || mName.includes(sName)) score += 15;
 
         if (score > bestScore) {
           bestScore = score;
