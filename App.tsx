@@ -368,68 +368,7 @@ export default function App() {
             </div>
           </header>
 
-          {showSqlGuide && (
-            <div className="mb-10 p-4 md:p-6 bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-3xl animate-in fade-in zoom-in duration-300">
-               <div className="flex items-start gap-4">
-                <div className="p-3 bg-red-200 dark:bg-red-800 rounded-2xl shrink-0">
-                  <Code className="w-6 h-6 text-red-700 dark:text-red-200" />
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <h3 className="text-lg font-black uppercase tracking-tight text-red-900 dark:text-red-100">Update Database Diperlukan</h3>
-                  <p className="text-sm text-red-800 dark:text-red-300 mt-1 mb-4">
-                    Fitur baru memerlukan pembaruan database. Salin kode di bawah ke <b>SQL Editor Supabase</b>:
-                  </p>
-                  <pre className="bg-slate-900 text-orange-400 p-4 rounded-xl text-[10px] md:text-xs overflow-x-auto font-mono mb-4 border border-slate-800 select-all whitespace-pre-wrap break-all">
-{`-- BAGIAN PENTING: KOLOM BARU --
-ALTER TABLE products ADD COLUMN IF NOT EXISTS variation_name text DEFAULT NULL;
-ALTER TABLE products ADD COLUMN IF NOT EXISTS processing_fee numeric DEFAULT 0;
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS fee_details jsonb DEFAULT '{}'::jsonb;
-ALTER TABLE stores ADD COLUMN IF NOT EXISTS last_import_at timestamptz DEFAULT NULL;
 
--- BAGIAN 4.5: RPC Safe Delete & Policies --
-
--- Policy agar user bisa menghapus/edit
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sku_mappings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON products;
-CREATE POLICY "Enable all for authenticated users" ON products FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON sku_mappings;
-CREATE POLICY "Enable all for authenticated users" ON sku_mappings FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Enable all for authenticated users" ON order_items;
-CREATE POLICY "Enable all for authenticated users" ON order_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- Fungsi Hapus Massal Cepat
-CREATE OR REPLACE FUNCTION delete_products_bulk(p_skus text[], p_store_id uuid)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-  -- 1. Hapus Mapping Massal
-  DELETE FROM sku_mappings WHERE mapped_sku = ANY(p_skus) AND store_id = p_store_id;
-  -- 2. Unlink Orders Massal
-  UPDATE order_items SET final_sku = NULL, is_sku_mapped = FALSE WHERE final_sku = ANY(p_skus) AND store_id = p_store_id;
-  -- 3. Hapus Produk Massal
-  DELETE FROM products WHERE sku = ANY(p_skus) AND store_id = p_store_id;
-END;
-$$;`}
-                  </pre>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <button 
-                      onClick={() => setShowSqlGuide(false)}
-                      className="px-6 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 transition-all text-center"
-                    >
-                      TUTUP PANDUAN
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           {activeTab === 'dashboard' && currentStore && (
             <Dashboard 
@@ -501,14 +440,7 @@ $$;`}
                     </div>
                   </div>
                   
-                  {/* TOMBOL PANDUAN SQL */}
-                  <button 
-                     onClick={() => setShowSqlGuide(true)}
-                     className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl text-xs font-bold hover:bg-orange-50 dark:hover:bg-orange-900/10 hover:text-orange-600 transition-all flex items-center gap-2"
-                  >
-                     <Code className="w-4 h-4" />
-                     Script Database
-                  </button>
+
                 </div>
 
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 ml-1">Daftar Toko & Pengaturan</h3>
@@ -556,6 +488,15 @@ $$;`}
                       </div>
                     </div>
                   ))}
+                </div>
+
+                <div className="md:hidden">
+                  <button 
+                    onClick={() => supabase.auth.signOut()}
+                    className="w-full mt-4 px-5 py-3 text-sm font-black bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all uppercase tracking-widest"
+                  >
+                    Logout
+                  </button>
                 </div>
               </div>
               
