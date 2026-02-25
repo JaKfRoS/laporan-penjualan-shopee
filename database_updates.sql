@@ -4,6 +4,88 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS processing_fee numeric DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS fee_details jsonb DEFAULT '{}'::jsonb;
 ALTER TABLE stores ADD COLUMN IF NOT EXISTS last_import_at timestamptz DEFAULT NULL;
 
+-- TABEL ADS PERFORMANCE --
+CREATE TABLE IF NOT EXISTS ads_performance (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    periode text NOT NULL,
+    report_date date DEFAULT NULL,
+    impressions numeric DEFAULT 0,
+    clicks numeric DEFAULT 0,
+    conversions numeric DEFAULT 0,
+    amount_spent numeric DEFAULT 0,
+    gmv_generated numeric DEFAULT 0,
+    created_at timestamptz DEFAULT now(),
+    UNIQUE(store_id, periode)
+);
+
+-- Ensure columns exist if table was created previously with different schema
+ALTER TABLE ads_performance ADD COLUMN IF NOT EXISTS periode text DEFAULT '';
+ALTER TABLE ads_performance ADD COLUMN IF NOT EXISTS report_date date DEFAULT NULL;
+ALTER TABLE ads_performance ADD COLUMN IF NOT EXISTS impressions numeric DEFAULT 0;
+ALTER TABLE ads_performance ADD COLUMN IF NOT EXISTS clicks numeric DEFAULT 0;
+ALTER TABLE ads_performance ADD COLUMN IF NOT EXISTS conversions numeric DEFAULT 0;
+ALTER TABLE ads_performance ADD COLUMN IF NOT EXISTS amount_spent numeric DEFAULT 0;
+ALTER TABLE ads_performance ADD COLUMN IF NOT EXISTS gmv_generated numeric DEFAULT 0;
+
+-- Fix for existing report_date column that might have NOT NULL constraint
+ALTER TABLE ads_performance ALTER COLUMN report_date DROP NOT NULL;
+
+-- Add unique constraint if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'ads_performance_store_id_periode_key'
+        AND conrelid = 'public.ads_performance'::regclass
+    ) THEN
+        ALTER TABLE ads_performance ADD CONSTRAINT ads_performance_store_id_periode_key UNIQUE (store_id, periode);
+    END IF;
+END
+$$;
+
+ALTER TABLE ads_performance ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON ads_performance;
+CREATE POLICY "Enable all for authenticated users" ON ads_performance FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- TABEL ADS PRODUCTS --
+CREATE TABLE IF NOT EXISTS ads_products (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    product_name text NOT NULL,
+    hpp numeric DEFAULT 0,
+    harga_jual numeric DEFAULT 0,
+    proses_pesanan numeric DEFAULT 1250,
+    pot_admin_persen numeric DEFAULT 0,
+    operasional_persen numeric DEFAULT 0,
+    created_at timestamptz DEFAULT now(),
+    UNIQUE(store_id, product_name)
+);
+
+ALTER TABLE ads_products ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON ads_products;
+CREATE POLICY "Enable all for authenticated users" ON ads_products FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- TABEL ADS PRODUCT PERFORMANCE --
+CREATE TABLE IF NOT EXISTS ads_product_performance (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    ads_product_id uuid NOT NULL REFERENCES ads_products(id) ON DELETE CASCADE,
+    periode text NOT NULL,
+    report_date date DEFAULT NULL,
+    impressions numeric DEFAULT 0,
+    clicks numeric DEFAULT 0,
+    conversions numeric DEFAULT 0,
+    amount_spent numeric DEFAULT 0,
+    gmv_generated numeric DEFAULT 0,
+    created_at timestamptz DEFAULT now(),
+    UNIQUE(ads_product_id, periode)
+);
+
+ALTER TABLE ads_product_performance ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON ads_product_performance;
+CREATE POLICY "Enable all for authenticated users" ON ads_product_performance FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
 -- BAGIAN 4.5: RPC Safe Delete & Policies --
 
 -- Policy agar user bisa menghapus/edit

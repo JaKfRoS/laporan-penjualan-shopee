@@ -9,6 +9,7 @@ import { PriceCalculator } from './components/Calculator/PriceCalculator';
 import { ProductManager } from './components/Product/ProductManager';
 import { StoreSelector } from './components/StoreSelector';
 import { Layout } from './components/Layout';
+import AdsCenter from './components/Ads/AdsCenter';
 import { Toaster, toast } from 'react-hot-toast';
 import { Store } from './types';
 import { AlertCircle, Loader2, Trash2, AlertTriangle, RefreshCcw, UserCircle, ShieldAlert, Pencil, Check, X, Code, Layers, Megaphone, Calculator, LayoutDashboard, UploadCloud, Settings, PackageSearch, Database } from 'lucide-react';
@@ -386,22 +387,18 @@ export default function App() {
              <ProductManager store={currentStore} />
           )}
 
-          {activeTab === 'ads' && (
-             <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 text-center px-4">
-                 <div className="w-20 h-20 md:w-24 md:h-24 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-6">
-                    <Megaphone className="w-8 h-8 md:w-10 md:h-10 text-blue-600 dark:text-blue-400" />
+          {activeTab === 'ads' && currentStore && (
+            currentStore.id === 'all' ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                 <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                    <Layers className="w-10 h-10 text-slate-400" />
                  </div>
-                 <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight mb-2">Ads Center</h2>
-                 <p className="text-slate-500 max-w-md mb-8 text-sm md:text-base">
-                     Pusat analisis performa iklan. Upload data iklan Shopee/FB Anda melalui menu Import untuk melihat ROAS dan ACOS di sini.
-                 </p>
-                 <button 
-                   onClick={() => setActiveTab('import')}
-                   className="w-full md:w-auto px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
-                 >
-                   Mulai Import Data Iklan
-                 </button>
-             </div>
+                 <h2 className="text-xl font-bold mb-2">Pilih Toko Spesifik</h2>
+                 <p className="text-slate-500 max-w-md text-sm">Anda tidak dapat melihat data iklan untuk "Semua Toko" sekaligus. Silakan pilih toko spesifik melalui menu di pojok kanan atas.</p>
+              </div>
+            ) : (
+              <AdsCenter store={currentStore} />
+            )
           )}
           
           {activeTab === 'import' && currentStore && (

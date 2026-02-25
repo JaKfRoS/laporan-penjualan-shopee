@@ -284,25 +284,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const displayPeriod = `${formatDate(startDateStr || '')} - ${formatDate(endDateStr || '')}`;
       const wb = XLSX.utils.book_new();
 
-      const createSheetData = (sheetOrders: Order[], sheetStoreName: string) => {
+      const createSummarySheet = (sheetOrders: Order[], sheetStoreName: string) => {
         // 1. Calculate Summary Metrics
-        const settledOrders = sheetOrders.filter(o => (o.status || '').toLowerCase() === 'selesai' || (o.status || '').toLowerCase() === 'pengembalian');
+        const settledOrders = sheetOrders.filter(o => {
+            const s = (o.status || '').toLowerCase();
+            return s === 'selesai' || s === 'pengembalian';
+        });
+        const batalOrders = sheetOrders.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel'));
+        const returOrders = sheetOrders.filter(o => o.status?.toLowerCase().includes('retur') || o.status?.toLowerCase().includes('pengembalian'));
         const validOrders = sheetOrders.filter(o => !o.status?.toLowerCase().includes('batal') && !o.status?.toLowerCase().includes('cancel'));
         
         const totalOmzet = settledOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
-        const totalPemasukan = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0); // Uang Cair / Net Revenue
+        const totalPemasukan = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
+        const totalGmvValid = validOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
+        const totalPotensiCair = totalGmvValid - totalOmzet;
+
         const totalHPP = settledOrders.reduce((acc, o) => {
              const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
              if (isReturned) return acc;
              const orderHpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
              return acc + orderHpp;
         }, 0);
-        const totalKeuntungan = totalPemasukan - totalHPP; // Profit = Net Revenue - HPP
+        const totalKeuntungan = totalPemasukan - totalHPP;
 
-        const totalPenyesuaian = 0; // As per current logic
-        const totalTransaksi = sheetOrders.length; // Total all orders in list
-        const transaksiBatal = sheetOrders.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel')).length;
-        const transaksiRetur = sheetOrders.filter(o => o.status?.toLowerCase().includes('retur') || o.status?.toLowerCase().includes('pengembalian')).length;
+        const totalTransaksi = sheetOrders.length;
+        const transaksiBatal = batalOrders.length;
+        const transaksiRetur = returOrders.length;
         const avgOrderValue = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0; 
 
         // 2. Calculate Fee Breakdown
@@ -310,7 +317,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             admin: 0,
             ams: 0,
             service: 0,
-            shippingRebate: 0, // Gratis Ongkir (Pemasukan/Subsidi)
+            shippingRebate: 0,
             refund: 0,
             shippingForwarded: 0,
             returnShipping: 0,
@@ -319,7 +326,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             processing: 0
         };
 
-        sheetOrders.forEach(o => {
+        settledOrders.forEach(o => {
             if (o.fee_details) {
                 feeBreakdown.admin += (o.fee_details.admin_fee || 0);
                 feeBreakdown.ams += (o.fee_details.ams_commission || 0);
@@ -333,6 +340,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 feeBreakdown.processing += (o.fee_details.processing_fee || 0);
             }
         });
+
+        const totalFee = -feeBreakdown.admin - feeBreakdown.ams - feeBreakdown.service + feeBreakdown.shippingRebate - feeBreakdown.refund - feeBreakdown.shippingForwarded - feeBreakdown.returnShipping - feeBreakdown.premium - feeBreakdown.voucher - feeBreakdown.processing;
 
         // 3. Construct Excel Rows
         const rows = [];
@@ -350,24 +359,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
         // Ringkasan Analytics
         rows.push(["Ringkasan Analytics"]);
-        rows.push(["Metrik", "Nilai"]);
-        rows.push(["Total Omzet", totalOmzet]);
-        rows.push(["Total Pemasukan", totalPemasukan]); 
-        rows.push(["Total Keuntungan", totalKeuntungan]);
-        rows.push(["Total HPP", totalHPP]);
-        rows.push(["Total Penyesuaian", totalPenyesuaian]);
-        rows.push(["Total Transaksi", totalTransaksi]);
-        rows.push(["Transaksi Batal", transaksiBatal]);
-        rows.push(["Transaksi Retur", transaksiRetur]);
-        rows.push(["Rata-rata Nilai Order", avgOrderValue]);
+        rows.push(["Metrik", "Nilai", "Keterangan"]);
+        rows.push(["Total Omzet", totalOmzet, "Total omset pesanan selesai"]);
+        rows.push(["Total Pemasukan", totalPemasukan, "Uang yang cair di saldo penjual"]);
+        rows.push(["Total GMV Valid", totalGmvValid, "Total omset semua pesanan kecuali batal/cancel"]);
+        rows.push(["Total Potensi Cair", totalPotensiCair, "Total potensi uang cair dari pesanan belum selesai"]);
+        rows.push(["Total Keuntungan", totalKeuntungan, "Total keuntungan pesanan selesai"]);
+        rows.push(["Total HPP", totalHPP, "Total HPP pesanan selesai"]);
+        rows.push(["Total Transaksi", totalTransaksi, "Total seluruh transaksi"]);
+        rows.push(["Transaksi Batal", transaksiBatal, "Total transaksi batal/cancel"]);
+        rows.push(["Transaksi Retur", transaksiRetur, "Total transaksi retur/pengembalian"]);
+        rows.push(["Rata-rata Nilai Order", avgOrderValue, "Rata-rata nilai per transaksi"]);
         rows.push([""]);
 
         // Margin & Persentase
         const margin = totalOmzet > 0 ? (totalKeuntungan / totalOmzet) : 0;
-        const costPercent = totalOmzet > 0 ? ((totalOmzet - totalPemasukan) / totalOmzet) * -1 : 0; 
+        const totalPotongan = settledOrders.reduce((acc, o) => acc + (o.service_fee || 0), 0);
+        const costPercent = totalOmzet > 0 ? (totalPotongan / totalOmzet) : 0; 
         
-        rows.push(["Margin Keuntungan", margin]); 
-        rows.push(["Persentase Biaya", costPercent]);
+        rows.push(["Margin Keuntungan", `${(margin * 100).toFixed(2)}%`, "Persentase keuntungan terhadap omzet"]); 
+        rows.push(["Rata-Rata Potongan", `${(costPercent * 100).toFixed(2)}%`, "Persentase potongan marketplace terhadap omzet"]);
         rows.push([""]);
 
         // Fee Breakdown
@@ -382,10 +393,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         rows.push(["Ongkos Kirim Pengembalian Barang", -feeBreakdown.returnShipping, "Biaya"]);
         rows.push(["Premi", -feeBreakdown.premium, "Biaya"]);
         rows.push(["Voucher disponsor oleh Penjual", -feeBreakdown.voucher, "Biaya"]);
+        rows.push(["Total Fee", totalFee, "Total Keseluruhan Fee"]);
         rows.push([""]);
 
-        // Detail Transaksi
-        rows.push(["Detail Transaksi"]);
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // Styling Columns
+        ws['!cols'] = [
+            { wch: 40 }, // Metrik
+            { wch: 20 }, // Nilai
+            { wch: 50 }, // Keterangan
+        ];
+
+        return ws;
+      };
+
+      const createTransactionSheet = (sheetOrders: Order[], title: string) => {
+        const rows = [];
+        rows.push([title]);
         rows.push([`Total ${sheetOrders.length} transaksi`]);
         rows.push([
             "Order ID", 
@@ -406,7 +431,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             
             const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
             const hpp = isReturned ? 0 : (o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0);
-            // Profit per row = Net Revenue - HPP
             const profit = o.status?.toLowerCase().includes('batal') ? 0 : ((o.net_revenue || 0) - hpp);
             
             rows.push([
@@ -422,35 +446,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             ]);
         });
 
-        // Ringkasan Footer
-        rows.push([""]);
-        rows.push(["Ringkasan"]);
-        rows.push(["Total Transaksi", totalTransaksi]);
-        rows.push(["Total Omzet", totalOmzet]);
-        rows.push(["Total Keuntungan", totalKeuntungan]);
-        rows.push(["Margin Keuntungan", margin]);
-
         const ws = XLSX.utils.aoa_to_sheet(rows);
-
-        // Styling Columns
         ws['!cols'] = [
-            { wch: 20 }, // Order ID
-            { wch: 15 }, // Tanggal
-            { wch: 40 }, // Produk
-            { wch: 5 },  // Qty
-            { wch: 15 }, // Status
-            { wch: 15 }, // Harga Jual
-            { wch: 15 }, // Total Biaya
-            { wch: 15 }, // HPP
-            { wch: 15 }  // Profit
+            { wch: 20 }, { wch: 15 }, { wch: 40 }, { wch: 5 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
         ];
-
         return ws;
       };
 
-      const mainSheetName = store.id === 'all' ? "GABUNGAN SEMUA TOKO" : `DATA ${store.name}`.substring(0, 30);
-      const mainWs = createSheetData(dataToExport, store.name);
-      XLSX.utils.book_append_sheet(wb, mainWs, mainSheetName);
+      const summaryWs = createSummarySheet(dataToExport, store.name);
+      XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
+
+      const selesaiOrders = dataToExport.filter(o => (o.status || '').toLowerCase() === 'selesai');
+      const batalReturOrders = dataToExport.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel') || o.status?.toLowerCase().includes('retur') || o.status?.toLowerCase().includes('pengembalian'));
+      const prosesOrders = dataToExport.filter(o => !o.status?.toLowerCase().includes('batal') && !o.status?.toLowerCase().includes('cancel') && !o.status?.toLowerCase().includes('retur') && !o.status?.toLowerCase().includes('pengembalian') && (o.status || '').toLowerCase() !== 'selesai');
+
+      if (selesaiOrders.length > 0) {
+        const selesaiWs = createTransactionSheet(selesaiOrders, "Pesanan Sudah Selesai");
+        XLSX.utils.book_append_sheet(wb, selesaiWs, "Selesai");
+      }
+      if (prosesOrders.length > 0) {
+        const prosesWs = createTransactionSheet(prosesOrders, "Pesanan Proses & Kirim");
+        XLSX.utils.book_append_sheet(wb, prosesWs, "Proses & Kirim");
+      }
+      if (batalReturOrders.length > 0) {
+        const batalReturWs = createTransactionSheet(batalReturOrders, "Pesanan Batal & Retur");
+        XLSX.utils.book_append_sheet(wb, batalReturWs, "Batal & Retur");
+      }
 
       const fileName = `Laporan_Proyek_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
@@ -523,9 +544,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       doc.setFont('helvetica', 'bold');
       doc.text("Ringkasan Analytics", 14, 90);
 
-      const settledOrders = filteredOrders.filter(o => (o.status || '').toLowerCase() === 'selesai' || (o.status || '').toLowerCase() === 'pengembalian');
+      const settledOrders = filteredOrders.filter(o => {
+          const s = (o.status || '').toLowerCase();
+          return s === 'selesai' || s === 'pengembalian';
+      });
+      const batalOrders = filteredOrders.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel'));
+      const returOrders = filteredOrders.filter(o => o.status?.toLowerCase().includes('retur') || o.status?.toLowerCase().includes('pengembalian'));
+      const validOrders = filteredOrders.filter(o => !o.status?.toLowerCase().includes('batal') && !o.status?.toLowerCase().includes('cancel'));
+      
       const totalOmzet = settledOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
       const totalPemasukan = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
+      const totalGmvValid = validOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
+      const totalPotensiCair = totalGmvValid - totalOmzet;
+
       const totalHPP = settledOrders.reduce((acc, o) => {
            const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
            if (isReturned) return acc;
@@ -534,32 +565,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       }, 0);
       const totalKeuntungan = totalPemasukan - totalHPP;
       const totalTransaksi = filteredOrders.length;
-      const transaksiBatal = filteredOrders.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel')).length;
-      const transaksiRetur = filteredOrders.filter(o => o.status?.toLowerCase().includes('retur') || o.status?.toLowerCase().includes('pengembalian')).length;
+      const transaksiBatal = batalOrders.length;
+      const transaksiRetur = returOrders.length;
       const avgOrderValue = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0;
       const margin = totalOmzet > 0 ? (totalKeuntungan / totalOmzet) * 100 : 0;
+      const totalPotongan = settledOrders.reduce((acc, o) => acc + (o.service_fee || 0), 0);
+      const costPercent = totalOmzet > 0 ? (totalPotongan / totalOmzet) * 100 : 0;
 
       autoTable(doc, {
         startY: 95,
-        head: [['Metrik', 'Nilai']],
+        head: [['Metrik', 'Nilai', 'Keterangan']],
         body: [
-          ['Total Omzet', `Rp ${totalOmzet.toLocaleString()}`],
-          ['Total Pemasukan', `Rp ${totalPemasukan.toLocaleString()}`],
-          ['Total Keuntungan', `Rp ${totalKeuntungan.toLocaleString()}`],
-          ['Total HPP', `Rp ${totalHPP.toLocaleString()}`],
-          ['Total Transaksi', totalTransaksi.toString()],
-          ['Transaksi Batal', transaksiBatal.toString()],
-          ['Transaksi Retur', transaksiRetur.toString()],
-          ['Rata-rata Nilai Order', `Rp ${avgOrderValue.toLocaleString()}`],
-          ['Margin Keuntungan', `${margin.toFixed(2)}%`],
+          ['Total Omzet', `Rp ${totalOmzet.toLocaleString()}`, 'Total omset pesanan selesai'],
+          ['Total Pemasukan', `Rp ${totalPemasukan.toLocaleString()}`, 'Uang yang cair di saldo penjual'],
+          ['Total GMV Valid', `Rp ${totalGmvValid.toLocaleString()}`, 'Total omset semua pesanan kecuali batal/cancel'],
+          ['Total Potensi Cair', `Rp ${totalPotensiCair.toLocaleString()}`, 'Total potensi uang cair dari pesanan belum selesai'],
+          ['Total Keuntungan', `Rp ${totalKeuntungan.toLocaleString()}`, 'Total keuntungan pesanan selesai'],
+          ['Total HPP', `Rp ${totalHPP.toLocaleString()}`, 'Total HPP pesanan selesai'],
+          ['Total Transaksi', totalTransaksi.toString(), 'Total seluruh transaksi'],
+          ['Transaksi Batal', transaksiBatal.toString(), 'Total transaksi batal/cancel'],
+          ['Transaksi Retur', transaksiRetur.toString(), 'Total transaksi retur/pengembalian'],
+          ['Rata-rata Nilai Order', `Rp ${avgOrderValue.toLocaleString()}`, 'Rata-rata nilai per transaksi'],
+          ['Margin Keuntungan', `${margin.toFixed(2)}%`, 'Persentase keuntungan terhadap omzet'],
+          ['Rata-Rata Potongan', `${costPercent.toFixed(2)}%`, 'Persentase potongan marketplace terhadap omzet'],
         ],
         theme: 'striped',
         headStyles: { fillColor: [37, 99, 235] },
       });
 
       // 3. Fee Breakdown
-      let feeBreakdown = { admin: 0, ams: 0, service: 0, shippingRebate: 0, refund: 0, shippingForwarded: 0, returnShipping: 0, premium: 0, voucher: 0 };
-      filteredOrders.forEach(o => {
+      let feeBreakdown = { admin: 0, ams: 0, service: 0, shippingRebate: 0, refund: 0, shippingForwarded: 0, returnShipping: 0, premium: 0, voucher: 0, processing: 0 };
+      settledOrders.forEach(o => {
           if (o.fee_details) {
               feeBreakdown.admin += (o.fee_details.admin_fee || 0);
               feeBreakdown.ams += (o.fee_details.ams_commission || 0);
@@ -570,8 +606,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               feeBreakdown.returnShipping += (o.fee_details.return_shipping_fee || 0);
               feeBreakdown.premium += (o.fee_details.premium_fee || 0);
               feeBreakdown.voucher += (o.fee_details.seller_voucher || 0);
+              feeBreakdown.processing += (o.fee_details.processing_fee || 0);
           }
       });
+
+      const totalFee = -feeBreakdown.admin - feeBreakdown.ams - feeBreakdown.service + feeBreakdown.shippingRebate - feeBreakdown.refund - feeBreakdown.shippingForwarded - feeBreakdown.returnShipping - feeBreakdown.premium - feeBreakdown.voucher - feeBreakdown.processing;
 
       doc.addPage();
       doc.setFontSize(16);
@@ -591,45 +630,57 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           ['Ongkos Kirim Pengembalian Barang', `-Rp ${feeBreakdown.returnShipping.toLocaleString()}`, 'Biaya'],
           ['Premi', `-Rp ${feeBreakdown.premium.toLocaleString()}`, 'Biaya'],
           ['Voucher disponsor oleh Penjual', `-Rp ${feeBreakdown.voucher.toLocaleString()}`, 'Biaya'],
+          ['Total Fee', `${totalFee < 0 ? '-' : ''}Rp ${Math.abs(totalFee).toLocaleString()}`, 'Total Keseluruhan Fee'],
         ],
         theme: 'striped',
         headStyles: { fillColor: [239, 68, 68] },
       });
 
       // 4. Detail Transaksi
-      doc.addPage();
-      doc.setFontSize(16);
-      doc.setFont('helvetica', 'bold');
-      doc.text("Detail Transaksi", 14, 22);
-      doc.setFontSize(10);
-      doc.text(`Total ${filteredOrders.length} transaksi`, 14, 28);
+      const renderTransactionTable = (title: string, orders: Order[]) => {
+        if (orders.length === 0) return;
+        doc.addPage();
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text(title, 14, 22);
+        doc.setFontSize(10);
+        doc.text(`Total ${orders.length} transaksi`, 14, 28);
 
-      const tableData = filteredOrders.map(o => {
-        const firstItem = o.order_items && o.order_items.length > 0 ? o.order_items[0] : null;
-        const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
-        const hpp = isReturned ? 0 : (o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0);
-        const profit = o.status?.toLowerCase().includes('batal') ? 0 : ((o.net_revenue || 0) - hpp);
-        return [
-          o.order_id,
-          formatDate(o.order_date),
-          firstItem ? firstItem.product_name.substring(0, 30) + '...' : '-',
-          o.order_items ? o.order_items.reduce((s, i) => s + i.quantity, 0) : 0,
-          o.status,
-          `Rp ${(o.product_total || 0).toLocaleString()}`,
-          `-Rp ${Math.abs(o.service_fee || 0).toLocaleString()}`,
-          `Rp ${hpp.toLocaleString()}`,
-          `Rp ${profit.toLocaleString()}`
-        ];
-      });
+        const tableData = orders.map(o => {
+          const firstItem = o.order_items && o.order_items.length > 0 ? o.order_items[0] : null;
+          const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
+          const hpp = isReturned ? 0 : (o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0);
+          const profit = o.status?.toLowerCase().includes('batal') ? 0 : ((o.net_revenue || 0) - hpp);
+          return [
+            o.order_id,
+            formatDate(o.order_date),
+            firstItem ? firstItem.product_name.substring(0, 30) + '...' : '-',
+            o.order_items ? o.order_items.reduce((s, i) => s + i.quantity, 0) : 0,
+            o.status,
+            `Rp ${(o.product_total || 0).toLocaleString()}`,
+            `-Rp ${Math.abs(o.service_fee || 0).toLocaleString()}`,
+            `Rp ${hpp.toLocaleString()}`,
+            `Rp ${profit.toLocaleString()}`
+          ];
+        });
 
-      autoTable(doc, {
-        startY: 33,
-        head: [['Order ID', 'Tanggal', 'Produk', 'Qty', 'Status', 'Harga Jual', 'Total Biaya', 'HPP', 'Profit']],
-        body: tableData,
-        theme: 'grid',
-        headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
-        styles: { fontSize: 7 },
-      });
+        autoTable(doc, {
+          startY: 33,
+          head: [['Order ID', 'Tanggal', 'Produk', 'Qty', 'Status', 'Harga Jual', 'Total Biaya', 'HPP', 'Profit']],
+          body: tableData,
+          theme: 'grid',
+          headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
+          styles: { fontSize: 7 },
+        });
+      };
+
+      const selesaiOrders = filteredOrders.filter(o => (o.status || '').toLowerCase() === 'selesai');
+      const potensiCairOrders = filteredOrders.filter(o => !o.status?.toLowerCase().includes('batal') && !o.status?.toLowerCase().includes('cancel') && !o.status?.toLowerCase().includes('retur') && !o.status?.toLowerCase().includes('pengembalian') && (o.status || '').toLowerCase() !== 'selesai');
+      const batalReturOrders = filteredOrders.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel') || o.status?.toLowerCase().includes('retur') || o.status?.toLowerCase().includes('pengembalian'));
+
+      renderTransactionTable("Detail Transaksi: Pesanan Sudah Selesai", selesaiOrders);
+      renderTransactionTable("Detail Transaksi: Pesanan Proses & Kirim", potensiCairOrders);
+      renderTransactionTable("Detail Transaksi: Pesanan Batal & Retur", batalReturOrders);
 
       // 5. Final Summary Page (Matching Image)
       doc.addPage();
@@ -806,7 +857,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
            <KPICard 
             title="Uang yang Berpotensi Cair" 
             value={`Rp ${(metrics.uangPotensiCair || 0).toLocaleString()}`} 
-            trend="Total GMV Valid"
+            trend="Pesanan Belum Selesai"
             icon={<Wallet className="w-4 h-4 text-teal-600" />}
           />
         </div>
