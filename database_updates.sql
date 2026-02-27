@@ -1,6 +1,7 @@
 -- BAGIAN PENTING: KOLOM BARU --
 ALTER TABLE products ADD COLUMN IF NOT EXISTS variation_name text DEFAULT NULL;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS processing_fee numeric DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_sku text DEFAULT NULL;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS fee_details jsonb DEFAULT '{}'::jsonb;
 ALTER TABLE stores ADD COLUMN IF NOT EXISTS last_import_at timestamptz DEFAULT NULL;
 

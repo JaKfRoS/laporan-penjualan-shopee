@@ -48,6 +48,7 @@ export interface Order {
 export interface Product {
   sku: string;
   store_id: string;
+  parent_sku?: string;
   product_name: string;
   variation_name?: string;
   cost_price: number; // Renamed from hpp to match DB request

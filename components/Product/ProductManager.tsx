@@ -30,7 +30,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   
   // Edit/Create State
   const [isAddingProduct, setIsAddingProduct] = useState(false);
-  const [newProduct, setNewProduct] = useState({ sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
+  const [newProduct, setNewProduct] = useState({ sku: '', parent_sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
   const [editingProductGroup, setEditingProductGroup] = useState<Product[] | null>(null);
 
   // Mapping Selection State
@@ -166,6 +166,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       const { error } = await supabase.from('products').insert([{
         store_id: store.id,
         sku: newProduct.sku,
+        parent_sku: newProduct.parent_sku || null,
         product_name: newProduct.product_name,
         variation_name: newProduct.variation_name || null,
         cost_price: newProduct.cost_price, 
@@ -177,7 +178,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       
       toast.success("Produk berhasil ditambahkan");
       setIsAddingProduct(false);
-      setNewProduct({ sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
+      setNewProduct({ sku: '', parent_sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
       fetchProducts();
     } catch (err: any) {
       if (err.message.includes('variation_name')) {
@@ -205,6 +206,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
             supabase.from('products')
             .update({
                 product_name: p.product_name,
+                parent_sku: p.parent_sku || null,
                 variation_name: p.variation_name,
                 cost_price: p.cost_price,
                 processing_fee: p.processing_fee
@@ -355,7 +357,8 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
                 for (const row of data) {
                     const keys = Object.keys(row);
-                    const skuKey = keys.find(k => k.toLowerCase().includes('sku') || k.toLowerCase().includes('kode'));
+                    const skuKey = keys.find(k => k.toLowerCase() === 'sku' || k.toLowerCase() === 'kode');
+                    const parentSkuKey = keys.find(k => k.toLowerCase().includes('induk') || k.toLowerCase() === 'parent sku' || k.toLowerCase() === 'sku induk');
                     const nameKey = keys.find(k => k.toLowerCase().includes('nama') || k.toLowerCase().includes('produk'));
                     const varKey = keys.find(k => k.toLowerCase().includes('variasi') || k.toLowerCase().includes('variation'));
                     const hppKey = keys.find(k => k.toLowerCase().includes('hpp') || k.toLowerCase().includes('cost') || k.toLowerCase().includes('modal') || k.toLowerCase().includes('harga'));
@@ -381,6 +384,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                         productsToUpsert.push({
                             store_id: store.id,
                             sku: String(row[skuKey]).trim(),
+                            parent_sku: parentSkuKey && row[parentSkuKey] ? String(row[parentSkuKey]).trim() : null,
                             product_name: nameKey ? String(row[nameKey]).trim() : 'Imported Product',
                             variation_name: varKey ? String(row[varKey]).trim() : null,
                             cost_price: cleanHpp,
@@ -425,9 +429,9 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
   const handleDownloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([
-        { "SKU": "KT-KOL-001", "Nama Produk": "Kolam Terpal Kotak Korea", "nama variasi": "Kolam Saja", "HPP": 150000, "Biaya Proses": 5000 },
-        { "SKU": "KT+P-002", "Nama Produk": "Kolam Terpal Kotak Korea", "nama variasi": "+ Pembuangan Drat", "HPP": 175000, "Biaya Proses": 5000 },
-        { "SKU": "TP-A12-005", "Nama Produk": "TERPAL PE A20 KOREA 2X3", "nama variasi": "A12", "HPP": 85000, "Biaya Proses": 2000 }
+        { "SKU INDUK": "KT-KOL", "SKU": "KT-KOL-001", "Nama Produk": "Kolam Terpal Kotak Korea", "nama variasi": "Kolam Saja", "HPP": 150000, "Biaya Proses": 5000 },
+        { "SKU INDUK": "KT-KOL", "SKU": "KT+P-002", "Nama Produk": "Kolam Terpal Kotak Korea", "nama variasi": "+ Pembuangan Drat", "HPP": 175000, "Biaya Proses": 5000 },
+        { "SKU INDUK": "TP-A12", "SKU": "TP-A12-005", "Nama Produk": "TERPAL PE A20 KOREA 2X3", "nama variasi": "A12", "HPP": 85000, "Biaya Proses": 2000 }
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template");
@@ -441,6 +445,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     }
 
     const exportData = products.map(p => ({
+        "SKU INDUK": p.parent_sku || "",
         "SKU": p.sku,
         "Nama Produk": p.product_name,
         "Variasi": p.variation_name || "",
@@ -964,7 +969,13 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                 {isAddingProduct && (
                     <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 animate-in slide-in-from-top-2">
                         <h4 className="text-xs font-black uppercase text-slate-500 mb-3">Input Produk Baru</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+                            <input 
+                                type="text" placeholder="SKU INDUK (Opsional)" 
+                                value={newProduct.parent_sku}
+                                onChange={(e) => setNewProduct({...newProduct, parent_sku: e.target.value.toUpperCase()})}
+                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold uppercase"
+                            />
                             <input 
                                 type="text" placeholder="SKU (Unik)" 
                                 value={newProduct.sku}
@@ -1031,6 +1042,19 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                             setEditingProductGroup(prev => prev ? prev.map(p => ({ ...p, product_name: newName })) : null);
                                         }}
                                         className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-sm outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block ml-1">SKU Induk (Berlaku untuk semua variasi)</label>
+                                    <input 
+                                        type="text" 
+                                        value={editingProductGroup[0].parent_sku || ''}
+                                        onChange={(e) => {
+                                            const newParentSku = e.target.value.toUpperCase();
+                                            setEditingProductGroup(prev => prev ? prev.map(p => ({ ...p, parent_sku: newParentSku })) : null);
+                                        }}
+                                        className="w-full p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-sm outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all uppercase"
+                                        placeholder="Opsional"
                                     />
                                 </div>
 
@@ -1101,6 +1125,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                     </button>
                                 </th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">SKU</th>
+                                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">SKU Induk</th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">Nama Produk</th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">Variasi</th>
                                 <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">HPP</th>
@@ -1123,6 +1148,11 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                     </td>
                                     <td className="px-4 py-3 text-xs font-bold font-mono dark:text-orange-300">{p.sku}</td>
                                     
+                                    {/* Kolom SKU Induk */}
+                                    <td className="px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-400">
+                                        {p.parent_sku || '-'}
+                                    </td>
+
                                     {/* Kolom Produk */}
                                     <td className="px-4 py-3 text-sm font-medium dark:text-white">
                                         {p.product_name}
@@ -1172,6 +1202,11 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                             }
                                         </button>
                                         <span className="text-[10px] font-bold font-mono text-slate-400 uppercase">{p.sku}</span>
+                                        {p.parent_sku && (
+                                            <span className="text-[10px] font-medium text-slate-500 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded">
+                                                Induk: {p.parent_sku}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="flex gap-1">
                                         <button onClick={() => handleEditGroup(p)} className="p-2 text-orange-600 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
