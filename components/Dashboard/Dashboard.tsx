@@ -797,7 +797,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 mt-6">
           {/* Row 1 */}
           <KPICard 
             title="Total Omzet" 

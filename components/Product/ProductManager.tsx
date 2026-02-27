@@ -999,7 +999,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">SKU Induk (Opsional)</label>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">SKU Induk</label>
                                     <input 
                                         type="text" placeholder="SKU INDUK" 
                                         value={manualProductBase.parent_sku}
@@ -1022,7 +1022,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 </div>
                                 
                                 {manualProductVariations.map((variation, index) => (
-                                    <div key={index} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 relative group">
+                                    <div key={index} className="grid grid-cols-1 sm:grid-cols-10 gap-2 items-start p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 relative group">
                                         <div className="sm:col-span-3">
                                             <input 
                                                 type="text" placeholder="SKU (Unik)" 
@@ -1057,22 +1057,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                                     onChange={(e) => {
                                                         const newVars = [...manualProductVariations];
                                                         newVars[index].cost_price = Number(e.target.value);
-                                                        setManualProductVariations(newVars);
-                                                    }}
-                                                    className="w-full pl-7 pr-2 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold"
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="sm:col-span-2">
-                                            <div className="relative">
-                                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">Rp</span>
-                                                <input 
-                                                    type="number" placeholder="Fee" 
-                                                    value={variation.processing_fee || ''}
-                                                    onWheel={(e) => e.currentTarget.blur()}
-                                                    onChange={(e) => {
-                                                        const newVars = [...manualProductVariations];
-                                                        newVars[index].processing_fee = Number(e.target.value);
                                                         setManualProductVariations(newVars);
                                                     }}
                                                     className="w-full pl-7 pr-2 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold"
@@ -1166,20 +1150,6 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                                             }}
                                                             className="w-full pl-8 pr-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-black outline-none focus:ring-2 focus:ring-orange-500/20"
                                                             placeholder="HPP"
-                                                        />
-                                                    </div>
-                                                    <div className="relative flex-1 sm:w-32">
-                                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">Rp</span>
-                                                        <input 
-                                                            type="number" 
-                                                            value={product.processing_fee ?? ''}
-                                                            onWheel={(e) => e.currentTarget.blur()}
-                                                            onChange={(e) => {
-                                                                const newVal = Number(e.target.value);
-                                                                setEditingProductGroup(prev => prev ? prev.map((p, i) => i === idx ? { ...p, processing_fee: newVal } : p) : null);
-                                                            }}
-                                                            className="w-full pl-8 pr-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-black outline-none focus:ring-2 focus:ring-orange-500/20"
-                                                            placeholder="Fee"
                                                         />
                                                     </div>
                                                 </div>
