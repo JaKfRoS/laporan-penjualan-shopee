@@ -30,6 +30,8 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   
   // Edit/Create State
   const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [manualProductBase, setManualProductBase] = useState({ parent_sku: '', product_name: '' });
+  const [manualProductVariations, setManualProductVariations] = useState([{ sku: '', variation_name: '', cost_price: 0, processing_fee: 1250 }]);
   const [newProduct, setNewProduct] = useState({ sku: '', parent_sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
   const [editingProductGroup, setEditingProductGroup] = useState<Product[] | null>(null);
 
@@ -157,28 +159,37 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   };
 
   const handleSaveProduct = async () => {
-    if (!newProduct.sku || !newProduct.product_name) {
-      toast.error("SKU dan Nama Produk wajib diisi");
+    if (!manualProductBase.product_name) {
+      toast.error("Nama Produk wajib diisi");
+      return;
+    }
+
+    const invalidVariations = manualProductVariations.filter(v => !v.sku);
+    if (invalidVariations.length > 0) {
+      toast.error("Semua variasi harus memiliki SKU");
       return;
     }
 
     try {
-      const { error } = await supabase.from('products').insert([{
+      const productsToInsert = manualProductVariations.map(v => ({
         store_id: store.id,
-        sku: newProduct.sku,
-        parent_sku: newProduct.parent_sku || null,
-        product_name: newProduct.product_name,
-        variation_name: newProduct.variation_name || null,
-        cost_price: newProduct.cost_price, 
-        processing_fee: newProduct.processing_fee,
+        sku: v.sku,
+        parent_sku: manualProductBase.parent_sku || null,
+        product_name: manualProductBase.product_name,
+        variation_name: v.variation_name || null,
+        cost_price: v.cost_price, 
+        processing_fee: v.processing_fee,
         stock: 0
-      }]);
+      }));
+
+      const { error } = await supabase.from('products').insert(productsToInsert);
 
       if (error) throw error;
       
       toast.success("Produk berhasil ditambahkan");
       setIsAddingProduct(false);
-      setNewProduct({ sku: '', parent_sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
+      setManualProductBase({ parent_sku: '', product_name: '' });
+      setManualProductVariations([{ sku: '', variation_name: '', cost_price: 0, processing_fee: 1250 }]);
       fetchProducts();
     } catch (err: any) {
       if (err.message.includes('variation_name')) {
@@ -968,52 +979,127 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                 
                 {isAddingProduct && (
                     <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 animate-in slide-in-from-top-2">
-                        <h4 className="text-xs font-black uppercase text-slate-500 mb-3">Input Produk Baru</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
-                            <input 
-                                type="text" placeholder="SKU INDUK (Opsional)" 
-                                value={newProduct.parent_sku}
-                                onChange={(e) => setNewProduct({...newProduct, parent_sku: e.target.value.toUpperCase()})}
-                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold uppercase"
-                            />
-                            <input 
-                                type="text" placeholder="SKU (Unik)" 
-                                value={newProduct.sku}
-                                onChange={(e) => setNewProduct({...newProduct, sku: e.target.value.toUpperCase()})}
-                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold uppercase"
-                            />
-                            <div className="sm:col-span-2 grid grid-cols-2 gap-2">
-                                <input 
-                                    type="text" placeholder="Nama Produk" 
-                                    value={newProduct.product_name}
-                                    onChange={(e) => setNewProduct({...newProduct, product_name: e.target.value})}
-                                    className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold w-full"
-                                />
-                                <input 
-                                    type="text" placeholder="Variasi (Opsional)" 
-                                    value={newProduct.variation_name}
-                                    onChange={(e) => setNewProduct({...newProduct, variation_name: e.target.value})}
-                                    className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold w-full"
-                                />
-                            </div>
-                            <input 
-                                type="number" placeholder="HPP" 
-                                value={newProduct.cost_price ?? ''}
-                                onWheel={(e) => e.currentTarget.blur()}
-                                onChange={(e) => setNewProduct({...newProduct, cost_price: Number(e.target.value)})}
-                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold"
-                            />
-                            <input 
-                                type="number" placeholder="Biaya Proses" 
-                                value={newProduct.processing_fee ?? ''}
-                                onWheel={(e) => e.currentTarget.blur()}
-                                onChange={(e) => setNewProduct({...newProduct, processing_fee: Number(e.target.value)})}
-                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold"
-                            />
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="text-xs font-black uppercase text-slate-500">Input Produk Baru</h4>
+                            <button onClick={() => setIsAddingProduct(false)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400">
+                                <X className="w-4 h-4" />
+                            </button>
                         </div>
-                        <div className="flex justify-end gap-2 mt-3">
+                        
+                        <div className="space-y-4">
+                            {/* Base Product Info */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Nama Produk</label>
+                                    <input 
+                                        type="text" placeholder="Nama Produk" 
+                                        value={manualProductBase.product_name}
+                                        onChange={(e) => setManualProductBase({...manualProductBase, product_name: e.target.value})}
+                                        className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold bg-slate-50 dark:bg-slate-800"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">SKU Induk (Opsional)</label>
+                                    <input 
+                                        type="text" placeholder="SKU INDUK" 
+                                        value={manualProductBase.parent_sku}
+                                        onChange={(e) => setManualProductBase({...manualProductBase, parent_sku: e.target.value.toUpperCase()})}
+                                        className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold uppercase bg-slate-50 dark:bg-slate-800"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Variations */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center px-1">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Daftar Variasi</label>
+                                    <button 
+                                        onClick={() => setManualProductVariations([...manualProductVariations, { sku: '', variation_name: '', cost_price: 0, processing_fee: 1250 }])}
+                                        className="text-[10px] font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1"
+                                    >
+                                        <Plus className="w-3 h-3" /> Tambah Variasi
+                                    </button>
+                                </div>
+                                
+                                {manualProductVariations.map((variation, index) => (
+                                    <div key={index} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 relative group">
+                                        <div className="sm:col-span-3">
+                                            <input 
+                                                type="text" placeholder="SKU (Unik)" 
+                                                value={variation.sku}
+                                                onChange={(e) => {
+                                                    const newVars = [...manualProductVariations];
+                                                    newVars[index].sku = e.target.value.toUpperCase();
+                                                    setManualProductVariations(newVars);
+                                                }}
+                                                className="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase"
+                                            />
+                                        </div>
+                                        <div className="sm:col-span-3">
+                                            <input 
+                                                type="text" placeholder="Nama Variasi" 
+                                                value={variation.variation_name}
+                                                onChange={(e) => {
+                                                    const newVars = [...manualProductVariations];
+                                                    newVars[index].variation_name = e.target.value;
+                                                    setManualProductVariations(newVars);
+                                                }}
+                                                className="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold"
+                                            />
+                                        </div>
+                                        <div className="sm:col-span-3">
+                                            <div className="relative">
+                                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">Rp</span>
+                                                <input 
+                                                    type="number" placeholder="HPP" 
+                                                    value={variation.cost_price || ''}
+                                                    onWheel={(e) => e.currentTarget.blur()}
+                                                    onChange={(e) => {
+                                                        const newVars = [...manualProductVariations];
+                                                        newVars[index].cost_price = Number(e.target.value);
+                                                        setManualProductVariations(newVars);
+                                                    }}
+                                                    className="w-full pl-7 pr-2 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="sm:col-span-2">
+                                            <div className="relative">
+                                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">Rp</span>
+                                                <input 
+                                                    type="number" placeholder="Fee" 
+                                                    value={variation.processing_fee || ''}
+                                                    onWheel={(e) => e.currentTarget.blur()}
+                                                    onChange={(e) => {
+                                                        const newVars = [...manualProductVariations];
+                                                        newVars[index].processing_fee = Number(e.target.value);
+                                                        setManualProductVariations(newVars);
+                                                    }}
+                                                    className="w-full pl-7 pr-2 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="sm:col-span-1 flex justify-end">
+                                            {manualProductVariations.length > 1 && (
+                                                <button 
+                                                    onClick={() => {
+                                                        const newVars = manualProductVariations.filter((_, i) => i !== index);
+                                                        setManualProductVariations(newVars);
+                                                    }}
+                                                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
                             <button onClick={() => setIsAddingProduct(false)} className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-white rounded-lg">Batal</button>
-                            <button onClick={handleSaveProduct} className="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700">Simpan Produk</button>
+                            <button onClick={handleSaveProduct} className="px-6 py-2 bg-slate-900 dark:bg-orange-600 text-white text-xs font-bold rounded-xl hover:opacity-90 shadow-lg shadow-slate-900/20 dark:shadow-orange-600/20">Simpan Produk</button>
                         </div>
                     </div>
                 )}
@@ -1146,10 +1232,10 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                             }
                                         </button>
                                     </td>
-                                    <td className="px-4 py-3 text-xs font-bold font-mono dark:text-orange-300">{p.sku}</td>
+                                    <td className="px-4 py-3 text-xs font-bold font-mono dark:text-orange-300 max-w-[150px] break-all">{p.sku}</td>
                                     
                                     {/* Kolom SKU Induk */}
-                                    <td className="px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-400">
+                                    <td className="px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-400 max-w-[150px] break-all">
                                         {p.parent_sku || '-'}
                                     </td>
 
@@ -1201,9 +1287,9 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                                 : <Square className="w-5 h-5 text-slate-300" />
                                             }
                                         </button>
-                                        <span className="text-[10px] font-bold font-mono text-slate-400 uppercase">{p.sku}</span>
+                                        <span className="text-[10px] font-bold font-mono text-slate-400 uppercase max-w-[120px] break-all">{p.sku}</span>
                                         {p.parent_sku && (
-                                            <span className="text-[10px] font-medium text-slate-500 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded">
+                                            <span className="text-[10px] font-medium text-slate-500 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded max-w-[120px] break-all">
                                                 Induk: {p.parent_sku}
                                             </span>
                                         )}
