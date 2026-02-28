@@ -127,6 +127,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     );
     const cancelledCount = cancelledOrders.length;
 
+    // 3. Pesanan Selesai
+    const completedCount = data.filter(o => (o.status || '').toLowerCase() === 'selesai').length;
+
     // 4. METRICS CALCULATION (SETTLED DATA FOCUS)
     // Filter: Hanya Transaksi Selesai untuk Omzet & Laba Kotor
     const completedOrders = data.filter(o => o.status === 'Selesai');
@@ -342,7 +345,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       shippingLeakage,
       pendingEscrow,
       biayaIklan,
-      roasAktual
+      roasAktual,
+      cancelledCount,
+      completedCount
     };
   }, [filteredOrders, adjustments]);
 
@@ -401,12 +406,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
              return acc + orderHpp;
         }, 0);
         
-        const totalTransaksi = sheetOrders.length;
-        const transaksiBatal = batalOrders.length;
-        const transaksiRetur = returOrders.length;
-        const avgOrderValue = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0; 
-
-        // 2. Calculate Fee Breakdown
+        // 4. Calculate Fee Breakdown for Excel (Moved after summary)
         let feeBreakdown = {
             admin: 0,
             ams: 0,
@@ -436,6 +436,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         });
 
         const totalFee = -feeBreakdown.admin - feeBreakdown.ams - feeBreakdown.service + feeBreakdown.shippingRebate - feeBreakdown.refund - feeBreakdown.shippingForwarded - feeBreakdown.returnShipping - feeBreakdown.premium - feeBreakdown.voucher - feeBreakdown.processing;
+        const totalTransaksi = sheetOrders.length;
+        const transaksiBatal = batalOrders.length;
+        const transaksiRetur = returOrders.length;
+        const avgOrderValue = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0; 
+
+        // 2. Calculate Fee Breakdown
+        let biayaIklan = 0;
+        let penyesuaianLain = 0;
+
+        adjustments.forEach(a => {
+            const reason = (a.reason || '').toLowerCase();
+            const amount = Number(a.amount) || 0;
+            const isAds = reason.includes('type: ads') || 
+                          reason.includes('category: isi ulang saldo iklan') ||
+                          (reason.includes('iklan') && !reason.includes('penghasilan')) || 
+                          reason.includes('shopee ads');
+
+            if (isAds) biayaIklan += amount;
+            else if (!reason.includes('[balance_snapshot]')) penyesuaianLain += amount;
+        });
+
+        const totalPenyesuaian = penyesuaianLain;
+        const totalKeuntungan = (totalPemasukan - totalHPP) + totalPenyesuaian + biayaIklan;
+        const roas = Math.abs(biayaIklan) > 0 ? totalOmzet / Math.abs(biayaIklan) : 0;
 
         // 3. Construct Excel Rows
         const rows = [];
@@ -459,13 +483,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         rows.push(["Total Potensi Cair", totalPotensiCair, "Total potensi uang cair dari pesanan belum selesai"]);
         rows.push(["Total Pemasukan", totalPemasukan, "Uang yang cair di saldo penjual"]);
         rows.push(["Total HPP", totalHPP, "Total HPP pesanan selesai"]);
-        
-        // Calculate Total Penyesuaian
-        const totalPenyesuaian = adjustments.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
-        const totalKeuntungan = (totalPemasukan - totalHPP) + totalPenyesuaian;
-
-        rows.push(["Total Penyesuaian", totalPenyesuaian, "Total nilai adjustment (kompensasi/denda)"]);
-        rows.push(["Total Keuntungan", totalKeuntungan, "Total keuntungan pesanan selesai + Penyesuaian"]);
+        rows.push(["Biaya Iklan", biayaIklan, "Total biaya iklan (Top-up Cashflow)"]);
+        rows.push(["ROAS Aktual", `${roas.toFixed(2)}x`, "Return on Ad Spend (Omzet / Iklan)"]);
+        rows.push(["Total Penyesuaian", totalPenyesuaian, "Total nilai adjustment lainnya"]);
+        rows.push(["Total Keuntungan", totalKeuntungan, "Laba Bersih (Pemasukan - HPP + Penyesuaian + Iklan)"]);
         rows.push(["Total Transaksi", totalTransaksi, "Total seluruh transaksi"]);
         rows.push(["Transaksi Batal", transaksiBatal, "Total transaksi batal/cancel"]);
         rows.push(["Transaksi Retur", transaksiRetur, "Total transaksi retur/pengembalian"]);
@@ -663,8 +684,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
            return acc + orderHpp;
       }, 0);
       
-      const totalPenyesuaian = adjustments.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
-      const totalKeuntungan = (totalPemasukan - totalHPP) + totalPenyesuaian;
+      let biayaIklan = 0;
+      let penyesuaianLain = 0;
+
+      adjustments.forEach(a => {
+        const reason = (a.reason || '').toLowerCase();
+        const amount = Number(a.amount) || 0;
+        const isAds = reason.includes('type: ads') || 
+                      reason.includes('category: isi ulang saldo iklan') ||
+                      (reason.includes('iklan') && !reason.includes('penghasilan')) || 
+                      reason.includes('shopee ads');
+
+        if (isAds) biayaIklan += amount;
+        else if (!reason.includes('[balance_snapshot]')) penyesuaianLain += amount;
+      });
+
+      const totalPenyesuaian = penyesuaianLain;
+      const totalKeuntungan = (totalPemasukan - totalHPP) + totalPenyesuaian + biayaIklan;
+      const roas = Math.abs(biayaIklan) > 0 ? totalOmzet / Math.abs(biayaIklan) : 0;
       
       const totalTransaksi = filteredOrders.length;
       const transaksiBatal = batalOrders.length;
@@ -683,8 +720,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           ['Total Potensi Cair', `Rp ${totalPotensiCair.toLocaleString()}`, 'Total potensi uang cair dari pesanan belum selesai'],
           ['Total Pemasukan', `Rp ${totalPemasukan.toLocaleString()}`, 'Uang yang cair di saldo penjual'],
           ['Total HPP', `Rp ${totalHPP.toLocaleString()}`, 'Total HPP pesanan selesai'],
-          ['Total Penyesuaian', `Rp ${totalPenyesuaian.toLocaleString()}`, 'Total nilai adjustment (kompensasi/denda)'],
-          ['Total Keuntungan', `Rp ${totalKeuntungan.toLocaleString()}`, 'Total keuntungan pesanan selesai + Penyesuaian'],
+          ['Biaya Iklan', `Rp ${biayaIklan.toLocaleString()}`, 'Total biaya iklan (Top-up Cashflow)'],
+          ['ROAS Aktual', `${roas.toFixed(2)}x`, 'Return on Ad Spend (Omzet / Iklan)'],
+          ['Total Penyesuaian', `Rp ${totalPenyesuaian.toLocaleString()}`, 'Total nilai adjustment lainnya'],
+          ['Total Keuntungan', `Rp ${totalKeuntungan.toLocaleString()}`, 'Laba Bersih (Pemasukan - HPP + Penyesuaian + Iklan)'],
           ['Total Transaksi', totalTransaksi.toString(), 'Total seluruh transaksi'],
           ['Transaksi Batal', transaksiBatal.toString(), 'Total transaksi batal/cancel'],
           ['Transaksi Retur', transaksiRetur.toString(), 'Total transaksi retur/pengembalian'],
@@ -918,7 +957,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
         )}
 
-        <div className={`grid grid-cols-2 md:grid-cols-2 ${dateFilterType === 'order_date' ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-3 md:gap-4 mt-6`}>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4 mt-6">
           {/* Row 1 */}
           {dateFilterType === 'order_date' ? (
             <>
@@ -947,11 +986,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 isHighlight
               />
               <KPICard 
-                title="Volume & Aktivitas" 
-                value={`${metrics.totalOrders} / Rp ${(metrics.averageOrderValue || 0).toLocaleString()}`} 
-                trend="Trx / AOV"
+                title="Total Pesanan" 
+                value={`${metrics.totalOrders}`} 
+                trend="Order Count"
                 icon={<PackageSearch className="w-4 h-4 text-blue-600" />}
-                description="Jumlah transaksi dan rata-rata nilai belanja per pelanggan."
+                description="Jumlah seluruh transaksi yang masuk dalam periode ini."
+              />
+              <KPICard 
+                title="Rata-rata Pesanan (AOV)" 
+                value={`Rp ${(metrics.averageOrderValue || 0).toLocaleString()}`} 
+                trend="Avg Order Value"
+                icon={<ArrowRightLeft className="w-4 h-4 text-indigo-600" />}
+                description="Rata-rata nilai belanja per pelanggan."
+              />
+              <KPICard 
+                title="Pesanan Dibatalkan" 
+                value={`${metrics.cancelledCount}`} 
+                trend="Cancelled"
+                icon={<XCircle className="w-4 h-4 text-red-500" />}
+                description="Jumlah pesanan yang dibatalkan oleh pembeli atau sistem."
+                isNegative
               />
             </>
           ) : (
@@ -989,19 +1043,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 description="Total biaya yang dipotong platform (termasuk program Gratis Ongkir/Cashback Xtra)."
               />
               <KPICard 
-                title="Kebocoran Ongkir" 
+                title="Selisih Ongkir" 
                 value={`-Rp ${(metrics.shippingLeakage || 0).toLocaleString()}`} 
-                trend="Shipping Leakage"
+                trend="Shipping Diff"
                 isNegative
                 icon={<AlertCircle className="w-4 h-4 text-red-600" />}
-                description="Kerugian akibat selisih timbangan atau dimensi produk (Nomok Ongkir)."
+                description="Selisih antara ongkir yang dibayar pembeli dan ongkir aktual jasa kirim."
               />
               <KPICard 
-                title="Dana Tertahan" 
-                value={`Rp ${(metrics.pendingEscrow || 0).toLocaleString()}`} 
-                trend="Pending Escrow"
-                icon={<Wallet className="w-4 h-4 text-slate-500" />}
-                description="Proyeksi uang yang akan cair dalam beberapa hari ke depan."
+                title="Pesanan Selesai" 
+                value={`${metrics.completedCount}`} 
+                trend="Completed"
+                icon={<CheckCircle2 className="w-4 h-4 text-green-600" />}
+                description="Jumlah pesanan yang sudah selesai dan dananya sudah cair."
+              />
+              <KPICard 
+                title="Pesanan Batal" 
+                value={`${metrics.cancelledCount}`} 
+                trend="Cancelled"
+                icon={<XCircle className="w-4 h-4 text-red-500" />}
+                description="Jumlah pesanan batal/cancel dalam periode ini."
+                isNegative
+              />
+              <KPICard 
+                title="Pesanan Retur" 
+                value={`${metrics.returnedCount}`} 
+                trend="Returned"
+                icon={<AlertCircle className="w-4 h-4 text-amber-600" />}
+                description="Jumlah pesanan yang diajukan pengembalian barang/dana."
+                isNegative
               />
             </>
           )}
