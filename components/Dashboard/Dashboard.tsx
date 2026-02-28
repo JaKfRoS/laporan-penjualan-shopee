@@ -26,7 +26,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
   const [adjustments, setAdjustments] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [dateRange, setDateRange] = useState(() => {
+    const now = new Date();
+    const end = format(now, 'yyyy-MM-dd');
+    const start = format(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+    return { start, end };
+  });
   const [dateFilterType, setDateFilterType] = useState<'order_date' | 'release_date'>('order_date');
   const [insights, setInsights] = useState<string | null>(null);
   const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);

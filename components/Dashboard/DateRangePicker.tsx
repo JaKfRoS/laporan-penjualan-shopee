@@ -7,17 +7,26 @@ interface DateRangePickerProps {
 }
 
 export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) => {
-  const [localStartDate, setLocalStartDate] = useState('');
-  const [localEndDate, setLocalEndDate] = useState('');
-  const [appliedRange, setAppliedRange] = useState({ start: '', end: '' });
-  const [activePreset, setActivePreset] = useState<string>('');
-
   const formatDate = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
+
+  const [localStartDate, setLocalStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    return formatDate(d);
+  });
+  const [localEndDate, setLocalEndDate] = useState(() => formatDate(new Date()));
+  const [appliedRange, setAppliedRange] = useState(() => {
+    const d = new Date();
+    const end = formatDate(d);
+    d.setDate(d.getDate() - 6);
+    return { start: formatDate(d), end };
+  });
+  const [activePreset, setActivePreset] = useState<string>('last7');
 
   const applyPreset = (preset: string) => {
     // If clicking the same preset, do nothing (prevents flicker if logic was server-side, still good for UX)
