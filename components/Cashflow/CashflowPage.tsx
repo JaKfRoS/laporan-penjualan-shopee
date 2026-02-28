@@ -40,6 +40,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   
   // Form State
+  const [txType, setTxType] = useState<'income' | 'expense'>('expense');
   const [newTx, setNewTx] = useState<ManualTransaction>({
     storeId: store.id,
     date: new Date().toISOString().split('T')[0],
@@ -458,8 +459,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
     try {
       const reasonStr = `[MANUAL_EXPENSE] Category: ${newTx.category} | Desc: ${newTx.description}`;
-      // Amount is already set correctly (positive or negative) by the UI handlers
-      const finalAmount = newTx.amount;
+      // Apply sign based on txType
+      const finalAmount = txType === 'expense' ? -Math.abs(newTx.amount) : Math.abs(newTx.amount);
 
       const { error } = await supabase.from('adjustments').insert({
         store_id: store.id,
@@ -904,14 +905,14 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Tipe Transaksi</label>
                     <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-1">
                         <button 
-                            onClick={() => setNewTx({...newTx, amount: -Math.abs(newTx.amount || 0)})}
-                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${newTx.amount <= 0 ? 'bg-white dark:bg-slate-600 text-red-600 shadow-sm' : 'text-slate-500'}`}
+                            onClick={() => setTxType('expense')}
+                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${txType === 'expense' ? 'bg-white dark:bg-slate-600 text-red-600 shadow-sm' : 'text-slate-500'}`}
                         >
                             Pengeluaran
                         </button>
                         <button 
-                            onClick={() => setNewTx({...newTx, amount: Math.abs(newTx.amount || 0)})}
-                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${newTx.amount > 0 ? 'bg-white dark:bg-slate-600 text-green-600 shadow-sm' : 'text-slate-500'}`}
+                            onClick={() => setTxType('income')}
+                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${txType === 'income' ? 'bg-white dark:bg-slate-600 text-green-600 shadow-sm' : 'text-slate-500'}`}
                         >
                             Pemasukan
                         </button>
@@ -936,10 +937,10 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Nominal (Rp)</label>
                     <input 
                       type="number" 
-                      value={Math.abs(newTx.amount)}
+                      value={newTx.amount === 0 ? '' : Math.abs(newTx.amount)}
                       onChange={e => {
-                          const val = parseFloat(e.target.value);
-                          setNewTx({...newTx, amount: newTx.amount >= 0 ? val : -val});
+                          const val = parseFloat(e.target.value) || 0;
+                          setNewTx({...newTx, amount: val});
                       }}
                       className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-transparent font-medium"
                       placeholder="0"
