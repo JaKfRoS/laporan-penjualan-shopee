@@ -237,21 +237,26 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     let amountColIdx = -1;
     let descColIdx = -1;
     let dateColIdx = -1;
+    let orderIdColIdx = -1;
     
     const transactionsToSave: any[] = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      if (!row || row.length === 0) continue;
+
       if (!foundHeader) {
         const rowStr = row.join(' ').toLowerCase();
-        if (rowStr.includes('tanggal') && rowStr.includes('deskripsi') && rowStr.includes('jumlah')) {
+        // Detect header row based on common Shopee columns
+        if (rowStr.includes('tanggal') && rowStr.includes('deskripsi') && (rowStr.includes('jumlah') || rowStr.includes('amount'))) {
             foundHeader = true;
             row.forEach((cell: any, idx: number) => {
                 const c = String(cell).toLowerCase();
                 if (c.includes('saldo') && !c.includes('awal')) balanceColIdx = idx;
-                if (c.includes('jumlah') || c.includes('amount')) amountColIdx = idx;
+                if (c === 'jumlah' || c === 'amount' || (c.includes('jumlah') && !c.includes('transaksi'))) amountColIdx = idx;
                 if (c.includes('deskripsi') || c.includes('description')) descColIdx = idx;
                 if (c.includes('tanggal') || c.includes('date')) dateColIdx = idx;
+                if (c.includes('pesanan') || c.includes('order')) orderIdColIdx = idx;
             });
             continue;
         }
@@ -261,26 +266,38 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           const desc = String(row[descColIdx] || '').toLowerCase();
           const amount = parseFloat(String(row[amountColIdx] || '0').replace(/,/g, ''));
           const dateStr = row[dateColIdx];
+          const orderNo = orderIdColIdx !== -1 ? String(row[orderIdColIdx] || '-') : '-';
           
-          // Parse Date (Assuming format DD-MM-YYYY HH:mm or similar)
-          // Adjust parsing based on actual format if needed
-          let dateObj = new Date();
-          if (dateStr) {
-             const parts = String(dateStr).split(' ')[0].split(/[-/]/);
-             if (parts.length === 3) {
-                 if (parts[0].length === 4) {
-                     // YYYY-MM-DD
-                     dateObj = new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
-                 } else {
-                     // DD-MM-YYYY
-                     dateObj = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-                 }
-             } else {
-                 dateObj = new Date(dateStr);
-             }
+          if (isNaN(amount) || !dateStr) continue;
+
+          // Robust Date Parsing to prevent Timezone Shifts
+          let formattedDate = '';
+          const datePart = String(dateStr).split(' ')[0]; // Take only YYYY-MM-DD or DD-MM-YYYY
+          const parts = datePart.split(/[-/]/);
+          
+          if (parts.length === 3) {
+              if (parts[0].length === 4) {
+                  // YYYY-MM-DD
+                  formattedDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+              } else if (parts[2].length === 4) {
+                  // DD-MM-YYYY
+                  formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+              }
           }
-          if (isNaN(dateObj.getTime())) dateObj = new Date(); // Fallback
-          const formattedDate = dateObj.toISOString().split('T')[0];
+
+          if (!formattedDate) {
+              // Final fallback if parsing fails
+              const d = new Date(dateStr);
+              if (!isNaN(d.getTime())) {
+                  // Use local date parts to avoid UTC shift
+                  const y = d.getFullYear();
+                  const m = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  formattedDate = `${y}-${m}-${day}`;
+              } else {
+                  continue; // Skip if date is invalid
+              }
+          }
 
           const isAds = desc.includes('iklan') || 
                         desc.includes('ads') || 
@@ -293,13 +310,15 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
               if (amount < 0) {
                   totalAds += Math.abs(amount);
                   
-                  // Prepare for DB
+                  // Use Order No if available, otherwise generate stable ID
+                  const uniqueId = orderNo !== '-' ? orderNo : `UPLOAD-${formattedDate}-${Math.abs(amount)}-${i}`;
+
                   transactionsToSave.push({
                       store_id: store.id,
                       adjustment_date: formattedDate,
                       amount: amount, // Negative
                       reason: `[AUTO_UPLOAD] ${String(row[descColIdx])}`,
-                      order_id: `UPLOAD-${formattedDate}-${Math.abs(amount)}-${i}` // Composite ID to prevent duplicates
+                      order_id: uniqueId
                   });
               }
           }
