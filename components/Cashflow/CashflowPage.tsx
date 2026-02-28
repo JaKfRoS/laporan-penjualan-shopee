@@ -34,6 +34,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const [netRevenueSelesai, setNetRevenueSelesai] = useState(0);
   const [totalHPPSelesai, setTotalHPPSelesai] = useState(0);
   const [adsTotal, setAdsTotal] = useState(0);
+  const [withdrawalsTotal, setWithdrawalsTotal] = useState(0);
   const [escrowBalance, setEscrowBalance] = useState(0);
   const [manualTransactions, setManualTransactions] = useState<ManualTransaction[]>([]);
   const [allOrders, setAllOrders] = useState<Order[]>([]);
@@ -176,8 +177,15 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
            category = categoryMatch ? categoryMatch[1].trim() : 'General';
            description = descMatch ? descMatch[1].trim() : reason.replace('[MANUAL_EXPENSE]', '').trim();
         } else if (reason.includes('[AUTO_UPLOAD]')) {
-           category = 'Isi Ulang Saldo Iklan/Koin Penjual';
-           description = reason.replace('[AUTO_UPLOAD]', '').trim();
+           const typeMatch = reason.match(/Type: ([^|]+)/);
+           const type = typeMatch ? typeMatch[1].trim() : '';
+           
+           if (type === 'Income') category = 'Penghasilan dari Pesanan';
+           else if (type === 'Ads') category = 'Iklan Shopee';
+           else if (type === 'Withdrawal') category = 'Penarikan Dana';
+           else category = 'Transaksi Shopee Otomatis';
+
+           description = descMatch ? descMatch[1].trim() : reason.replace('[AUTO_UPLOAD]', '').trim();
         } else if (reason.includes('[BALANCE_SNAPSHOT]')) {
            const balMatch = reason.match(/Balance: ([\d.-]+)/);
            if (balMatch) {
@@ -211,10 +219,15 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       // Update summary metrics based on fetched data
       const ads = parsed
-        .filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual')
+        .filter(tx => tx.category === 'Iklan Shopee')
+        .reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
+      
+      const withdrawals = parsed
+        .filter(tx => tx.category === 'Penarikan Dana')
         .reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
       
       setAdsTotal(ads);
+      setWithdrawalsTotal(withdrawals);
       setManualTransactions(parsed);
       if (latestBalanceDate) {
          setEscrowBalance(latestBalance);
@@ -260,23 +273,44 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       if (typeof val === 'number') return val;
       let s = String(val).trim();
       if (!s) return 0;
+      
+      // Remove currency symbols and spaces
+      s = s.replace(/[Rp\s]/g, '');
+
       // Handle IDR style: 1.234.567,89 -> remove dots, replace comma with dot
-      if (s.includes('.') && s.includes(',') && s.lastIndexOf('.') < s.lastIndexOf(',')) {
-        s = s.replace(/\./g, '').replace(',', '.');
-      } else if (s.includes(',') && !s.includes('.')) {
+      // Check if it has both dot and comma
+      if (s.includes('.') && s.includes(',')) {
+        if (s.lastIndexOf('.') < s.lastIndexOf(',')) {
+          // 1.234.567,89
+          s = s.replace(/\./g, '').replace(',', '.');
+        } else {
+          // 1,234,567.89
+          s = s.replace(/,/g, '');
+        }
+      } else if (s.includes(',')) {
         // Could be 1.234 (thousands) or 1,234 (decimal)
-        // Shopee ID usually uses comma for decimal. But if it's 1,234,567 it's thousands.
-        // Let's just remove commas if they look like thousands separators
-        if (s.split(',').length > 2 || (s.includes(',') && s.split(',')[1].length === 3)) {
+        // In Shopee ID, comma is usually decimal. 
+        // But if it's 1.234.567, it's thousands.
+        const parts = s.split(',');
+        if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
           s = s.replace(/,/g, '');
         } else {
           s = s.replace(',', '.');
         }
-      } else {
-        s = s.replace(/,/g, '');
+      } else if (s.includes('.')) {
+        // Could be 1.234 (thousands) or 1.23 (decimal)
+        const parts = s.split('.');
+        if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+          s = s.replace(/\./g, '');
+        }
       }
+      
       return parseFloat(s);
     };
+
+    // Sort rows by date if possible to ensure we get the LATEST balance first
+    // But usually the CSV is already sorted descending. 
+    // Let's just process and keep track of the first valid balance we find.
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -342,20 +376,28 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                         desc.includes('isi ulang') ||
                         desc.includes('spend') ||
                         desc.includes('biaya');
+          
+          const isWithdrawal = desc.includes('penarikan') || desc.includes('withdrawal');
+          const isIncome = desc.includes('penghasilan') || desc.includes('income') || desc.includes('order');
 
-          if (isAds) {
-              if (amount < 0) {
-                  totalAds += Math.abs(amount);
-                  const uniqueId = orderNo !== '-' ? orderNo : `UPLOAD-${formattedDate}-${Math.abs(amount)}-${i}`;
+          let type = 'Other';
+          if (isAds) type = 'Ads';
+          else if (isWithdrawal) type = 'Withdrawal';
+          else if (isIncome) type = 'Income';
 
-                  transactionsToSave.push({
-                      store_id: store.id,
-                      adjustment_date: formattedDate,
-                      amount: amount,
-                      reason: `[AUTO_UPLOAD] ${String(row[descColIdx])}`,
-                      order_id: uniqueId
-                  });
-              }
+          if (isAds || isWithdrawal || isIncome) {
+              if (isAds) totalAds += Math.abs(amount);
+              
+              const uniqueId = orderNo !== '-' ? orderNo : `UPLOAD-${formattedDate}-${Math.abs(amount)}-${i}`;
+              const originalDesc = String(row[descColIdx]);
+
+              transactionsToSave.push({
+                  store_id: store.id,
+                  adjustment_date: formattedDate,
+                  amount: amount,
+                  reason: `[AUTO_UPLOAD] Type: ${type} | Desc: ${originalDesc}`,
+                  order_id: uniqueId
+              });
           }
 
           // Get the latest balance (first row after header assuming descending order)
@@ -473,7 +515,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   };
 
   const totalManualExpenses = manualTransactions
-    .filter(tx => tx.category !== 'Isi Ulang Saldo Iklan/Koin Penjual')
+    .filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana')
     .reduce((acc, tx) => acc + tx.amount, 0);
   
   const labaBersihRiil = netRevenueSelesai - adsTotal + totalManualExpenses - totalHPPSelesai;
@@ -491,8 +533,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     const tableBody = [
       ['1. Total Dana Masuk (Penghasilan Pesanan)', `Rp ${netRevenueSelesai.toLocaleString()}`, 'Dari Laporan Income Shopee'],
       ['2. Total Potongan Saldo (Iklan/Koin)', `(Rp ${adsTotal.toLocaleString()})`, 'Dari Laporan Saldo (Topup Iklan)'],
-      ['3. Total Penyesuaian Manual', `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`, 'Input Manual (Biaya/Pemasukan)'],
-      ['4. Total HPP (Modal Produk)', `(Rp ${totalHPPSelesai.toLocaleString()})`, 'Dari Master Produk'],
+      ['3. Total Penarikan Dana (Withdrawal)', `(Rp ${withdrawalsTotal.toLocaleString()})`, 'Dana yang sudah masuk rekening'],
+      ['4. Total Penyesuaian Manual', `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`, 'Input Manual (Biaya/Pemasukan)'],
+      ['5. Total HPP (Modal Produk)', `(Rp ${totalHPPSelesai.toLocaleString()})`, 'Dari Master Produk'],
       ['LABA BERSIH RIIL', `Rp ${labaBersihRiil.toLocaleString()}`, 'Net Profit Final'],
     ];
 
@@ -506,7 +549,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         1: { halign: 'right', fontStyle: 'bold' }
       },
       didParseCell: function(data) {
-        if (data.row.index === 4) {
+        if (data.row.index === 5) {
             data.cell.styles.fillColor = [46, 204, 113];
             data.cell.styles.textColor = [255, 255, 255];
             data.cell.styles.fontStyle = 'bold';
@@ -681,14 +724,19 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                       <td className="px-6 py-4 text-right text-slate-400">Iklan/Koin (Upload)</td>
                     </tr>
                     <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">3. Total Penyesuaian Manual</td>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">3. Total Penarikan Dana</td>
+                      <td className="px-6 py-4 text-right text-red-600 font-bold">-Rp {withdrawalsTotal.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right text-slate-400">Withdrawal (Upload)</td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">4. Total Penyesuaian Manual</td>
                       <td className={`px-6 py-4 text-right font-bold ${totalManualExpenses < 0 ? 'text-red-600' : 'text-green-600'}`}>
                         {totalManualExpenses < 0 ? '-' : '+'}Rp {Math.abs(totalManualExpenses).toLocaleString()}
                       </td>
                       <td className="px-6 py-4 text-right text-slate-400">Manual (Biaya/Pemasukan)</td>
                     </tr>
                     <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">4. Total HPP</td>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">5. Total HPP</td>
                       <td className="px-6 py-4 text-right text-orange-600 font-bold">-Rp {totalHPPSelesai.toLocaleString()}</td>
                       <td className="px-6 py-4 text-right text-slate-400">Modal Produk</td>
                     </tr>
@@ -714,6 +762,57 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                  <div className="text-3xl font-black text-yellow-700 dark:text-yellow-400">
                     Rp {escrowBalance.toLocaleString()}
                  </div>
+              </div>
+
+              {/* Detailed Transaction List in Summary */}
+              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden mt-6">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                  <h3 className="font-bold text-slate-900 dark:text-white">Rincian Transaksi Terakhir</h3>
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Kronologis</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
+                      <tr>
+                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Tanggal</th>
+                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Kategori</th>
+                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Deskripsi</th>
+                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-right">Nominal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                      {[...manualTransactions]
+                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                        .slice(0, 20)
+                        .map((tx) => (
+                        <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <td className="px-6 py-4 font-medium whitespace-nowrap">{format(new Date(tx.date), 'dd/MM/yyyy')}</td>
+                          <td className="px-6 py-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              tx.category === 'Penghasilan dari Pesanan' ? 'bg-green-100 text-green-700' :
+                              tx.category === 'Iklan Shopee' ? 'bg-red-100 text-red-700' :
+                              tx.category === 'Penarikan Dana' ? 'bg-blue-100 text-blue-700' :
+                              'bg-slate-100 text-slate-700'
+                            }`}>
+                              {tx.category}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-slate-600 dark:text-slate-400 max-w-xs truncate">{tx.description}</td>
+                          <td className={`px-6 py-4 text-right font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {tx.amount < 0 ? '-' : '+'}Rp {Math.abs(tx.amount).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                      {manualTransactions.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic">
+                            Belum ada data transaksi untuk ditampilkan
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -895,7 +994,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                     {manualTransactions
-                      .filter(tx => tx.category !== 'Isi Ulang Saldo Iklan/Koin Penjual')
+                      .filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana')
                       .map((tx) => (
                       <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                         <td className="px-6 py-4 font-medium">{format(new Date(tx.date), 'dd/MM/yyyy')}</td>
@@ -923,7 +1022,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                         </td>
                       </tr>
                     ))}
-                    {manualTransactions.filter(tx => tx.category !== 'Isi Ulang Saldo Iklan/Koin Penjual').length === 0 && (
+                    {manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length === 0 && (
                       <tr>
                         <td colSpan={store.id === 'all' ? 6 : 5} className="px-6 py-12 text-center text-slate-400 italic">
                           <div className="flex flex-col items-center gap-2">
