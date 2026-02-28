@@ -78,11 +78,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       // Server-side date filtering
       if (dateRange.start) {
         query = query.gte(dateFilterType, `${dateRange.start}T00:00:00`);
-        adjQuery = adjQuery.gte('adjustment_date', `${dateRange.start}T00:00:00`);
+        adjQuery = adjQuery.gte('adjustment_date', dateRange.start);
       }
       if (dateRange.end) {
         query = query.lte(dateFilterType, `${dateRange.end}T23:59:59`);
-        adjQuery = adjQuery.lte('adjustment_date', `${dateRange.end}T23:59:59`);
+        adjQuery = adjQuery.lte('adjustment_date', dateRange.end);
       }
 
       const [ordersRes, adjRes] = await Promise.all([query, adjQuery]);
@@ -171,17 +171,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const reason = (a.reason || '').toLowerCase();
       const amount = Number(a.amount) || 0;
       
-      const isAds = reason.includes('[auto_upload]') || 
-                    reason.includes('iklan') || 
-                    reason.includes('ads') || 
-                    reason.includes('top up') || 
-                    reason.includes('isi ulang') ||
-                    reason.includes('spend') ||
-                    reason.includes('biaya');
+      // Precise matching for Ads based on CashflowPage patterns
+      const isAds = reason.includes('type: ads') || 
+                    reason.includes('category: isi ulang saldo iklan') ||
+                    // Fallback for older data or manual entries with these keywords
+                    (reason.includes('iklan') && !reason.includes('penghasilan')) || 
+                    reason.includes('shopee ads');
 
       if (isAds) {
         biayaIklan += amount;
-      } else if (!reason.includes('[balance_snapshot]') && !reason.includes('[auto_revenue]')) {
+      } else if (!reason.includes('[balance_snapshot]')) {
         penyesuaianLain += amount;
       }
     });
