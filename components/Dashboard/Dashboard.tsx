@@ -21,56 +21,27 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
-  // Master Data (Fetched Once)
-  const [allOrders, setAllOrders] = useState<Order[]>([]);
-  
-  // Display Data (Filtered locally)
+  // Display Data
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
+  const [adjustments, setAdjustments] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [dateFilterType, setDateFilterType] = useState<'order_date' | 'release_date'>('order_date');
   const [insights, setInsights] = useState<string | null>(null);
   const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
   
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // 1. FETCH DATA SEKALI SAJA SAAT TOKO BERUBAH
+  // FETCH DATA SAAT TOKO ATAU TANGGAL BERUBAH (SERVER-SIDE FILTERING)
   useEffect(() => {
-    fetchInitialData();
+    fetchData();
     return () => {
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [store]);
+  }, [store, dateRange, dateFilterType]);
 
-  // 2. FILTER DATA SECARA LOKAL SAAT TANGGAL BERUBAH (INSTANT)
-  useEffect(() => {
-    if (allOrders.length === 0) {
-      setFilteredOrders([]);
-      return;
-    }
-
-    if (!dateRange.start && !dateRange.end) {
-      // Jika tidak ada filter tanggal, tampilkan semua (atau default 30 hari terakhir jika mau)
-      setFilteredOrders(allOrders);
-      return;
-    }
-
-    const startDate = dateRange.start ? new Date(`${dateRange.start}T00:00:00`) : null;
-    const endDate = dateRange.end ? new Date(`${dateRange.end}T23:59:59`) : null;
-
-    const filtered = allOrders.filter(o => {
-      const orderDate = new Date(o.order_date);
-      
-      if (startDate && orderDate < startDate) return false;
-      if (endDate && orderDate > endDate) return false;
-      
-      return true;
-    });
-
-    setFilteredOrders(filtered);
-  }, [dateRange, allOrders]);
-
-  const fetchInitialData = async () => {
+  const fetchData = async () => {
     if (abortControllerRef.current) abortControllerRef.current.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -80,38 +51,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     try {
       let query = supabase
         .from('orders')
-        .select('*, order_items(*)') // CHANGED: Fetch items relations
-        .order('order_date', { ascending: false });
+        .select('*, order_items(*)')
+        .order(dateFilterType, { ascending: false });
 
-      // Ambil data dalam jumlah besar sekaligus (misal 5000 transaksi terakhir)
-      // Agar client-side filtering bekerja mulus tanpa fetch ulang
-      query = query.limit(5000);
+      let adjQuery = supabase
+        .from('adjustments')
+        .select('*')
+        .order('adjustment_date', { ascending: false });
 
       if (store.id === 'all') {
         if (allStores && allStores.length > 0) {
            const storeIds = allStores.map(s => s.id);
            query = query.in('store_id', storeIds);
+           adjQuery = adjQuery.in('store_id', storeIds);
         } else {
-           setAllOrders([]);
            setFilteredOrders([]);
+           setAdjustments([]);
            setLoading(false);
            return;
         }
       } else {
         query = query.eq('store_id', store.id);
+        adjQuery = adjQuery.eq('store_id', store.id);
       }
 
-      const { data, error } = await query;
+      // Server-side date filtering
+      if (dateRange.start) {
+        query = query.gte(dateFilterType, `${dateRange.start}T00:00:00`);
+        adjQuery = adjQuery.gte('adjustment_date', `${dateRange.start}T00:00:00`);
+      }
+      if (dateRange.end) {
+        query = query.lte(dateFilterType, `${dateRange.end}T23:59:59`);
+        adjQuery = adjQuery.lte('adjustment_date', `${dateRange.end}T23:59:59`);
+      }
+
+      const [ordersRes, adjRes] = await Promise.all([query, adjQuery]);
       
       if (controller.signal.aborted) return;
 
-      if (error) throw error;
+      if (ordersRes.error) throw ordersRes.error;
+      if (adjRes.error) throw adjRes.error;
       
-      const safeData = data || [];
-      setAllOrders(safeData);
-      setFilteredOrders(safeData); // Default tampilkan semua sebelum difilter
+      setFilteredOrders(ordersRes.data || []);
+      setAdjustments(adjRes.data || []);
     } catch (err: any) {
       if (err.name !== 'AbortError') {
+        if (err.message?.toLowerCase().includes('refresh token') || err.message?.includes('refresh_token_not_found') || err.message?.toLowerCase().includes('invalid refresh token')) {
+          // Ignore auth errors, let App.tsx handle SIGNED_OUT event
+          return;
+        }
         toast.error('Gagal memuat data: ' + err.message);
       }
     } finally {
@@ -151,10 +139,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         return s === 'selesai' || s === 'pengembalian';
     });
 
-    // 2. Filter: Order dengan Net Revenue < 0 (Refund/Penyesuaian)
-    // Not used for main calculation as per reference, but kept for potential future use
-    // const adjustmentOrders = data.filter(o => o.net_revenue < 0);
-
     // A. Total Omzet (GMV) - Hanya yang sudah SELESAI
     const totalOmzet = settledOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
 
@@ -179,8 +163,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     // Formula User: "Total Keuntungan = uang cair - total hpp"
     const totalKeuntungan = netRevenueSelesai - totalHPPSelesai;
 
-    // F. Total Penyesuaian (0 based on reference)
-    const totalPenyesuaian = 0;
+    // F. Total Penyesuaian
+    const totalPenyesuaian = adjustments.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
 
     // G. Keuntungan Setelah Penyesuaian
     const keuntunganSetelahPenyesuaian = totalKeuntungan + totalPenyesuaian;
@@ -195,6 +179,79 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     
     // Formula User: "Uang yang Berpotensi Cair = total gmv valid - total omzet"
     const uangPotensiCair = totalGmvValid - totalOmzet;
+
+    // --- NEW METRICS FOR DYNAMIC KPI ---
+
+    // 1. Performance Mode Metrics
+    const totalOmzetPesanan = data.reduce((acc, o) => acc + (o.product_total || 0), 0); // GMV All Orders
+    const averageOrderValue = totalOrdersCount > 0 ? totalOmzetPesanan / totalOrdersCount : 0;
+    
+    // Product Performance (Top SKU Contribution)
+    const skuCounts: Record<string, number> = {};
+    let totalItemsSold = 0;
+    data.forEach(o => {
+      o.order_items?.forEach(item => {
+        const sku = item.sku || 'Unknown';
+        skuCounts[sku] = (skuCounts[sku] || 0) + item.quantity;
+        totalItemsSold += item.quantity;
+      });
+    });
+    const sortedSkus = Object.entries(skuCounts).sort((a, b) => b[1] - a[1]);
+    const topSkuCount = sortedSkus.length > 0 ? sortedSkus[0][1] : 0;
+    const topSkuContribution = totalItemsSold > 0 ? (topSkuCount / totalItemsSold) * 100 : 0;
+
+    // Operational Risk (Batal/Retur Count)
+    const operationalRiskCount = cancelledCount + returnedOrders.length;
+
+    // 2. Cash Flow Mode Metrics
+    // Dana Cair Bersih (Settled) -> netRevenueSelesai (Already calculated)
+    // Potongan Shopee -> totalPotongan (Already calculated)
+    // Profit Riil Akhir -> keuntunganSetelahPenyesuaian (Already calculated)
+    
+    // Kebocoran Ongkir (Shipping Leakage)
+    // Sum (Shipping Forwarded - Estimated Shipping) where Forwarded > Estimated
+    let shippingLeakage = 0;
+    settledOrders.forEach(o => {
+      if (o.fee_details) {
+        const forwarded = o.fee_details.shipping_forwarded || 0;
+        const estimated = o.shipping_estimated || 0;
+        // Note: shipping_forwarded is usually negative in fee_details (cost), so we take Math.abs
+        // Wait, in ImportWizard, shipping_forwarded is parsed as number. Usually fees are negative.
+        // Let's assume absolute values for comparison or check sign.
+        // In feeBreakdown below, we add fee_details values. 
+        // Let's check ImportWizard logic. 
+        // "shipping_fee_forwarded": parseNumberIndonesia(row[mapping['shipping_fee_forwarded']])
+        // Usually in Shopee report, expenses are negative.
+        // So forwarded is likely negative. Estimated is usually positive (what buyer pays or system estimates).
+        // Leakage is when Actual Cost (Forwarded) > Estimated Cost.
+        // Let's use Math.abs for safety if we are comparing magnitudes.
+        const absForwarded = Math.abs(forwarded);
+        const absEstimated = Math.abs(estimated);
+        
+        // If actual shipping cost is higher than estimated, seller pays the difference.
+        if (absForwarded > absEstimated) {
+           shippingLeakage += (absForwarded - absEstimated);
+        }
+      }
+    });
+
+    // Dana Tertahan (Pending Escrow)
+    // Estimasi net_payout untuk pesanan 'Selesai' yang belum masuk laporan Income (no release_date)
+    // We can identify these by checking if fee_details is empty or release_date is null
+    // But current logic in ImportWizard might fill fee_details with 0s.
+    // Let's rely on 'Menunggu Rekonsiliasi' status if we implemented it, or check release_date.
+    // The Order interface has release_date.
+    const pendingEscrowOrders = data.filter(o => {
+       const s = (o.status || '').toLowerCase();
+       return s === 'selesai' && !o.release_date;
+    });
+    // Estimate Net Payout: Product Total - (Product Total * 10% approx fees)
+    // Or just use Product Total as "Gross Pending"
+    const pendingEscrow = pendingEscrowOrders.reduce((acc, o) => {
+       // Simple estimation: 90% of GMV
+       return acc + ((o.product_total || 0) * 0.9);
+    }, 0);
+
 
     // I. Persentase
     const marginKeuntungan = totalOmzet > 0 ? (totalKeuntungan / totalOmzet) * 100 : 0;
@@ -230,7 +287,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     });
 
     return { 
-      totalOrders: completedOrders.length,
+      totalOrders: totalOrdersCount, // Changed to totalOrdersCount (all orders) for Performance Mode
       returnedCount: returnedOrders.length,
       totalOmzet,
       netRevenueSelesai, // Uang Cair
@@ -247,9 +304,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       percentLabaKotor: marginKeuntungan,
       percentLabaBersih: marginKeuntungan,
       percentPotongan: rataRataPotongan,
-      feeBreakdown
+      feeBreakdown,
+      // New Metrics
+      totalOmzetPesanan,
+      averageOrderValue,
+      topSkuContribution,
+      operationalRiskCount,
+      shippingLeakage,
+      pendingEscrow
     };
-  }, [filteredOrders]);
+  }, [filteredOrders, adjustments]);
 
   const handleExportXLSX = () => {
     if (filteredOrders.length === 0) {
@@ -305,8 +369,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
              const orderHpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
              return acc + orderHpp;
         }, 0);
-        const totalKeuntungan = totalPemasukan - totalHPP;
-
+        
         const totalTransaksi = sheetOrders.length;
         const transaksiBatal = batalOrders.length;
         const transaksiRetur = returOrders.length;
@@ -351,26 +414,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         rows.push(["powered by OneWaymedia"]);
         rows.push([""]);
         rows.push(["Platform:", "Shopee"]);
-        rows.push(["Tipe Kalkulasi:", "Berbasis Pesanan"]);
+        rows.push(["Tipe Kalkulasi:", dateFilterType === 'order_date' ? "Performa Sales (Berdasarkan Tanggal Pesanan)" : "Arus Kas (Berdasarkan Tanggal Pencairan)"]);
         rows.push(["Tanggal Export:", exportTime]);
         rows.push(["Periode:", displayPeriod]);
-        rows.push(["Filter:", "Tanggal Dibuat"]);
+        rows.push(["Filter:", dateFilterType === 'order_date' ? "Tanggal Pesanan Dibuat" : "Tanggal Dana Dilepaskan"]);
         rows.push([""]);
 
         // Ringkasan Analytics
         rows.push(["Ringkasan Analytics"]);
         rows.push(["Metrik", "Nilai", "Keterangan"]);
-        rows.push(["Total Omzet", totalOmzet, "Total omset pesanan selesai"]);
-        rows.push(["Total Pemasukan", totalPemasukan, "Uang yang cair di saldo penjual"]);
         rows.push(["Total GMV Valid", totalGmvValid, "Total omset semua pesanan kecuali batal/cancel"]);
+        rows.push(["Total Omzet", totalOmzet, "Total omset pesanan selesai"]);
         rows.push(["Total Potensi Cair", totalPotensiCair, "Total potensi uang cair dari pesanan belum selesai"]);
-        rows.push(["Total Keuntungan", totalKeuntungan, "Total keuntungan pesanan selesai"]);
+        rows.push(["Total Pemasukan", totalPemasukan, "Uang yang cair di saldo penjual"]);
         rows.push(["Total HPP", totalHPP, "Total HPP pesanan selesai"]);
+        
+        // Calculate Total Penyesuaian
+        const totalPenyesuaian = adjustments.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
+        const totalKeuntungan = (totalPemasukan - totalHPP) + totalPenyesuaian;
+
+        rows.push(["Total Penyesuaian", totalPenyesuaian, "Total nilai adjustment (kompensasi/denda)"]);
+        rows.push(["Total Keuntungan", totalKeuntungan, "Total keuntungan pesanan selesai + Penyesuaian"]);
         rows.push(["Total Transaksi", totalTransaksi, "Total seluruh transaksi"]);
         rows.push(["Transaksi Batal", transaksiBatal, "Total transaksi batal/cancel"]);
         rows.push(["Transaksi Retur", transaksiRetur, "Total transaksi retur/pengembalian"]);
         rows.push(["Rata-rata Nilai Order", avgOrderValue, "Rata-rata nilai per transaksi"]);
-        rows.push([""]);
 
         // Margin & Persentase
         const margin = totalOmzet > 0 ? (totalKeuntungan / totalOmzet) : 0;
@@ -534,10 +602,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       doc.setTextColor(0);
       doc.setFontSize(11);
       doc.text(`Platform: Shopee`, 14, 45);
-      doc.text(`Tipe Kalkulasi: Berbasis Pesanan`, 14, 52);
+      doc.text(`Tipe Kalkulasi: ${dateFilterType === 'order_date' ? "Performa Sales (Berdasarkan Tanggal Pesanan)" : "Arus Kas (Berdasarkan Tanggal Pencairan)"}`, 14, 52);
       doc.text(`Tanggal Export: ${exportTime}`, 14, 59);
       doc.text(`Periode: ${displayPeriod}`, 14, 66);
-      doc.text(`Filter: Tanggal Dibuat`, 14, 73);
+      doc.text(`Filter: ${dateFilterType === 'order_date' ? "Tanggal Pesanan Dibuat" : "Tanggal Dana Dilepaskan"}`, 14, 73);
 
       // 2. Ringkasan Analytics
       doc.setFontSize(16);
@@ -563,7 +631,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
            const orderHpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
            return acc + orderHpp;
       }, 0);
-      const totalKeuntungan = totalPemasukan - totalHPP;
+      
+      const totalPenyesuaian = adjustments.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
+      const totalKeuntungan = (totalPemasukan - totalHPP) + totalPenyesuaian;
+      
       const totalTransaksi = filteredOrders.length;
       const transaksiBatal = batalOrders.length;
       const transaksiRetur = returOrders.length;
@@ -576,12 +647,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         startY: 95,
         head: [['Metrik', 'Nilai', 'Keterangan']],
         body: [
-          ['Total Omzet', `Rp ${totalOmzet.toLocaleString()}`, 'Total omset pesanan selesai'],
-          ['Total Pemasukan', `Rp ${totalPemasukan.toLocaleString()}`, 'Uang yang cair di saldo penjual'],
           ['Total GMV Valid', `Rp ${totalGmvValid.toLocaleString()}`, 'Total omset semua pesanan kecuali batal/cancel'],
+          ['Total Omzet', `Rp ${totalOmzet.toLocaleString()}`, 'Total omset pesanan selesai'],
           ['Total Potensi Cair', `Rp ${totalPotensiCair.toLocaleString()}`, 'Total potensi uang cair dari pesanan belum selesai'],
-          ['Total Keuntungan', `Rp ${totalKeuntungan.toLocaleString()}`, 'Total keuntungan pesanan selesai'],
+          ['Total Pemasukan', `Rp ${totalPemasukan.toLocaleString()}`, 'Uang yang cair di saldo penjual'],
           ['Total HPP', `Rp ${totalHPP.toLocaleString()}`, 'Total HPP pesanan selesai'],
+          ['Total Penyesuaian', `Rp ${totalPenyesuaian.toLocaleString()}`, 'Total nilai adjustment (kompensasi/denda)'],
+          ['Total Keuntungan', `Rp ${totalKeuntungan.toLocaleString()}`, 'Total keuntungan pesanan selesai + Penyesuaian'],
           ['Total Transaksi', totalTransaksi.toString(), 'Total seluruh transaksi'],
           ['Transaksi Batal', transaksiBatal.toString(), 'Total transaksi batal/cancel'],
           ['Transaksi Retur', transaksiRetur.toString(), 'Total transaksi retur/pengembalian'],
@@ -705,9 +777,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       doc.text("Total Keuntungan", 30, summaryYStart + (rowHeight * 2));
       doc.text(`Rp ${totalKeuntungan.toLocaleString()}`, 250, summaryYStart + (rowHeight * 2), { align: 'right' });
 
+      // Total Penyesuaian (New)
+      doc.text("Total Penyesuaian", 30, summaryYStart + (rowHeight * 3));
+      doc.text(`Rp ${totalPenyesuaian.toLocaleString()}`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
+
       // Margin Keuntungan
-      doc.text("Margin Keuntungan", 30, summaryYStart + (rowHeight * 3));
-      doc.text(`${margin.toFixed(2)} %`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
+      doc.text("Margin Keuntungan", 30, summaryYStart + (rowHeight * 4));
+      doc.text(`${margin.toFixed(2)} %`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
 
       // Footer for the final page
       doc.setFontSize(10);
@@ -736,7 +812,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
   };
 
   // Tampilkan loading HANYA saat pertama kali buka toko/aplikasi
-  if (loading && allOrders.length === 0) {
+  if (loading && filteredOrders.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
@@ -750,8 +826,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       <div>
         {/* Controls Header */}
         <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
-          <div className="w-full xl:w-auto">
+          <div className="w-full xl:w-auto flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <DateRangePicker onChange={setDateRange} />
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+              <button
+                onClick={() => setDateFilterType('order_date')}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${dateFilterType === 'order_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                Filter Performa Sales
+              </button>
+              <button
+                onClick={() => setDateFilterType('release_date')}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${dateFilterType === 'release_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                Filter Arus Kas
+              </button>
+            </div>
           </div>
           
           <div className="flex flex-col sm:flex-row gap-2 w-full xl:w-auto justify-end">
@@ -797,69 +887,92 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 mt-6">
+        <div className={`grid grid-cols-2 md:grid-cols-2 ${dateFilterType === 'order_date' ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-3 md:gap-4 mt-6`}>
           {/* Row 1 */}
-          <KPICard 
-            title="Total Omzet" 
-            value={`Rp ${(metrics.totalOmzet || 0).toLocaleString()}`} 
-            trend="Transaksi Selesai"
-            icon={<ShoppingBag className="w-4 h-4 text-green-600" />}
-          />
-          <KPICard 
-            title="Total Potongan Marketplace" 
-            value={`-Rp ${(metrics.totalPotongan || 0).toLocaleString()}`} 
-            trend="Biaya Platform"
-            isNegative
-            icon={<Percent className="w-4 h-4 text-red-600" />}
-          />
-          <KPICard 
-            title="Total Omzet Dipotong Biaya Marketplace" 
-            value={`Rp ${(metrics.netRevenueSelesai || 0).toLocaleString()}`} 
-            trend="Net Revenue"
-            icon={<Wallet className="w-4 h-4 text-blue-600" />}
-          />
-
-          {/* Row 2 */}
-          <KPICard 
-            title="Total Keuntungan" 
-            value={`Rp ${(metrics.totalKeuntungan || 0).toLocaleString()}`} 
-            trend="Profit"
-            icon={<Wallet className="w-4 h-4 text-green-600" />}
-          />
-          <KPICard 
-            title="Keuntungan Setelah Penyesuaian" 
-            value={`Rp ${(metrics.keuntunganSetelahPenyesuaian || 0).toLocaleString()}`} 
-            trend="Final Profit"
-            icon={<Wallet className="w-4 h-4 text-emerald-600" />}
-          />
-          <KPICard 
-            title="Margin Keuntungan" 
-            value={`${(metrics.marginKeuntungan || 0).toFixed(1)}%`} 
-            trend="% dari Omzet"
-            icon={<CheckCircle2 className="w-4 h-4 text-green-600" />}
-          />
-
-          {/* Row 3 */}
-          <KPICard 
-            title="Rata-Rata Potongan Marketplace" 
-            value={`${(metrics.rataRataPotongan || 0).toFixed(1)}%`} 
-            trend="% Biaya"
-            isNegative
-            icon={<Percent className="w-4 h-4 text-red-600" />}
-          />
-          <KPICard 
-            title="Total HPP" 
-            value={`Rp ${(metrics.totalHPPSelesai || 0).toLocaleString()}`} 
-            trend="Modal Produk"
-            isNegative
-            icon={<PackageSearch className="w-4 h-4 text-orange-600" />}
-          />
-           <KPICard 
-            title="Uang yang Berpotensi Cair" 
-            value={`Rp ${(metrics.uangPotensiCair || 0).toLocaleString()}`} 
-            trend="Pesanan Belum Selesai"
-            icon={<Wallet className="w-4 h-4 text-teal-600" />}
-          />
+          {dateFilterType === 'order_date' ? (
+            <>
+              <KPICard 
+                title="Omset Pesanan (GMV)" 
+                value={`Rp ${(metrics.totalOmzetPesanan || 0).toLocaleString()}`} 
+                trend="Gross Revenue"
+                icon={<ShoppingBag className="w-4 h-4 text-orange-600" />}
+                description="Total nilai pesanan dibuat pelanggan (sebelum potongan biaya)."
+                isHighlight
+              />
+              <KPICard 
+                title="Volume & Aktivitas" 
+                value={`${metrics.totalOrders} / Rp ${(metrics.averageOrderValue || 0).toLocaleString()}`} 
+                trend="Trx / AOV"
+                icon={<PackageSearch className="w-4 h-4 text-blue-600" />}
+                description="Jumlah transaksi dan rata-rata nilai belanja per pelanggan."
+              />
+              <KPICard 
+                title="Product Performance" 
+                value={`${(metrics.topSkuContribution || 0).toFixed(1)}%`} 
+                trend="Top SKU Dominance"
+                icon={<CheckCircle2 className="w-4 h-4 text-blue-600" />}
+                description="Persentase dominasi produk paling laku di toko Anda."
+              />
+              <KPICard 
+                title="Operasional Risk" 
+                value={`${metrics.operationalRiskCount}`} 
+                trend="Batal / Retur"
+                icon={<AlertCircle className="w-4 h-4 text-red-600" />}
+                description="Jumlah pesanan yang gagal diproses atau dikembalikan pelanggan."
+                isNegative
+              />
+            </>
+          ) : (
+            <>
+              <KPICard 
+                title="Dana Cair Bersih (Settled)" 
+                value={`Rp ${(metrics.netRevenueSelesai || 0).toLocaleString()}`} 
+                trend="Cash In"
+                icon={<Wallet className="w-4 h-4 text-green-600" />}
+                description="Uang asli yang sudah dilepaskan Shopee ke Saldo Penjual."
+                isHighlight
+              />
+              <KPICard 
+                title="Total HPP (Modal)" 
+                value={`-Rp ${(metrics.totalHPPSelesai || 0).toLocaleString()}`} 
+                trend="COGS"
+                isNegative
+                icon={<PackageSearch className="w-4 h-4 text-orange-600" />}
+                description="Total modal pokok produk untuk pesanan yang dananya sudah cair."
+              />
+              <KPICard 
+                title="Profit Riil Akhir" 
+                value={`Rp ${(metrics.keuntunganSetelahPenyesuaian || 0).toLocaleString()}`} 
+                trend="Net Profit"
+                icon={<Wallet className="w-4 h-4 text-yellow-600" />}
+                description="Keuntungan bersih nyata setelah dikurangi modal barang dan biaya operasional."
+                isHighlight
+              />
+              <KPICard 
+                title="Potongan Shopee" 
+                value={`-Rp ${(metrics.totalPotongan || 0).toLocaleString()}`} 
+                trend="Marketplace Fees"
+                isNegative
+                icon={<Percent className="w-4 h-4 text-red-600" />}
+                description="Total biaya yang dipotong platform (termasuk program Gratis Ongkir/Cashback Xtra)."
+              />
+              <KPICard 
+                title="Kebocoran Ongkir" 
+                value={`-Rp ${(metrics.shippingLeakage || 0).toLocaleString()}`} 
+                trend="Shipping Leakage"
+                isNegative
+                icon={<AlertCircle className="w-4 h-4 text-red-600" />}
+                description="Kerugian akibat selisih timbangan atau dimensi produk (Nomok Ongkir)."
+              />
+              <KPICard 
+                title="Dana Tertahan" 
+                value={`Rp ${(metrics.pendingEscrow || 0).toLocaleString()}`} 
+                trend="Pending Escrow"
+                icon={<Wallet className="w-4 h-4 text-slate-500" />}
+                description="Proyeksi uang yang akan cair dalam beberapa hari ke depan."
+              />
+            </>
+          )}
         </div>
 
         {/* Fee Breakdown Dashboard Section */}

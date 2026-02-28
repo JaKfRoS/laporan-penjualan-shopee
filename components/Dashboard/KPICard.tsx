@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, Info } from 'lucide-react';
 
 interface KPICardProps {
   title: string;
@@ -9,15 +9,24 @@ interface KPICardProps {
   icon?: React.ReactNode;
   isNegative?: boolean;
   isHighlight?: boolean;
+  description?: string;
 }
 
-export const KPICard: React.FC<KPICardProps> = ({ title, value, trend, icon, isNegative, isHighlight }) => {
+export const KPICard: React.FC<KPICardProps> = ({ title, value, trend, icon, isNegative, isHighlight, description }) => {
   return (
-    <div className={`p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] shadow-sm border transition-all duration-300 group ${
+    <div className={`p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] shadow-sm border transition-all duration-300 group relative ${
       isHighlight 
         ? 'bg-orange-600 border-orange-500 shadow-orange-500/20' 
         : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 hover:shadow-xl hover:-translate-y-1'
     }`}>
+      {description && (
+        <div className="absolute top-4 right-4 z-10 group/info">
+          <Info className={`w-4 h-4 cursor-help ${isHighlight ? 'text-white/60 hover:text-white' : 'text-slate-400 hover:text-slate-600'}`} />
+          <div className="absolute right-0 top-6 w-48 p-2 bg-slate-800 text-white text-xs rounded-lg opacity-0 group-hover/info:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg">
+            {description}
+          </div>
+        </div>
+      )}
       <div className="flex flex-col md:flex-row md:justify-between items-start gap-2 md:gap-0 mb-2 md:mb-4">
         <div className="flex items-center gap-2">
           <div className={`p-1.5 rounded-lg transition-colors ${

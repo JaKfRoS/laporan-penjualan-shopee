@@ -3,7 +3,25 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS variation_name text DEFAULT NULL;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS processing_fee numeric DEFAULT 0;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS parent_sku text DEFAULT NULL;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS fee_details jsonb DEFAULT '{}'::jsonb;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS release_date date DEFAULT NULL;
 ALTER TABLE stores ADD COLUMN IF NOT EXISTS last_import_at timestamptz DEFAULT NULL;
+
+-- TABEL ADJUSTMENTS --
+CREATE TABLE IF NOT EXISTS adjustments (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    adjustment_date date NOT NULL,
+    amount numeric DEFAULT 0,
+    reason text,
+    order_id text,
+    created_at timestamptz DEFAULT now(),
+    UNIQUE(store_id, order_id, adjustment_date, amount)
+);
+
+ALTER TABLE adjustments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON adjustments;
+CREATE POLICY "Enable all for authenticated users" ON adjustments FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
 
 -- TABEL ADS PERFORMANCE --
 CREATE TABLE IF NOT EXISTS ads_performance (

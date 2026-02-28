@@ -194,7 +194,7 @@ export default function AdsProducts({ store }: AdsProductsProps) {
             )}
           </div>
 
-          {editingProduct ? (
+          {editingProduct && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">HPP (Rp)</label>
@@ -254,29 +254,6 @@ export default function AdsProducts({ store }: AdsProductsProps) {
                 >
                   <Save className="w-4 h-4" /> Simpan
                 </button>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mb-8">
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl">
-                <p className="text-xs text-slate-500 font-medium mb-1">HPP</p>
-                <p className="font-bold">Rp {selectedProduct.hpp.toLocaleString()}</p>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl">
-                <p className="text-xs text-slate-500 font-medium mb-1">Harga Jual</p>
-                <p className="font-bold">Rp {selectedProduct.harga_jual.toLocaleString()}</p>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl">
-                <p className="text-xs text-slate-500 font-medium mb-1">Proses Pesanan</p>
-                <p className="font-bold">Rp {selectedProduct.proses_pesanan.toLocaleString()}</p>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl">
-                <p className="text-xs text-slate-500 font-medium mb-1">Pot Admin</p>
-                <p className="font-bold">{selectedProduct.pot_admin_persen}%</p>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl">
-                <p className="text-xs text-slate-500 font-medium mb-1">Operasional</p>
-                <p className="font-bold">{selectedProduct.operasional_persen}%</p>
               </div>
             </div>
           )}

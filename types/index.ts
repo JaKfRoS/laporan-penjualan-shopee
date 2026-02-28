@@ -43,6 +43,7 @@ export interface Order {
   created_at: string;
   order_items?: OrderItem[]; // Added relations
   fee_details?: any; // JSONB for detailed fee breakdown
+  release_date?: string | null; // Tanggal Dana Dilepaskan
 }
 
 export interface Product {

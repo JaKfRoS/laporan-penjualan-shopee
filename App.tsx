@@ -10,13 +10,23 @@ import { ProductManager } from './components/Product/ProductManager';
 import { StoreSelector } from './components/StoreSelector';
 import { Layout } from './components/Layout';
 import AdsCenter from './components/Ads/AdsCenter';
+import { CashflowPage } from './components/Cashflow/CashflowPage';
 import { Toaster, toast } from 'react-hot-toast';
+
+// Intercept toast.error globally to suppress refresh token errors
+const originalToastError = toast.error;
+(toast as any).error = (message: any, options?: any) => {
+  if (typeof message === 'string' && (message.toLowerCase().includes('refresh token') || message.includes('refresh_token_not_found') || message.toLowerCase().includes('invalid refresh token'))) {
+    return '';
+  }
+  return originalToastError(message, options);
+};
 import { Store } from './types';
-import { AlertCircle, Loader2, Trash2, AlertTriangle, RefreshCcw, UserCircle, ShieldAlert, Pencil, Check, X, Code, Layers, Megaphone, Calculator, LayoutDashboard, UploadCloud, Settings, PackageSearch, Database } from 'lucide-react';
+import { AlertCircle, Loader2, Trash2, AlertTriangle, RefreshCcw, UserCircle, ShieldAlert, Pencil, Check, X, Code, Layers, Megaphone, Calculator, LayoutDashboard, UploadCloud, Settings, PackageSearch, Database, Wallet } from 'lucide-react';
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products' | 'cashflow'>('dashboard');
   const [currentStore, setCurrentStore] = useState<Store | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +47,25 @@ export default function App() {
     }
   }, [isDarkMode]);
 
+  const handleSupabaseError = async (err: any) => {
+    if (err?.message?.toLowerCase().includes('refresh token') || err?.message?.includes('refresh_token_not_found') || err?.message?.toLowerCase().includes('invalid refresh token')) {
+        try {
+          await supabase.auth.signOut();
+        } catch (e) {
+          console.error("Error signing out:", e);
+        }
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+            localStorage.removeItem(key);
+          }
+        });
+        setSession(null);
+        toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
+        return true;
+    }
+    return false;
+  };
+
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       setLoading(false);
@@ -45,13 +74,20 @@ export default function App() {
 
     const initSession = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        setSession(currentSession);
-        if (currentSession) {
-          await fetchStores(currentSession.user.id);
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("Auth Error:", error);
+          await handleSupabaseError(error);
+        } else {
+          setSession(currentSession);
+          if (currentSession) {
+            await fetchStores(currentSession.user.id);
+          }
         }
-      } catch (err) {
-        console.error("Auth Error:", err);
+      } catch (err: any) {
+        console.error("Auth Exception:", err);
+        await handleSupabaseError(err);
       } finally {
         setLoading(false);
       }
@@ -59,13 +95,23 @@ export default function App() {
 
     initSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      if (newSession) {
-        fetchStores(newSession.user.id);
-      } else {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (event === 'TOKEN_REFRESHED') {
+        console.log('Token refreshed successfully');
+      }
+      
+      if (event === 'SIGNED_OUT') {
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+            localStorage.removeItem(key);
+          }
+        });
         setStores([]);
         setCurrentStore(null);
+        setSession(null);
+      } else if (newSession) {
+        setSession(newSession);
+        fetchStores(newSession.user.id);
       }
     });
 
@@ -98,7 +144,9 @@ export default function App() {
         await createDefaultStore(userId);
       }
     } catch (err: any) {
-      toast.error("Gagal memuat toko: " + err.message);
+      if (!(await handleSupabaseError(err))) {
+        toast.error("Gagal memuat toko: " + err.message);
+      }
     }
   };
 
@@ -135,7 +183,9 @@ export default function App() {
       setCurrentStore(data);
       toast.success(`Toko "${name}" berhasil dibuat!`);
     } catch (err: any) {
-      toast.error("Gagal menambah toko: " + err.message);
+      if (!(await handleSupabaseError(err))) {
+        toast.error("Gagal menambah toko: " + err.message);
+      }
     }
   };
 
@@ -156,7 +206,9 @@ export default function App() {
       setEditingStoreId(null);
       toast.success("Nama toko diubah!");
     } catch (err: any) {
-      toast.error("Gagal: " + err.message);
+      if (!(await handleSupabaseError(err))) {
+        toast.error("Gagal: " + err.message);
+      }
     }
   };
 
@@ -190,6 +242,7 @@ export default function App() {
       toast.success(`Toko "${name}" berhasil dihapus.`, { id: toastId });
     } catch (err: any) {
       console.error(err);
+      if (await handleSupabaseError(err)) return;
       // Jika error foreign key constraint, tampilkan panduan SQL
       if (err.code === '23503') {
          toast.error("Gagal: Database menolak penghapusan. Jalankan script SQL Update.", { id: toastId });
@@ -242,6 +295,7 @@ export default function App() {
       setActiveTab('dashboard');
     } catch (err: any) {
       console.error(err);
+      if (await handleSupabaseError(err)) return;
       toast.error("Gagal hapus data: " + err.message, { id: loadingToast });
       setShowSqlGuide(true);
     } finally {
@@ -278,6 +332,7 @@ export default function App() {
       window.location.reload(); 
     } catch (err: any) {
       console.error(err);
+      if (await handleSupabaseError(err)) return;
       toast.error("Gagal: " + err.message, { id: loadingToast });
       setShowSqlGuide(true);
     } finally {
@@ -377,6 +432,13 @@ export default function App() {
               allStores={stores} 
               key={`dash-${currentStore.id}-${refreshKey}`} 
             />
+          )}
+
+          {activeTab === 'cashflow' && currentStore && (
+             <CashflowPage 
+               store={currentStore} 
+               allStores={stores} 
+             />
           )}
 
           {activeTab === 'calculator' && currentStore && (
@@ -564,8 +626,9 @@ export default function App() {
 
       {/* Mobile Bottom Navigation (Glassmorphism) */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-safe">
-        <div className="grid grid-cols-6 gap-0.5 p-2 max-w-md mx-auto">
+        <div className="grid grid-cols-7 gap-0.5 p-2 max-w-md mx-auto">
           <MobileNavItem id="dashboard" label="Home" icon={LayoutDashboard} />
+          <MobileNavItem id="cashflow" label="Cashflow" icon={Wallet} />
           <MobileNavItem id="products" label="Produk" icon={PackageSearch} />
           <MobileNavItem id="ads" label="Ads" icon={Megaphone} />
           <MobileNavItem id="calculator" label="Harga" icon={Calculator} />

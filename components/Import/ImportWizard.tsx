@@ -67,6 +67,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
   // Data State
   const [ordersData, setOrdersData] = useState<RawRow[]>([]);
   const [incomeData, setIncomeData] = useState<RawRow[]>([]);
+  const [adjustmentData, setAdjustmentData] = useState<RawRow[]>([]);
   const [files, setFiles] = useState<{ orders: string | null, income: string | null }>({ orders: null, income: null });
   
   const [mapping, setMapping] = useState<Mapping>({});
@@ -134,6 +135,20 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
                         Array.isArray(row) && row.some(cell => String(cell).toLowerCase().includes('no. pesanan') || String(cell).toLowerCase().includes('order id'))
                      );
                      if (idx > -1) headerRowIndex = idx;
+                 }
+             }
+
+             // Check for Adjustment sheet
+             const adjSheetName = wb.SheetNames.find(n => n.toLowerCase().includes('adjustment') || n.toLowerCase().includes('penyesuaian'));
+             if (adjSheetName) {
+                 const wsAdj = wb.Sheets[adjSheetName];
+                 const aoaAdj = XLSX.utils.sheet_to_json(wsAdj, { header: 1, range: 0, defval: '' }) as any[][];
+                 const adjIdx = aoaAdj.findIndex(row => 
+                    Array.isArray(row) && row.some(cell => String(cell).toLowerCase().includes('tanggal penyesuaian') || String(cell).toLowerCase().includes('biaya penyesuaian'))
+                 );
+                 if (adjIdx > -1) {
+                     const adjData = XLSX.utils.sheet_to_json(wsAdj, { range: adjIdx }) as RawRow[];
+                     setAdjustmentData(adjData);
                  }
              }
           }
@@ -248,6 +263,24 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
           const orderDate = getSafeDate(row[mapping['order_date']]) || new Date().toISOString();
           const paymentDate = getSafeDate(row[mapping['payment_date']]);
+          
+          // Check if fees are present in Order Data (usually they are 0 or incomplete in Order Export)
+          // If status is 'Selesai' but we don't have Income Data yet, we might want to flag it.
+          // For now, we default to the status in the file, but Income Data processing will override it.
+          // User requested: "Jika kolom biaya masih kosong, beri status 'Pending Settlement'"
+          // In Order Export, fees are often 0.
+          
+          if (status.toLowerCase() === 'selesai') {
+              // We assume it's pending settlement until we match it with Income Data
+              // However, we don't want to overwrite 'Selesai' if we are just re-importing Orders.
+              // Let's set a flag or just keep it 'Selesai' and let Income Data confirm it.
+              // Actually, the user explicitly asked: "Jika biaya = 0, tampilkan status 'Menunggu Rekonsiliasi'"
+              // We can check if we have fee columns mapped and if they are 0.
+              // But Order Export usually doesn't have full fee columns.
+              // So, let's set it to 'Menunggu Rekonsiliasi' if it's 'Selesai'. 
+              // Income Data processing will change it back to 'Selesai'.
+              status = 'Menunggu Rekonsiliasi';
+          }
 
           orderGroups[orderId] = {
             order: {
@@ -328,9 +361,11 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          if (found) incomeMapping[dbKey] = found;
       });
 
+      const incomeUpdates: { orderId: string, payload: any }[] = [];
+
       incomeData.forEach(row => {
          const orderId = String(row[incomeMapping['order_id']] || '').trim();
-         if (!orderId || !orderGroups[orderId]) return; // Only update known orders
+         if (!orderId) return;
 
          const netRevenue = parseNumberIndonesia(row[incomeMapping['net_revenue']]);
          const adminFee = Math.abs(parseNumberIndonesia(row[incomeMapping['admin_fee']]));
@@ -343,54 +378,74 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          const shippingForwarded = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_fee_forwarded']]));
          const sellerVoucher = Math.abs(parseNumberIndonesia(row[incomeMapping['seller_voucher']]));
          const shippingRebate = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_rebate']]));
+         const transactionFee = Math.abs(parseNumberIndonesia(row['Biaya Transaksi'] || '0')); // Added Transaction Fee
          
-         // Update Order
-         orderGroups[orderId].order.net_revenue = netRevenue;
-         
-         // Update Product Total (Omzet) from Income Data if available
          const originalPrice = parseNumberIndonesia(row[incomeMapping['original_price']]);
          const productDiscount = Math.abs(parseNumberIndonesia(row[incomeMapping['product_discount']]));
          
+         let productTotal = 0;
          if (originalPrice > 0) {
-            // Formula User: Harga Asli Produk - Total Diskon Produk
-            orderGroups[orderId].order.product_total = originalPrice - productDiscount;
+            productTotal = originalPrice - productDiscount;
          }
 
-         // Store Total Potongan MP (Marketplace Fees) in service_fee
-         // Components from Reference:
-         // - Biaya Administrasi (adminFee)
-         // - Biaya Komisi AMS (amsFee)
-         // - Biaya Layanan (serviceFee)
-         // - Jumlah Pengembalian Dana (refundAmount)
-         // - Ongkir Diteruskan (shippingForwarded)
-         // - Ongkos Kirim Pengembalian (returnShippingFee)
-         // - Premi (premFee)
-         // - Voucher Penjual (sellerVoucher)
-         // - Biaya Proses/Transaksi (procFee) -- Just in case
-         // - MINUS: Gratis Ongkir (shippingRebate)
+         const totalMarketplaceFee = (adminFee + amsFee + serviceFee + procFee + premFee + shippingForwarded + returnShippingFee + sellerVoucher + refundAmount + transactionFee) - shippingRebate;
          
-         const totalMarketplaceFee = (adminFee + amsFee + serviceFee + procFee + premFee + shippingForwarded + returnShippingFee + sellerVoucher + refundAmount) - shippingRebate;
-         
-         orderGroups[orderId].order.service_fee = totalMarketplaceFee;
-
-         // NEW: Store Detailed Fee Breakdown for Export
-         orderGroups[orderId].order.fee_details = {
+         const feeDetails = {
             admin_fee: adminFee,
             ams_commission: amsFee,
             service_fee: serviceFee,
-            shipping_rebate: shippingRebate, // Gratis Ongkir (Positive value usually, but treated as subsidy)
+            shipping_rebate: shippingRebate,
             refund_amount: refundAmount,
             shipping_forwarded: shippingForwarded,
             return_shipping_fee: returnShippingFee,
             premium_fee: premFee,
             seller_voucher: sellerVoucher,
-            processing_fee: procFee
+            processing_fee: procFee,
+            transaction_fee: transactionFee
          };
-         orderGroups[orderId].order.admin_fee = 0; // Reset admin_fee as we use service_fee for total
-         
-         // Check for Refund
-         if (refundAmount > 0) {
-             orderGroups[orderId].order.status = 'Pengembalian';
+
+         // Parse Release Date if available
+         const releaseDateRaw = row['Tanggal Dana Dilepaskan'];
+         const releaseDate = releaseDateRaw ? getSafeDate(releaseDateRaw) : null;
+
+         if (orderGroups[orderId]) {
+             // Update Order in memory
+             orderGroups[orderId].order.net_revenue = netRevenue;
+             if (productTotal > 0) {
+                 orderGroups[orderId].order.product_total = productTotal;
+             }
+             orderGroups[orderId].order.service_fee = totalMarketplaceFee;
+             orderGroups[orderId].order.fee_details = feeDetails;
+             orderGroups[orderId].order.admin_fee = 0;
+             if (releaseDate) {
+                 orderGroups[orderId].order.release_date = releaseDate;
+             }
+             if (refundAmount > 0) {
+                 orderGroups[orderId].order.status = 'Pengembalian';
+             } else {
+                 const currentStatus = (orderGroups[orderId].order.status || '').toLowerCase();
+                 if (!currentStatus.includes('batal') && !currentStatus.includes('cancel')) {
+                    orderGroups[orderId].order.status = 'Selesai';
+                 }
+             }
+         } else {
+             // Order is not in current Orders file, but might be in DB
+             const updatePayload: any = {
+                 net_revenue: netRevenue,
+                 service_fee: totalMarketplaceFee,
+                 fee_details: feeDetails,
+                 admin_fee: 0
+             };
+             if (productTotal > 0) updatePayload.product_total = productTotal;
+             if (releaseDate) updatePayload.release_date = releaseDate;
+             
+             if (refundAmount > 0) {
+                 updatePayload.status = 'Pengembalian';
+             } else {
+                 updatePayload.status = 'Selesai';
+             }
+             
+             incomeUpdates.push({ orderId, payload: updatePayload });
          }
       });
 
@@ -411,22 +466,82 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       const itemsToUpsert = Object.values(orderGroups).flatMap(g => g.items);
 
       // 5. DATABASE TRANSACTIONS
-      const { error: orderError } = await supabase
-        .from('orders')
-        .upsert(ordersToUpsert, { onConflict: 'store_id, order_id' });
-      
-      if (orderError) throw orderError;
+      if (ordersToUpsert.length > 0) {
+        const { error: orderError } = await supabase
+          .from('orders')
+          .upsert(ordersToUpsert, { onConflict: 'store_id, order_id' });
+        
+        if (orderError) throw orderError;
 
-      const orderIds = ordersToUpsert.map(o => o.order_id);
-      
-      await supabase
-        .from('order_items')
-        .delete()
-        .eq('store_id', store.id) 
-        .in('order_id', orderIds);
-      
-      const { error: itemError } = await supabase.from('order_items').insert(itemsToUpsert);
-      if (itemError) throw itemError;
+        const orderIds = ordersToUpsert.map(o => o.order_id);
+        
+        for (let i = 0; i < orderIds.length; i += 500) {
+            const chunk = orderIds.slice(i, i + 500);
+            await supabase
+              .from('order_items')
+              .delete()
+              .eq('store_id', store.id) 
+              .in('order_id', chunk);
+        }
+        
+        for (let i = 0; i < itemsToUpsert.length; i += 500) {
+            const chunk = itemsToUpsert.slice(i, i + 500);
+            const { error: itemError } = await supabase.from('order_items').insert(chunk);
+            if (itemError) throw itemError;
+        }
+      }
+
+      // 5.5 UPDATE EXISTING ORDERS FROM INCOME DATA
+      if (incomeUpdates.length > 0) {
+          const orderIdsToFetch = incomeUpdates.map(u => u.orderId);
+          const chunkSize = 500;
+          for (let i = 0; i < orderIdsToFetch.length; i += chunkSize) {
+              const chunk = orderIdsToFetch.slice(i, i + chunkSize);
+              const { data: existingOrders } = await supabase
+                  .from('orders')
+                  .select('*')
+                  .eq('store_id', store.id)
+                  .in('order_id', chunk);
+                  
+              if (existingOrders && existingOrders.length > 0) {
+                  const upserts = existingOrders.map(eo => {
+                      const update = incomeUpdates.find(u => u.orderId === eo.order_id)?.payload;
+                      return { ...eo, ...update };
+                  });
+                  await supabase.from('orders').upsert(upserts, { onConflict: 'store_id, order_id' });
+              }
+          }
+      }
+
+      // 5.6 PROCESS ADJUSTMENT DATA
+      if (adjustmentData.length > 0) {
+          const adjustmentsToInsert = adjustmentData.map(row => {
+              const dateRaw = row['Tanggal Penyesuaian Dibuat'] || row['Tanggal Dana Dilepaskan'];
+              const adjDate = dateRaw ? getSafeDate(dateRaw) : new Date().toISOString();
+              const amount = parseNumberIndonesia(row['Biaya Penyesuaian'] || '0');
+              const reason = row['Alasan Penyesuaian'] || row['Tipe Penyesuaian | Deskripsi'] || '';
+              const orderId = row['No. Pesanan Terhubung'] || '';
+              
+              return {
+                  store_id: store.id,
+                  adjustment_date: adjDate,
+                  amount: amount,
+                  reason: reason,
+                  order_id: orderId
+              };
+          }).filter(a => a.amount !== 0);
+
+          if (adjustmentsToInsert.length > 0) {
+              // We use upsert with unique constraint on store_id, order_id, adjustment_date, amount
+              const { error: adjError } = await supabase
+                  .from('adjustments')
+                  .upsert(adjustmentsToInsert, { onConflict: 'store_id, order_id, adjustment_date, amount' });
+              if (adjError) {
+                  console.error("Adjustment Error:", adjError);
+                  // Non-fatal, just log
+              }
+          }
+      }
 
       // 6. UPDATE LAST IMPORT TIMESTAMP
       const now = new Date().toISOString();
