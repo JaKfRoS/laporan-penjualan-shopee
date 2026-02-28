@@ -181,7 +181,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
       if (isAds) {
         biayaIklan += amount;
-      } else if (!reason.includes('[balance_snapshot]') && !reason.includes('[auto_revenue]')) {
+      } else if (!reason.includes('[balance_snapshot]')) {
         penyesuaianLain += amount;
       }
     });

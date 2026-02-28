@@ -67,8 +67,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     setLoading(true);
 
     try {
-      // Cashflow is now independent of orders table for revenue
-      // We only fetch orders to get HPP and for the breakdown per store in PDF
       let query = supabase
         .from('orders')
         .select('*, order_items(*)')
@@ -79,7 +77,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
            const storeIds = allStores.map(s => s.id);
            query = query.in('store_id', storeIds);
         } else {
-           setAllOrders([]);
+           setNetRevenueSelesai(0);
+           setTotalHPPSelesai(0);
            setLoading(false);
            return;
         }
@@ -103,12 +102,17 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       const orders = data || [];
       setAllOrders(orders);
       
-      // Calculate HPP from orders (this is still needed as it's not in balance report)
+      // Calculate Metrics
+      // 1. Filter Settled Orders
       const settledOrders = orders.filter(o => {
         const s = (o.status || '').toLowerCase();
         return s === 'selesai' || s === 'pengembalian';
       });
 
+      // 2. Net Revenue (Uang Cair)
+      const revenue = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
+      
+      // 3. Total HPP
       const hpp = settledOrders.reduce((acc, o) => {
         const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
         if (isReturned) return acc;
@@ -119,6 +123,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         return acc + orderHpp;
       }, 0);
 
+      setNetRevenueSelesai(revenue);
       setTotalHPPSelesai(hpp);
 
     } catch (err: any) {
@@ -158,8 +163,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       let latestBalance = 0;
       let latestBalanceDate = '';
-      let revenueTotal = 0;
-      let adsTotalVal = 0;
 
       const parsed = data.map((item: any) => {
         const reason = item.reason || '';
@@ -175,11 +178,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         } else if (reason.includes('[AUTO_UPLOAD]')) {
            category = 'Isi Ulang Saldo Iklan/Koin Penjual';
            description = reason.replace('[AUTO_UPLOAD]', '').trim();
-           adsTotalVal += Math.abs(item.amount);
-        } else if (reason.includes('[AUTO_REVENUE]')) {
-           category = 'Penghasilan Pesanan';
-           description = reason.replace('[AUTO_REVENUE]', '').trim();
-           revenueTotal += item.amount;
         } else if (reason.includes('[BALANCE_SNAPSHOT]')) {
            const balMatch = reason.match(/Balance: ([\d.-]+)/);
            if (balMatch) {
@@ -191,10 +189,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
            }
            return null; // Exclude from transactions list
         } else {
-           // Other types of adjustments
+           // Other types of adjustments (e.g. from orders table)
            if (reason.toLowerCase().includes('iklan') || reason.toLowerCase().includes('ads')) {
               category = 'Isi Ulang Saldo Iklan/Koin Penjual';
-              adsTotalVal += Math.abs(item.amount);
            }
         }
         
@@ -205,15 +202,19 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           storeId: item.store_id,
           storeName: storeInfo?.name || 'Unknown Store',
           date: item.adjustment_date,
-          amount: item.amount,
+          amount: item.amount, // Keep original sign
           category,
           description,
           affectOmzet: false
         };
       }).filter(Boolean) as ManualTransaction[];
 
-      setNetRevenueSelesai(revenueTotal);
-      setAdsTotal(adsTotalVal);
+      // Update summary metrics based on fetched data
+      const ads = parsed
+        .filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual')
+        .reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
+      
+      setAdsTotal(ads);
       setManualTransactions(parsed);
       if (latestBalanceDate) {
          setEscrowBalance(latestBalance);
@@ -230,8 +231,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     const reader = new FileReader();
     reader.onload = (evt) => {
       const bstr = evt.target?.result;
-      // Use cellDates: true to handle Excel dates correctly
-      const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
+      const wb = XLSX.read(bstr, { type: 'binary' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
       const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
@@ -243,7 +243,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
   const parseBalanceReport = async (rows: any[][]) => {
     let totalAds = 0;
-    let totalRevenue = 0;
     let lastBalance = 0;
     let balanceFound = false;
     let foundHeader = false;
@@ -251,7 +250,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     let amountColIdx = -1;
     let descColIdx = -1;
     let dateColIdx = -1;
-    let typeColIdx = -1;
     let orderIdColIdx = -1;
     let latestDate = '';
     
@@ -262,33 +260,22 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       if (typeof val === 'number') return val;
       let s = String(val).trim();
       if (!s) return 0;
-      
-      // Shopee ID format: 1.234.567,89 (dot = thousand, comma = decimal)
-      // Or sometimes just 1.234.567
-      
-      const hasComma = s.includes(',');
-      const hasDot = s.includes('.');
-      
-      if (hasComma && hasDot) {
-        // 1.234.567,89 -> remove dots, replace comma with dot
+      // Handle IDR style: 1.234.567,89 -> remove dots, replace comma with dot
+      if (s.includes('.') && s.includes(',') && s.lastIndexOf('.') < s.lastIndexOf(',')) {
         s = s.replace(/\./g, '').replace(',', '.');
-      } else if (hasComma) {
-        // 1234,56 -> replace comma with dot
-        // But wait, could it be 1,234 (thousands)? 
-        // In ID context, comma is almost always decimal.
-        s = s.replace(',', '.');
-      } else if (hasDot) {
-        // 1.234 -> could be 1234 (ID thousands) or 1.234 (international decimal)
-        // If there are exactly 3 digits after the last dot, it's likely thousands
-        const parts = s.split('.');
-        if (parts[parts.length - 1].length === 3) {
-          s = s.replace(/\./g, '');
+      } else if (s.includes(',') && !s.includes('.')) {
+        // Could be 1.234 (thousands) or 1,234 (decimal)
+        // Shopee ID usually uses comma for decimal. But if it's 1,234,567 it's thousands.
+        // Let's just remove commas if they look like thousands separators
+        if (s.split(',').length > 2 || (s.includes(',') && s.split(',')[1].length === 3)) {
+          s = s.replace(/,/g, '');
         } else {
-          // Treat as decimal
+          s = s.replace(',', '.');
         }
+      } else {
+        s = s.replace(/,/g, '');
       }
-      
-      return parseFloat(s) || 0;
+      return parseFloat(s);
     };
 
     for (let i = 0; i < rows.length; i++) {
@@ -297,6 +284,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       if (!foundHeader) {
         const rowStr = row.join(' ').toLowerCase();
+        // Detect header row based on common Shopee columns
         if (rowStr.includes('tanggal') && rowStr.includes('deskripsi') && (rowStr.includes('jumlah') || rowStr.includes('amount'))) {
             foundHeader = true;
             row.forEach((cell: any, idx: number) => {
@@ -305,7 +293,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                 if (c === 'jumlah' || c === 'amount' || (c.includes('jumlah') && !c.includes('transaksi'))) amountColIdx = idx;
                 if (c.includes('deskripsi') || c.includes('description')) descColIdx = idx;
                 if (c.includes('tanggal') || c.includes('date')) dateColIdx = idx;
-                if (c.includes('tipe') || c.includes('type')) typeColIdx = idx;
                 if (c.includes('pesanan') || c.includes('order')) orderIdColIdx = idx;
             });
             continue;
@@ -313,9 +300,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       }
 
       if (foundHeader && amountColIdx !== -1 && descColIdx !== -1) {
-          const descOrig = String(row[descColIdx] || '');
-          const desc = descOrig.toLowerCase();
-          const type = typeColIdx !== -1 ? String(row[typeColIdx] || '').toLowerCase() : '';
+          const desc = String(row[descColIdx] || '').toLowerCase();
           const amount = parseShopeeNumber(row[amountColIdx]);
           const dateStr = row[dateColIdx];
           const orderNo = orderIdColIdx !== -1 ? String(row[orderIdColIdx] || '-') : '-';
@@ -324,36 +309,28 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
           // Robust Date Parsing
           let formattedDate = '';
+          const datePart = String(dateStr).split(' ')[0];
+          const parts = datePart.split(/[-/]/);
           
-          if (dateStr instanceof Date) {
-              const y = dateStr.getFullYear();
-              const m = String(dateStr.getMonth() + 1).padStart(2, '0');
-              const d = String(dateStr.getDate()).padStart(2, '0');
-              formattedDate = `${y}-${m}-${d}`;
-          } else {
-              const datePart = String(dateStr).split(' ')[0];
-              const parts = datePart.split(/[-/]/);
-              
-              if (parts.length === 3) {
-                  if (parts[0].length === 4) {
-                      formattedDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-                  } else if (parts[2].length === 4) {
-                      formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                  }
-              }
-
-              if (!formattedDate) {
-                  const d = new Date(dateStr);
-                  if (!isNaN(d.getTime())) {
-                      const y = d.getFullYear();
-                      const m = String(d.getMonth() + 1).padStart(2, '0');
-                      const day = String(d.getDate()).padStart(2, '0');
-                      formattedDate = `${y}-${m}-${day}`;
-                  }
+          if (parts.length === 3) {
+              if (parts[0].length === 4) {
+                  formattedDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+              } else if (parts[2].length === 4) {
+                  formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
               }
           }
 
-          if (!formattedDate) continue;
+          if (!formattedDate) {
+              const d = new Date(dateStr);
+              if (!isNaN(d.getTime())) {
+                  const y = d.getFullYear();
+                  const m = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  formattedDate = `${y}-${m}-${day}`;
+              } else {
+                  continue;
+              }
+          }
 
           if (!latestDate || formattedDate > latestDate) {
              latestDate = formattedDate;
@@ -365,31 +342,20 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                         desc.includes('isi ulang') ||
                         desc.includes('spend') ||
                         desc.includes('biaya');
-          
-          const isRevenue = desc.includes('penghasilan dari pesanan') || 
-                            type.includes('penghasilan dari pesanan') ||
-                            desc.includes('order income');
 
-          if (isAds && amount < 0) {
-              totalAds += Math.abs(amount);
-              const uniqueId = orderNo !== '-' ? orderNo : `UPLOAD-ADS-${formattedDate}-${Math.abs(amount)}-${i}`;
-              transactionsToSave.push({
-                  store_id: store.id,
-                  adjustment_date: formattedDate,
-                  amount: amount,
-                  reason: `[AUTO_UPLOAD] ${descOrig}`,
-                  order_id: uniqueId
-              });
-          } else if (isRevenue && amount > 0) {
-              totalRevenue += amount;
-              const uniqueId = orderNo !== '-' ? orderNo : `UPLOAD-REV-${formattedDate}-${amount}-${i}`;
-              transactionsToSave.push({
-                  store_id: store.id,
-                  adjustment_date: formattedDate,
-                  amount: amount,
-                  reason: `[AUTO_REVENUE] ${descOrig}`,
-                  order_id: uniqueId
-              });
+          if (isAds) {
+              if (amount < 0) {
+                  totalAds += Math.abs(amount);
+                  const uniqueId = orderNo !== '-' ? orderNo : `UPLOAD-${formattedDate}-${Math.abs(amount)}-${i}`;
+
+                  transactionsToSave.push({
+                      store_id: store.id,
+                      adjustment_date: formattedDate,
+                      amount: amount,
+                      reason: `[AUTO_UPLOAD] ${String(row[descColIdx])}`,
+                      order_id: uniqueId
+                  });
+              }
           }
 
           // Get the latest balance (first row after header assuming descending order)
@@ -404,10 +370,10 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     }
 
     setAdsTotal(totalAds);
-    setNetRevenueSelesai(totalRevenue);
     setEscrowBalance(lastBalance);
     
     if (balanceFound && latestDate) {
+       // Persist balance snapshot
        transactionsToSave.push({
           store_id: store.id,
           adjustment_date: latestDate,
@@ -420,7 +386,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     if (transactionsToSave.length > 0) {
         await saveUploadedTransactions(transactionsToSave);
     } else {
-        toast.success(`Berhasil memproses! Revenue: Rp ${totalRevenue.toLocaleString()}, Ads: Rp ${totalAds.toLocaleString()}`);
+        toast.success(`Berhasil memproses! Ditemukan Biaya Iklan: Rp ${totalAds.toLocaleString()}`);
     }
   };
 
