@@ -894,7 +894,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                    {manualTransactions.map((tx) => (
+                    {manualTransactions
+                      .filter(tx => tx.category !== 'Isi Ulang Saldo Iklan/Koin Penjual')
+                      .map((tx) => (
                       <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                         <td className="px-6 py-4 font-medium">{format(new Date(tx.date), 'dd/MM/yyyy')}</td>
                         {store.id === 'all' && (
@@ -921,7 +923,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                         </td>
                       </tr>
                     ))}
-                    {manualTransactions.length === 0 && (
+                    {manualTransactions.filter(tx => tx.category !== 'Isi Ulang Saldo Iklan/Koin Penjual').length === 0 && (
                       <tr>
                         <td colSpan={store.id === 'all' ? 6 : 5} className="px-6 py-12 text-center text-slate-400 italic">
                           <div className="flex flex-col items-center gap-2">

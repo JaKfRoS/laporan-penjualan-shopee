@@ -163,11 +163,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     // Formula User: "Total Keuntungan = uang cair - total hpp"
     const totalKeuntungan = netRevenueSelesai - totalHPPSelesai;
 
-    // F. Total Penyesuaian
-    const totalPenyesuaian = adjustments.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
+    // F. Total Penyesuaian & Biaya Iklan
+    let biayaIklan = 0;
+    let penyesuaianLain = 0;
+
+    adjustments.forEach(a => {
+      const reason = (a.reason || '').toLowerCase();
+      const amount = Number(a.amount) || 0;
+      
+      const isAds = reason.includes('[auto_upload]') || 
+                    reason.includes('iklan') || 
+                    reason.includes('ads') || 
+                    reason.includes('top up') || 
+                    reason.includes('isi ulang') ||
+                    reason.includes('spend') ||
+                    reason.includes('biaya');
+
+      if (isAds) {
+        biayaIklan += amount;
+      } else if (!reason.includes('[balance_snapshot]')) {
+        penyesuaianLain += amount;
+      }
+    });
+
+    const totalPenyesuaian = penyesuaianLain; // Exclude ads from general adjustments as requested
 
     // G. Keuntungan Setelah Penyesuaian
-    const keuntunganSetelahPenyesuaian = totalKeuntungan + totalPenyesuaian;
+    const keuntunganSetelahPenyesuaian = totalKeuntungan + totalPenyesuaian + biayaIklan;
 
     // H. Uang yang Berpotensi Cair
     // Filter Valid Orders (Exclude Batal/Cancel)
@@ -185,6 +207,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     // 1. Performance Mode Metrics
     const totalOmzetPesanan = data.reduce((acc, o) => acc + (o.product_total || 0), 0); // GMV All Orders
     const averageOrderValue = totalOrdersCount > 0 ? totalOmzetPesanan / totalOrdersCount : 0;
+    
+    // ROAS Aktual
+    const roasAktual = Math.abs(biayaIklan) > 0 ? totalOmzetPesanan / Math.abs(biayaIklan) : 0;
     
     // Product Performance (Top SKU Contribution)
     const skuCounts: Record<string, number> = {};
@@ -311,7 +336,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       topSkuContribution,
       operationalRiskCount,
       shippingLeakage,
-      pendingEscrow
+      pendingEscrow,
+      biayaIklan,
+      roasAktual
     };
   }, [filteredOrders, adjustments]);
 
@@ -900,26 +927,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 isHighlight
               />
               <KPICard 
+                title="Biaya Iklan" 
+                value={`Rp ${Math.abs(metrics.biayaIklan || 0).toLocaleString()}`} 
+                trend="Ad Spend"
+                icon={<Percent className="w-4 h-4 text-red-600" />}
+                description="Total biaya iklan yang dikeluarkan (berdasarkan upload saldo)."
+                isNegative
+              />
+              <KPICard 
+                title="ROAS Aktual" 
+                value={`${(metrics.roasAktual || 0).toFixed(2)}x`} 
+                trend="Return on Ad Spend"
+                icon={<BrainCircuit className="w-4 h-4 text-purple-600" />}
+                description="Efektivitas iklan (Total Omzet / Biaya Iklan)."
+                isHighlight
+              />
+              <KPICard 
                 title="Volume & Aktivitas" 
                 value={`${metrics.totalOrders} / Rp ${(metrics.averageOrderValue || 0).toLocaleString()}`} 
                 trend="Trx / AOV"
                 icon={<PackageSearch className="w-4 h-4 text-blue-600" />}
                 description="Jumlah transaksi dan rata-rata nilai belanja per pelanggan."
-              />
-              <KPICard 
-                title="Product Performance" 
-                value={`${(metrics.topSkuContribution || 0).toFixed(1)}%`} 
-                trend="Top SKU Dominance"
-                icon={<CheckCircle2 className="w-4 h-4 text-blue-600" />}
-                description="Persentase dominasi produk paling laku di toko Anda."
-              />
-              <KPICard 
-                title="Operasional Risk" 
-                value={`${metrics.operationalRiskCount}`} 
-                trend="Batal / Retur"
-                icon={<AlertCircle className="w-4 h-4 text-red-600" />}
-                description="Jumlah pesanan yang gagal diproses atau dikembalikan pelanggan."
-                isNegative
               />
             </>
           ) : (
