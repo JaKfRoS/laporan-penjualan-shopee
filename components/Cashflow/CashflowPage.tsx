@@ -16,6 +16,8 @@ interface CashflowPageProps {
 
 interface ManualTransaction {
   id?: string;
+  storeId: string;
+  storeName?: string;
   date: string;
   category: string;
   amount: number;
@@ -34,9 +36,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const [adsTotal, setAdsTotal] = useState(0);
   const [escrowBalance, setEscrowBalance] = useState(0);
   const [manualTransactions, setManualTransactions] = useState<ManualTransaction[]>([]);
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
   
   // Form State
   const [newTx, setNewTx] = useState<ManualTransaction>({
+    storeId: store.id,
     date: new Date().toISOString().split('T')[0],
     category: 'Operasional',
     amount: 0,
@@ -47,6 +51,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    setNewTx(prev => ({ ...prev, storeId: store.id }));
     fetchData();
     fetchManualTransactions();
     return () => {
@@ -95,6 +100,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       if (error) throw error;
 
       const orders = data || [];
+      setAllOrders(orders);
       
       // Calculate Metrics
       // 1. Filter Settled Orders
@@ -135,8 +141,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     try {
       let query = supabase
         .from('adjustments')
-        .select('*')
-        .or('reason.ilike.%[MANUAL_EXPENSE]%,reason.ilike.%[AUTO_UPLOAD]%');
+        .select('*');
 
       if (store.id === 'all' && allStores) {
         query = query.in('store_id', allStores.map(s => s.id));
@@ -170,10 +175,19 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         } else if (reason.includes('[AUTO_UPLOAD]')) {
            category = 'Isi Ulang Saldo Iklan/Koin Penjual';
            description = reason.replace('[AUTO_UPLOAD]', '').trim();
+        } else {
+           // Other types of adjustments (e.g. from orders table)
+           if (reason.toLowerCase().includes('iklan') || reason.toLowerCase().includes('ads')) {
+              category = 'Isi Ulang Saldo Iklan/Koin Penjual';
+           }
         }
         
+        const storeInfo = allStores?.find(s => s.id === item.store_id);
+
         return {
           id: item.id,
+          storeId: item.store_id,
+          storeName: storeInfo?.name || 'Unknown Store',
           date: item.adjustment_date,
           amount: item.amount, // Keep original sign
           category,
@@ -252,10 +266,15 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           // Adjust parsing based on actual format if needed
           let dateObj = new Date();
           if (dateStr) {
-             const parts = String(dateStr).split(' ')[0].split('-');
+             const parts = String(dateStr).split(' ')[0].split(/[-/]/);
              if (parts.length === 3) {
-                 // Try DD-MM-YYYY
-                 dateObj = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                 if (parts[0].length === 4) {
+                     // YYYY-MM-DD
+                     dateObj = new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
+                 } else {
+                     // DD-MM-YYYY
+                     dateObj = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                 }
              } else {
                  dateObj = new Date(dateStr);
              }
@@ -263,7 +282,14 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           if (isNaN(dateObj.getTime())) dateObj = new Date(); // Fallback
           const formattedDate = dateObj.toISOString().split('T')[0];
 
-          if (desc.includes('iklan') || desc.includes('ads') || desc.includes('top up') || desc.includes('isi ulang')) {
+          const isAds = desc.includes('iklan') || 
+                        desc.includes('ads') || 
+                        desc.includes('top up') || 
+                        desc.includes('isi ulang') ||
+                        desc.includes('spend') ||
+                        desc.includes('biaya');
+
+          if (isAds) {
               if (amount < 0) {
                   totalAds += Math.abs(amount);
                   
@@ -385,9 +411,10 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
   const generatePDF = () => {
     const doc = new jsPDF();
+    const isAllStores = store.id === 'all';
     
     doc.setFontSize(18);
-    doc.text("Laporan Audit Arus Kas & Laba Rugi", 14, 20);
+    doc.text(isAllStores ? "Laporan Konsolidasi Arus Kas (Semua Toko)" : `Laporan Audit Arus Kas - ${store.name}`, 14, 20);
     doc.setFontSize(10);
     doc.text(`Periode: ${dateRange.start || '-'} s/d ${dateRange.end || '-'}`, 14, 28);
     doc.text(`Tanggal Cetak: ${new Date().toLocaleString('id-ID')}`, 14, 34);
@@ -418,11 +445,100 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       }
     });
 
-    const finalY = (doc as any).lastAutoTable.finalY + 10;
-    doc.setFontSize(12);
-    doc.text(`Total Dana Tersedia (Escrow): Rp ${escrowBalance.toLocaleString()}`, 14, finalY);
-    doc.setFontSize(10);
-    doc.text("*Saldo mengambang di Shopee yang belum ditarik", 14, finalY + 6);
+    let currentY = (doc as any).lastAutoTable.finalY + 10;
+    
+    if (!isAllStores) {
+      doc.setFontSize(12);
+      doc.text(`Total Dana Tersedia (Escrow): Rp ${escrowBalance.toLocaleString()}`, 14, currentY);
+      doc.setFontSize(10);
+      doc.text("*Saldo mengambang di Shopee yang belum ditarik", 14, currentY + 6);
+      currentY += 20;
+    }
+
+    // Breakdown Per Toko (Only for All Stores)
+    if (isAllStores && allStores) {
+      doc.addPage();
+      doc.setFontSize(16);
+      doc.text("Breakdown Per Toko", 14, 20);
+      doc.setFontSize(10);
+      doc.text("Ringkasan performa keuangan untuk setiap toko", 14, 28);
+
+      const storeBreakdown = allStores.map(s => {
+        const storeOrders = allOrders.filter(o => o.store_id === s.id && (o.status?.toLowerCase() === 'selesai' || o.status?.toLowerCase() === 'pengembalian'));
+        const storeRevenue = storeOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
+        const storeHpp = storeOrders.reduce((acc, o) => {
+          if (o.status?.toLowerCase().includes('pengembalian')) return acc;
+          return acc + (o.order_items?.reduce((h: number, item: any) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0);
+        }, 0);
+        
+        const storeTxs = manualTransactions.filter(tx => tx.storeId === s.id);
+        const storeAds = storeTxs.filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual').reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
+        const storeManual = storeTxs.filter(tx => tx.category !== 'Isi Ulang Saldo Iklan/Koin Penjual').reduce((acc, tx) => acc + tx.amount, 0);
+        
+        const storeProfit = storeRevenue - storeAds + storeManual - storeHpp;
+
+        return [
+          s.name,
+          `Rp ${storeRevenue.toLocaleString()}`,
+          `Rp ${storeAds.toLocaleString()}`,
+          `${storeManual < 0 ? '-' : '+'}Rp ${Math.abs(storeManual).toLocaleString()}`,
+          `Rp ${storeHpp.toLocaleString()}`,
+          `Rp ${storeProfit.toLocaleString()}`
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 35,
+        head: [['Toko', 'Revenue', 'Ads', 'Manual', 'HPP', 'Profit']],
+        body: storeBreakdown,
+        theme: 'grid',
+        headStyles: { fillColor: [52, 73, 94] },
+        columnStyles: {
+          1: { halign: 'right' },
+          2: { halign: 'right' },
+          3: { halign: 'right' },
+          4: { halign: 'right' },
+          5: { halign: 'right', fontStyle: 'bold' }
+        }
+      });
+    }
+
+    // Add Detailed Transactions Table (Only for Single Store)
+    if (!isAllStores && manualTransactions.length > 0) {
+      doc.addPage();
+      doc.setFontSize(16);
+      doc.text("Rincian Transaksi Penyesuaian", 14, 20);
+      doc.setFontSize(10);
+      doc.text("Daftar seluruh penyesuaian manual dan biaya iklan hasil upload", 14, 28);
+
+      const detailBody = manualTransactions.map(tx => [
+        format(new Date(tx.date), 'dd/MM/yyyy'),
+        tx.category,
+        tx.description,
+        `${tx.amount < 0 ? '-' : '+'}Rp ${Math.abs(tx.amount).toLocaleString()}`
+      ]);
+
+      autoTable(doc, {
+        startY: 35,
+        head: [['Tanggal', 'Kategori', 'Deskripsi', 'Nominal']],
+        body: detailBody,
+        theme: 'striped',
+        headStyles: { fillColor: [52, 73, 94] },
+        columnStyles: {
+          3: { halign: 'right', fontStyle: 'bold' }
+        },
+        didParseCell: function(data) {
+          if (data.column.index === 3 && data.cell.section === 'body') {
+            const val = data.cell.raw as string;
+            if (val.startsWith('-')) {
+              data.cell.styles.textColor = [192, 57, 43]; // Red for negative
+            } else {
+              data.cell.styles.textColor = [39, 174, 96]; // Green for positive
+            }
+          }
+        }
+      });
+    }
 
     doc.save(`Audit_Cashflow_${new Date().toISOString().split('T')[0]}.pdf`);
   };
@@ -701,6 +817,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                   <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
                     <tr>
                       <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Tanggal</th>
+                      {store.id === 'all' && <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Toko</th>}
                       <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Kategori</th>
                       <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Deskripsi</th>
                       <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs text-right">Nominal</th>
@@ -711,6 +828,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     {manualTransactions.map((tx) => (
                       <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                         <td className="px-6 py-4 font-medium">{format(new Date(tx.date), 'dd/MM/yyyy')}</td>
+                        {store.id === 'all' && (
+                          <td className="px-6 py-4">
+                            <span className="text-xs font-medium text-slate-500">{tx.storeName}</span>
+                          </td>
+                        )}
                         <td className="px-6 py-4">
                           <span className="px-3 py-1 bg-slate-100 dark:bg-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300">
                             {tx.category}
@@ -732,7 +854,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     ))}
                     {manualTransactions.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
+                        <td colSpan={store.id === 'all' ? 6 : 5} className="px-6 py-12 text-center text-slate-400 italic">
                           <div className="flex flex-col items-center gap-2">
                             <AlertCircle className="w-8 h-8 opacity-20" />
                             <p>Belum ada transaksi manual</p>
