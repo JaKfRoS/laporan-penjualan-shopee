@@ -161,6 +161,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       if (error) throw error;
 
+      let latestBalance = 0;
+      let latestBalanceDate = '';
+
       const parsed = data.map((item: any) => {
         const reason = item.reason || '';
         const categoryMatch = reason.match(/Category: ([^|]+)/);
@@ -175,6 +178,16 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         } else if (reason.includes('[AUTO_UPLOAD]')) {
            category = 'Isi Ulang Saldo Iklan/Koin Penjual';
            description = reason.replace('[AUTO_UPLOAD]', '').trim();
+        } else if (reason.includes('[BALANCE_SNAPSHOT]')) {
+           const balMatch = reason.match(/Balance: ([\d.-]+)/);
+           if (balMatch) {
+              const bal = parseFloat(balMatch[1]);
+              if (!latestBalanceDate || item.adjustment_date >= latestBalanceDate) {
+                 latestBalance = bal;
+                 latestBalanceDate = item.adjustment_date;
+              }
+           }
+           return null; // Exclude from transactions list
         } else {
            // Other types of adjustments (e.g. from orders table)
            if (reason.toLowerCase().includes('iklan') || reason.toLowerCase().includes('ads')) {
@@ -194,19 +207,18 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           description,
           affectOmzet: false
         };
-      });
+      }).filter(Boolean) as ManualTransaction[];
 
       // Update summary metrics based on fetched data
       const ads = parsed
         .filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual')
         .reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
       
-      const manual = parsed
-        .filter(tx => tx.category !== 'Isi Ulang Saldo Iklan/Koin Penjual')
-        .reduce((acc, tx) => acc + tx.amount, 0);
-
       setAdsTotal(ads);
       setManualTransactions(parsed);
+      if (latestBalanceDate) {
+         setEscrowBalance(latestBalance);
+      }
     } catch (err) {
       console.error("Error fetching transactions:", err);
     }
@@ -232,14 +244,39 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const parseBalanceReport = async (rows: any[][]) => {
     let totalAds = 0;
     let lastBalance = 0;
+    let balanceFound = false;
     let foundHeader = false;
     let balanceColIdx = -1;
     let amountColIdx = -1;
     let descColIdx = -1;
     let dateColIdx = -1;
     let orderIdColIdx = -1;
+    let latestDate = '';
     
     const transactionsToSave: any[] = [];
+
+    const parseShopeeNumber = (val: any) => {
+      if (val === undefined || val === null) return 0;
+      if (typeof val === 'number') return val;
+      let s = String(val).trim();
+      if (!s) return 0;
+      // Handle IDR style: 1.234.567,89 -> remove dots, replace comma with dot
+      if (s.includes('.') && s.includes(',') && s.lastIndexOf('.') < s.lastIndexOf(',')) {
+        s = s.replace(/\./g, '').replace(',', '.');
+      } else if (s.includes(',') && !s.includes('.')) {
+        // Could be 1.234 (thousands) or 1,234 (decimal)
+        // Shopee ID usually uses comma for decimal. But if it's 1,234,567 it's thousands.
+        // Let's just remove commas if they look like thousands separators
+        if (s.split(',').length > 2 || (s.includes(',') && s.split(',')[1].length === 3)) {
+          s = s.replace(/,/g, '');
+        } else {
+          s = s.replace(',', '.');
+        }
+      } else {
+        s = s.replace(/,/g, '');
+      }
+      return parseFloat(s);
+    };
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -264,39 +301,39 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       if (foundHeader && amountColIdx !== -1 && descColIdx !== -1) {
           const desc = String(row[descColIdx] || '').toLowerCase();
-          const amount = parseFloat(String(row[amountColIdx] || '0').replace(/,/g, ''));
+          const amount = parseShopeeNumber(row[amountColIdx]);
           const dateStr = row[dateColIdx];
           const orderNo = orderIdColIdx !== -1 ? String(row[orderIdColIdx] || '-') : '-';
           
           if (isNaN(amount) || !dateStr) continue;
 
-          // Robust Date Parsing to prevent Timezone Shifts
+          // Robust Date Parsing
           let formattedDate = '';
-          const datePart = String(dateStr).split(' ')[0]; // Take only YYYY-MM-DD or DD-MM-YYYY
+          const datePart = String(dateStr).split(' ')[0];
           const parts = datePart.split(/[-/]/);
           
           if (parts.length === 3) {
               if (parts[0].length === 4) {
-                  // YYYY-MM-DD
                   formattedDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
               } else if (parts[2].length === 4) {
-                  // DD-MM-YYYY
                   formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
               }
           }
 
           if (!formattedDate) {
-              // Final fallback if parsing fails
               const d = new Date(dateStr);
               if (!isNaN(d.getTime())) {
-                  // Use local date parts to avoid UTC shift
                   const y = d.getFullYear();
                   const m = String(d.getMonth() + 1).padStart(2, '0');
                   const day = String(d.getDate()).padStart(2, '0');
                   formattedDate = `${y}-${m}-${day}`;
               } else {
-                  continue; // Skip if date is invalid
+                  continue;
               }
+          }
+
+          if (!latestDate || formattedDate > latestDate) {
+             latestDate = formattedDate;
           }
 
           const isAds = desc.includes('iklan') || 
@@ -309,23 +346,25 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           if (isAds) {
               if (amount < 0) {
                   totalAds += Math.abs(amount);
-                  
-                  // Use Order No if available, otherwise generate stable ID
                   const uniqueId = orderNo !== '-' ? orderNo : `UPLOAD-${formattedDate}-${Math.abs(amount)}-${i}`;
 
                   transactionsToSave.push({
                       store_id: store.id,
                       adjustment_date: formattedDate,
-                      amount: amount, // Negative
+                      amount: amount,
                       reason: `[AUTO_UPLOAD] ${String(row[descColIdx])}`,
                       order_id: uniqueId
                   });
               }
           }
 
-          if (balanceColIdx !== -1 && lastBalance === 0) {
-              const bal = parseFloat(String(row[balanceColIdx] || '0').replace(/,/g, ''));
-              if (!isNaN(bal)) lastBalance = bal;
+          // Get the latest balance (first row after header assuming descending order)
+          if (balanceColIdx !== -1 && !balanceFound) {
+              const bal = parseShopeeNumber(row[balanceColIdx]);
+              if (!isNaN(bal)) {
+                 lastBalance = bal;
+                 balanceFound = true;
+              }
           }
       }
     }
@@ -333,6 +372,17 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     setAdsTotal(totalAds);
     setEscrowBalance(lastBalance);
     
+    if (balanceFound && latestDate) {
+       // Persist balance snapshot
+       transactionsToSave.push({
+          store_id: store.id,
+          adjustment_date: latestDate,
+          amount: 0,
+          reason: `[BALANCE_SNAPSHOT] Balance: ${lastBalance}`,
+          order_id: `BAL-SNAP-${latestDate}`
+       });
+    }
+
     if (transactionsToSave.length > 0) {
         await saveUploadedTransactions(transactionsToSave);
     } else {
