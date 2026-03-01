@@ -593,7 +593,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         XLSX.utils.book_append_sheet(wb, batalReturWs, "Batal & Retur");
       }
 
-      const fileName = `Laporan_Proyek_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const fileName = `Laporan_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
 
       toast.success("Laporan Excel berhasil dibuat!", { id: toastId });
@@ -974,7 +974,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 value={`Rp ${Math.abs(metrics.biayaIklan || 0).toLocaleString()}`} 
                 trend="Ad Spend"
                 icon={<Percent className="w-4 h-4 text-red-600" />}
-                description="Total biaya iklan yang dikeluarkan (berdasarkan upload saldo)."
+                description="Total biaya iklan yang dikeluarkan (berdasarkan transaksi saldo penjual, sudah termasuk PPN iklan 11%)."
                 isNegative
               />
               <KPICard 
@@ -993,7 +993,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 description="Jumlah seluruh transaksi yang masuk dalam periode ini."
               />
               <KPICard 
-                title="Rata-rata Pesanan (AOV)" 
+                title="AOV" 
                 value={`Rp ${(metrics.averageOrderValue || 0).toLocaleString()}`} 
                 trend="Avg Order Value"
                 icon={<ArrowRightLeft className="w-4 h-4 text-indigo-600" />}
@@ -1015,7 +1015,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 value={`Rp ${(metrics.netRevenueSelesai || 0).toLocaleString()}`} 
                 trend="Cash In"
                 icon={<Wallet className="w-4 h-4 text-green-600" />}
-                description="Uang asli yang sudah dilepaskan Shopee ke Saldo Penjual."
+                description="Uang Tunai yang sudah dilepaskan Shopee ke Saldo Penjual."
                 isHighlight
               />
               <KPICard 
@@ -1028,7 +1028,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               />
               <KPICard 
                 title="Profit Riil Akhir" 
-                value={`Rp ${(metrics.keuntunganSetelahPenyesuaian || 0).toLocaleString()}`} 
+                value={`Rp ${(metrics.totalKeuntungan || 0).toLocaleString()}`} 
                 trend="Net Profit"
                 icon={<Wallet className="w-4 h-4 text-yellow-600" />}
                 description="Keuntungan bersih nyata setelah dikurangi modal barang dan biaya operasional."
@@ -1040,7 +1040,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 trend="Marketplace Fees"
                 isNegative
                 icon={<Percent className="w-4 h-4 text-red-600" />}
-                description="Total biaya yang dipotong platform (termasuk program Gratis Ongkir/Cashback Xtra)."
+                description="Total biaya yang dipotong platform (termasuk program Gratis Ongkir/Promo Xtra)."
               />
               <KPICard 
                 title="Selisih Ongkir" 
@@ -1056,14 +1056,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 trend="Completed"
                 icon={<CheckCircle2 className="w-4 h-4 text-green-600" />}
                 description="Jumlah pesanan yang sudah selesai dan dananya sudah cair."
-              />
-              <KPICard 
-                title="Pesanan Batal" 
-                value={`${metrics.cancelledCount}`} 
-                trend="Cancelled"
-                icon={<XCircle className="w-4 h-4 text-red-500" />}
-                description="Jumlah pesanan batal/cancel dalam periode ini."
-                isNegative
               />
               <KPICard 
                 title="Pesanan Retur" 

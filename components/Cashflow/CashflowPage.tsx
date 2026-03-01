@@ -684,7 +684,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           onClick={() => setActiveTab('upload')}
           className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'upload' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
         >
-          Upload Saldo (Iklan)
+          Upload Saldo Penjual
         </button>
         <button 
           onClick={() => setActiveTab('manual')}
