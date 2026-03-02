@@ -290,6 +290,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
     // Performance Mode Metrics (Keep existing)
     const totalOmzetPesanan = data.reduce((acc, o) => acc + (o.product_total || 0), 0);
+    const totalOmzetBersih = data.reduce((acc, o) => {
+      const status = (o.status || '').toLowerCase();
+      if (status.includes('batal') || status.includes('cancel') || status.includes('retur') || status.includes('pengembalian')) {
+        return acc;
+      }
+      return acc + (o.product_total || 0);
+    }, 0);
     const averageOrderValue = totalOrdersCount > 0 ? totalOmzetPesanan / totalOrdersCount : 0;
     const roasAktual = Math.abs(biayaIklan) > 0 ? totalOmzetPesanan / Math.abs(biayaIklan) : 0;
 
@@ -308,6 +315,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       biayaIklan,
       roasAktual,
       totalOmzetPesanan,
+      totalOmzetBersih,
       averageOrderValue,
       cancelledCount,
       feeBreakdown
@@ -367,7 +375,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         rows.push(["Metrik", "Nilai", "Keterangan"]);
 
         if (filters.mode === 'order_date') {
-          rows.push(["Omset Pesanan (GMV)", metrics.totalOmzetPesanan, "Total nilai pesanan dibuat pelanggan"]);
+          rows.push(["Omset Pesanan (GMV)", metrics.totalOmzetPesanan, "Total nilai seluruh pesanan masuk (termasuk Batal/Retur)"]);
+          rows.push(["Omset Bersih (Net GMV)", metrics.totalOmzetBersih, "Total nilai pesanan aktif (mengecualikan Batal/Retur)"]);
           rows.push(["Biaya Iklan", metrics.biayaIklan, "Total biaya iklan (Top-up Cashflow)"]);
           rows.push(["ROAS Aktual", `${metrics.roasAktual.toFixed(2)}x`, "Return on Ad Spend"]);
           rows.push(["Total Pesanan", metrics.totalOrders, "Jumlah seluruh transaksi"]);
@@ -547,6 +556,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
       const summaryBody = filters.mode === 'order_date' ? [
         ['Omset Pesanan (GMV)', `Rp ${metrics.totalOmzetPesanan.toLocaleString()}`, 'Total nilai pesanan dibuat pelanggan'],
+        ['Omset Bersih (Net GMV)', `Rp ${metrics.totalOmzetBersih.toLocaleString()}`, 'Total nilai pesanan aktif (mengecualikan Batal/Retur)'],
         ['Biaya Iklan', `Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 'Total biaya iklan (Top-up Cashflow)'],
         ['ROAS Aktual', `${metrics.roasAktual.toFixed(2)}x`, 'Return on Ad Spend'],
         ['Total Pesanan', metrics.totalOrders.toString(), 'Jumlah seluruh transaksi'],
@@ -664,11 +674,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         doc.text("Omset Pesanan (GMV)", 30, summaryYStart + rowHeight);
         doc.text(`Rp ${metrics.totalOmzetPesanan.toLocaleString()}`, 250, summaryYStart + rowHeight, { align: 'right' });
 
-        doc.text("Biaya Iklan", 30, summaryYStart + (rowHeight * 2));
-        doc.text(`Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 250, summaryYStart + (rowHeight * 2), { align: 'right' });
+        doc.text("Omset Bersih (Net GMV)", 30, summaryYStart + (rowHeight * 2));
+        doc.text(`Rp ${metrics.totalOmzetBersih.toLocaleString()}`, 250, summaryYStart + (rowHeight * 2), { align: 'right' });
 
-        doc.text("ROAS Aktual", 30, summaryYStart + (rowHeight * 3));
-        doc.text(`${metrics.roasAktual.toFixed(2)} x`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
+        doc.text("Biaya Iklan", 30, summaryYStart + (rowHeight * 3));
+        doc.text(`Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
+
+        doc.text("ROAS Aktual", 30, summaryYStart + (rowHeight * 4));
+        doc.text(`${metrics.roasAktual.toFixed(2)} x`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
       } else {
         // Cash Flow Mode Summary
         doc.text("Omzet Riil", 30, summaryYStart);
@@ -694,6 +707,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const footerY = 190;
       doc.text(`Digenerate pada ${exportTime}`, 20, footerY);
       doc.text("ShopeeSales - E-Commerce Analytics Platform", 277, footerY, { align: 'right' });
+
+      // 6. Add Page Numbers
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Halaman ${i} dari ${pageCount}`, doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+      }
 
       const fileName = `Laporan_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);
@@ -800,7 +822,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               value={`Rp ${(metrics.totalOmzetPesanan || 0).toLocaleString()}`} 
               trend="Gross Revenue"
               icon={<ShoppingBag className="w-4 h-4 text-orange-600" />}
-              description="Total nilai pesanan dibuat pelanggan (sebelum potongan biaya)."
+              description="Total nilai seluruh pesanan masuk (termasuk Batal/Retur)."
+              isHighlight
+            />
+            <KPICard 
+              title="Omset Bersih (Net GMV)" 
+              value={`Rp ${(metrics.totalOmzetBersih || 0).toLocaleString()}`} 
+              trend="Net Revenue"
+              icon={<CheckCircle2 className="w-4 h-4 text-green-600" />}
+              description="Total nilai pesanan aktif (mengecualikan Batal/Retur)."
               isHighlight
             />
             <KPICard 

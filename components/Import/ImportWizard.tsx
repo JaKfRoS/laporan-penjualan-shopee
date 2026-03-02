@@ -395,16 +395,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          const shippingForwarded = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_fee_forwarded']]));
          const sellerVoucher = Math.abs(parseNumberIndonesia(row[incomeMapping['seller_voucher']]));
          const shippingRebate = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_rebate']]));
-         const transactionFee = Math.abs(parseNumberIndonesia(row['Biaya Transaksi'] || '0')); // Added Transaction Fee
+         const transactionFee = Math.abs(parseNumberIndonesia(row['Biaya Transaksi'] || '0'));
          
-         const originalPrice = parseNumberIndonesia(row[incomeMapping['original_price']]);
-         const productDiscount = Math.abs(parseNumberIndonesia(row[incomeMapping['product_discount']]));
-         
-         let productTotal = 0;
-         if (originalPrice > 0) {
-            productTotal = originalPrice - productDiscount;
-         }
-
          const totalMarketplaceFee = (adminFee + amsFee + serviceFee + procFee + premFee + shippingForwarded + returnShippingFee + sellerVoucher + refundAmount + transactionFee) - shippingRebate;
          
          const feeDetails = {
@@ -426,43 +418,77 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          const releaseDate = releaseDateRaw ? getSafeDate(releaseDateRaw) : null;
 
          if (orderGroups[orderId]) {
-             // Update Order in memory
-             orderGroups[orderId].order.net_revenue = netRevenue;
-             if (productTotal > 0) {
-                 orderGroups[orderId].order.product_total = productTotal;
+             // Update Order in memory (Accumulate values to handle multi-row income reports)
+             const currentOrder = orderGroups[orderId].order;
+             currentOrder.net_revenue = (currentOrder.net_revenue || 0) + netRevenue;
+             currentOrder.service_fee = (currentOrder.service_fee || 0) + totalMarketplaceFee;
+             
+             // Accumulate Fee Details
+             if (!currentOrder.fee_details) {
+                 currentOrder.fee_details = { ...feeDetails };
+             } else {
+                 currentOrder.fee_details.admin_fee += adminFee;
+                 currentOrder.fee_details.ams_commission += amsFee;
+                 currentOrder.fee_details.service_fee += serviceFee;
+                 currentOrder.fee_details.shipping_rebate += shippingRebate;
+                 currentOrder.fee_details.refund_amount += refundAmount;
+                 currentOrder.fee_details.shipping_forwarded += shippingForwarded;
+                 currentOrder.fee_details.return_shipping_fee += returnShippingFee;
+                 currentOrder.fee_details.premium_fee += premFee;
+                 currentOrder.fee_details.seller_voucher += sellerVoucher;
+                 currentOrder.fee_details.processing_fee += procFee;
+                 currentOrder.fee_details.transaction_fee = (currentOrder.fee_details.transaction_fee || 0) + transactionFee;
              }
-             orderGroups[orderId].order.service_fee = totalMarketplaceFee;
-             orderGroups[orderId].order.fee_details = feeDetails;
-             orderGroups[orderId].order.admin_fee = 0;
+
+             currentOrder.admin_fee = 0;
              if (releaseDate) {
-                 orderGroups[orderId].order.release_date = releaseDate;
+                 currentOrder.release_date = releaseDate;
              }
              if (refundAmount > 0) {
-                 orderGroups[orderId].order.status = 'Pengembalian';
+                 currentOrder.status = 'Pengembalian';
              } else {
-                 const currentStatus = (orderGroups[orderId].order.status || '').toLowerCase();
+                 const currentStatus = (currentOrder.status || '').toLowerCase();
                  if (!currentStatus.includes('batal') && !currentStatus.includes('cancel')) {
-                    orderGroups[orderId].order.status = 'Selesai';
+                    currentOrder.status = 'Selesai';
                  }
              }
          } else {
              // Order is not in current Orders file, but might be in DB
-             const updatePayload: any = {
-                 net_revenue: netRevenue,
-                 service_fee: totalMarketplaceFee,
-                 fee_details: feeDetails,
-                 admin_fee: 0
-             };
-             if (productTotal > 0) updatePayload.product_total = productTotal;
-             if (releaseDate) updatePayload.release_date = releaseDate;
-             
-             if (refundAmount > 0) {
-                 updatePayload.status = 'Pengembalian';
+             const existingUpdate = incomeUpdates.find(u => u.orderId === orderId);
+             if (existingUpdate) {
+                 const payload = existingUpdate.payload;
+                 payload.net_revenue += netRevenue;
+                 payload.service_fee += totalMarketplaceFee;
+                 
+                 payload.fee_details.admin_fee += adminFee;
+                 payload.fee_details.ams_commission += amsFee;
+                 payload.fee_details.service_fee += serviceFee;
+                 payload.fee_details.shipping_rebate += shippingRebate;
+                 payload.fee_details.refund_amount += refundAmount;
+                 payload.fee_details.shipping_forwarded += shippingForwarded;
+                 payload.fee_details.return_shipping_fee += returnShippingFee;
+                 payload.fee_details.premium_fee += premFee;
+                 payload.fee_details.seller_voucher += sellerVoucher;
+                 payload.fee_details.processing_fee += procFee;
+                 payload.fee_details.transaction_fee = (payload.fee_details.transaction_fee || 0) + transactionFee;
+                 
+                 if (releaseDate) payload.release_date = releaseDate;
+                 if (refundAmount > 0) payload.status = 'Pengembalian';
              } else {
-                 updatePayload.status = 'Selesai';
+                 const updatePayload: any = {
+                     net_revenue: netRevenue,
+                     service_fee: totalMarketplaceFee,
+                     fee_details: { ...feeDetails },
+                     admin_fee: 0
+                 };
+                 if (releaseDate) updatePayload.release_date = releaseDate;
+                 if (refundAmount > 0) {
+                     updatePayload.status = 'Pengembalian';
+                 } else {
+                     updatePayload.status = 'Selesai';
+                 }
+                 incomeUpdates.push({ orderId, payload: updatePayload });
              }
-             
-             incomeUpdates.push({ orderId, payload: updatePayload });
          }
       });
 
@@ -471,12 +497,10 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       // 4. PREPARE PAYLOADS
       const ordersToUpsert = Object.values(orderGroups).map(g => {
         const o = g.order;
-        // Use product_total from Income Data if available, otherwise fallback to Orders Data GMV
-        const gmv = o.product_total > 0 ? o.product_total : g.grossProductValue;
-        
+        // ALWAYS use grossProductValue from Orders Report for consistency with user's manual calculation
         return { 
           ...o, 
-          product_total: gmv,
+          product_total: g.grossProductValue,
         };
       });
 
