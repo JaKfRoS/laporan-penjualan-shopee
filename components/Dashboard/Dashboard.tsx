@@ -54,6 +54,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     setLoading(true);
 
     try {
+      // Helper function to fetch all data using pagination
+      const fetchAll = async (baseQuery: any) => {
+        let allData: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        let finished = false;
+
+        while (!finished) {
+          const { data, error } = await baseQuery.range(from, from + pageSize - 1);
+          if (error) throw error;
+          if (data && data.length > 0) {
+            allData = [...allData, ...data];
+            if (data.length < pageSize) finished = true;
+            else from += pageSize;
+          } else {
+            finished = true;
+          }
+        }
+        return allData;
+      };
+
       let query = supabase
         .from('orders')
         .select('*, order_items(*)')
@@ -90,15 +111,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         adjQuery = adjQuery.lte('adjustment_date', dateRange.end);
       }
 
-      const [ordersRes, adjRes] = await Promise.all([query, adjQuery]);
+      const [ordersData, adjData] = await Promise.all([
+        fetchAll(query),
+        fetchAll(adjQuery)
+      ]);
       
       if (controller.signal.aborted) return;
 
-      if (ordersRes.error) throw ordersRes.error;
-      if (adjRes.error) throw adjRes.error;
-      
-      setFilteredOrders(ordersRes.data || []);
-      setAdjustments(adjRes.data || []);
+      setFilteredOrders(ordersData || []);
+      setAdjustments(adjData || []);
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         if (err.message?.toLowerCase().includes('refresh token') || err.message?.includes('refresh_token_not_found') || err.message?.toLowerCase().includes('invalid refresh token')) {
@@ -385,83 +406,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const wb = XLSX.utils.book_new();
 
       const createSummarySheet = (sheetOrders: Order[], sheetStoreName: string) => {
-        // 1. Calculate Summary Metrics
-        const settledOrders = sheetOrders.filter(o => {
-            const s = (o.status || '').toLowerCase();
-            return s === 'selesai' || s === 'pengembalian';
-        });
-        const batalOrders = sheetOrders.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel'));
-        const returOrders = sheetOrders.filter(o => o.status?.toLowerCase().includes('retur') || o.status?.toLowerCase().includes('pengembalian'));
-        const validOrders = sheetOrders.filter(o => !o.status?.toLowerCase().includes('batal') && !o.status?.toLowerCase().includes('cancel'));
-        
-        const totalOmzet = settledOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
-        const totalPemasukan = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
-        const totalGmvValid = validOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
-        const totalPotensiCair = totalGmvValid - totalOmzet;
-
-        const totalHPP = settledOrders.reduce((acc, o) => {
-             const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
-             if (isReturned) return acc;
-             const orderHpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
-             return acc + orderHpp;
-        }, 0);
-        
-        // 4. Calculate Fee Breakdown for Excel (Moved after summary)
-        let feeBreakdown = {
-            admin: 0,
-            ams: 0,
-            service: 0,
-            shippingRebate: 0,
-            refund: 0,
-            shippingForwarded: 0,
-            returnShipping: 0,
-            premium: 0,
-            voucher: 0,
-            processing: 0
-        };
-
-        settledOrders.forEach(o => {
-            if (o.fee_details) {
-                feeBreakdown.admin += (o.fee_details.admin_fee || 0);
-                feeBreakdown.ams += (o.fee_details.ams_commission || 0);
-                feeBreakdown.service += (o.fee_details.service_fee || 0);
-                feeBreakdown.shippingRebate += (o.fee_details.shipping_rebate || 0);
-                feeBreakdown.refund += (o.fee_details.refund_amount || 0);
-                feeBreakdown.shippingForwarded += (o.fee_details.shipping_forwarded || 0);
-                feeBreakdown.returnShipping += (o.fee_details.return_shipping_fee || 0);
-                feeBreakdown.premium += (o.fee_details.premium_fee || 0);
-                feeBreakdown.voucher += (o.fee_details.seller_voucher || 0);
-                feeBreakdown.processing += (o.fee_details.processing_fee || 0);
-            }
-        });
-
-        const totalFee = -feeBreakdown.admin - feeBreakdown.ams - feeBreakdown.service + feeBreakdown.shippingRebate - feeBreakdown.refund - feeBreakdown.shippingForwarded - feeBreakdown.returnShipping - feeBreakdown.premium - feeBreakdown.voucher - feeBreakdown.processing;
-        const totalTransaksi = sheetOrders.length;
-        const transaksiBatal = batalOrders.length;
-        const transaksiRetur = returOrders.length;
-        const avgOrderValue = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0; 
-
-        // 2. Calculate Fee Breakdown
-        let biayaIklan = 0;
-        let penyesuaianLain = 0;
-
-        adjustments.forEach(a => {
-            const reason = (a.reason || '').toLowerCase();
-            const amount = Number(a.amount) || 0;
-            const isAds = reason.includes('type: ads') || 
-                          reason.includes('category: isi ulang saldo iklan') ||
-                          (reason.includes('iklan') && !reason.includes('penghasilan')) || 
-                          reason.includes('shopee ads');
-
-            if (isAds) biayaIklan += amount;
-            else if (!reason.includes('[balance_snapshot]')) penyesuaianLain += amount;
-        });
-
-        const totalPenyesuaian = penyesuaianLain;
-        const totalKeuntungan = (totalPemasukan - totalHPP) + totalPenyesuaian + biayaIklan;
-        const roas = Math.abs(biayaIklan) > 0 ? totalOmzet / Math.abs(biayaIklan) : 0;
-
-        // 3. Construct Excel Rows
+        // Use metrics from useMemo to ensure consistency
         const rows = [];
 
         // Header Section
@@ -469,7 +414,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         rows.push(["powered by OneWaymedia"]);
         rows.push([""]);
         rows.push(["Platform:", "Shopee"]);
-        rows.push(["Tipe Kalkulasi:", dateFilterType === 'order_date' ? "Performa Sales (Berdasarkan Tanggal Pesanan)" : "Arus Kas (Berdasarkan Tanggal Pencairan)"]);
+        rows.push(["Tipe Kalkulasi:", dateFilterType === 'order_date' ? "Performa Sales" : "Arus Kas"]);
         rows.push(["Tanggal Export:", exportTime]);
         rows.push(["Periode:", displayPeriod]);
         rows.push(["Filter:", dateFilterType === 'order_date' ? "Tanggal Pesanan Dibuat" : "Tanggal Dana Dilepaskan"]);
@@ -478,53 +423,44 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         // Ringkasan Analytics
         rows.push(["Ringkasan Analytics"]);
         rows.push(["Metrik", "Nilai", "Keterangan"]);
-        rows.push(["Total GMV Valid", totalGmvValid, "Total omset semua pesanan kecuali batal/cancel"]);
-        rows.push(["Total Omzet", totalOmzet, "Total omset pesanan selesai"]);
-        rows.push(["Total Potensi Cair", totalPotensiCair, "Total potensi uang cair dari pesanan belum selesai"]);
-        rows.push(["Total Pemasukan", totalPemasukan, "Uang yang cair di saldo penjual"]);
-        rows.push(["Total HPP", totalHPP, "Total HPP pesanan selesai"]);
-        rows.push(["Biaya Iklan", biayaIklan, "Total biaya iklan (Top-up Cashflow)"]);
-        rows.push(["ROAS Aktual", `${roas.toFixed(2)}x`, "Return on Ad Spend (Omzet / Iklan)"]);
-        rows.push(["Total Penyesuaian", totalPenyesuaian, "Total nilai adjustment lainnya"]);
-        rows.push(["Total Keuntungan", totalKeuntungan, "Laba Bersih (Pemasukan - HPP + Penyesuaian + Iklan)"]);
-        rows.push(["Total Transaksi", totalTransaksi, "Total seluruh transaksi"]);
-        rows.push(["Transaksi Batal", transaksiBatal, "Total transaksi batal/cancel"]);
-        rows.push(["Transaksi Retur", transaksiRetur, "Total transaksi retur/pengembalian"]);
-        rows.push(["Rata-rata Nilai Order", avgOrderValue, "Rata-rata nilai per transaksi"]);
 
-        // Margin & Persentase
-        const margin = totalOmzet > 0 ? (totalKeuntungan / totalOmzet) : 0;
-        const totalPotongan = settledOrders.reduce((acc, o) => acc + (o.service_fee || 0), 0);
-        const costPercent = totalOmzet > 0 ? (totalPotongan / totalOmzet) : 0; 
-        
-        rows.push(["Margin Keuntungan", `${(margin * 100).toFixed(2)}%`, "Persentase keuntungan terhadap omzet"]); 
-        rows.push(["Rata-Rata Potongan", `${(costPercent * 100).toFixed(2)}%`, "Persentase potongan marketplace terhadap omzet"]);
+        if (dateFilterType === 'order_date') {
+          rows.push(["Omset Pesanan (GMV)", metrics.totalOmzetPesanan, "Total nilai pesanan dibuat pelanggan"]);
+          rows.push(["Biaya Iklan", metrics.biayaIklan, "Total biaya iklan (Top-up Cashflow)"]);
+          rows.push(["ROAS Aktual", `${metrics.roasAktual.toFixed(2)}x`, "Return on Ad Spend"]);
+          rows.push(["Total Pesanan", metrics.totalOrders, "Jumlah seluruh transaksi"]);
+          rows.push(["AOV", metrics.averageOrderValue, "Rata-rata nilai per transaksi"]);
+          rows.push(["Pesanan Dibatalkan", metrics.cancelledCount, "Jumlah pesanan batal"]);
+        } else {
+          rows.push(["Dana Cair Bersih (Settled)", metrics.netRevenueSelesai, "Uang Tunai yang sudah dilepaskan Shopee"]);
+          rows.push(["Total HPP (Modal)", metrics.totalHPPSelesai, "Total modal pokok produk pesanan selesai"]);
+          rows.push(["Profit Riil Akhir", metrics.totalKeuntungan, "Laba Bersih nyata"]);
+          rows.push(["Potongan Shopee", metrics.totalPotongan, "Total biaya yang dipotong platform"]);
+          rows.push(["Selisih Ongkir", metrics.shippingLeakage, "Selisih ongkir pembeli vs aktual"]);
+          rows.push(["Pesanan Selesai", metrics.completedCount, "Jumlah pesanan sudah cair"]);
+          rows.push(["Pesanan Retur", metrics.returnedCount, "Jumlah pesanan retur"]);
+        }
+
         rows.push([""]);
 
-        // Fee Breakdown
-        rows.push(["Fee Breakdown (Shopee)"]);
-        rows.push(["Jenis Fee", "Jumlah", "Tipe"]);
-        rows.push(["Biaya Administrasi", -feeBreakdown.admin, "Biaya"]);
-        rows.push(["Biaya Komisi AMS", -feeBreakdown.ams, "Biaya"]);
-        rows.push(["Biaya Layanan", -feeBreakdown.service, "Biaya"]);
-        rows.push(["Gratis Ongkir dari Shopee", feeBreakdown.shippingRebate, "Pemasukan"]);
-        rows.push(["Jumlah Pengembalian Dana ke Pembeli", -feeBreakdown.refund, "Biaya"]);
-        rows.push(["Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim", -feeBreakdown.shippingForwarded, "Biaya"]);
-        rows.push(["Ongkos Kirim Pengembalian Barang", -feeBreakdown.returnShipping, "Biaya"]);
-        rows.push(["Premi", -feeBreakdown.premium, "Biaya"]);
-        rows.push(["Voucher disponsor oleh Penjual", -feeBreakdown.voucher, "Biaya"]);
-        rows.push(["Total Fee", totalFee, "Total Keseluruhan Fee"]);
-        rows.push([""]);
+        if (dateFilterType === 'release_date') {
+          // Fee Breakdown only for Cash Flow
+          rows.push(["Fee Breakdown (Shopee)"]);
+          rows.push(["Jenis Fee", "Jumlah", "Tipe"]);
+          rows.push(["Biaya Administrasi", -metrics.feeBreakdown.admin, "Biaya"]);
+          rows.push(["Biaya Komisi AMS", -metrics.feeBreakdown.ams, "Biaya"]);
+          rows.push(["Biaya Layanan", -metrics.feeBreakdown.service, "Biaya"]);
+          rows.push(["Gratis Ongkir dari Shopee", metrics.feeBreakdown.shippingRebate, "Pemasukan"]);
+          rows.push(["Jumlah Pengembalian Dana ke Pembeli", -metrics.feeBreakdown.refund, "Biaya"]);
+          rows.push(["Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim", -metrics.feeBreakdown.shippingForwarded, "Biaya"]);
+          rows.push(["Ongkos Kirim Pengembalian Barang", -metrics.feeBreakdown.returnShipping, "Biaya"]);
+          rows.push(["Premi", -metrics.feeBreakdown.premium, "Biaya"]);
+          rows.push(["Voucher disponsor oleh Penjual", -metrics.feeBreakdown.voucher, "Biaya"]);
+          rows.push([""]);
+        }
 
         const ws = XLSX.utils.aoa_to_sheet(rows);
-
-        // Styling Columns
-        ws['!cols'] = [
-            { wch: 40 }, // Metrik
-            { wch: 20 }, // Nilai
-            { wch: 50 }, // Keterangan
-        ];
-
+        ws['!cols'] = [{ wch: 40 }, { wch: 20 }, { wch: 50 }];
         return ws;
       };
 
@@ -664,119 +600,56 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       doc.setFont('helvetica', 'bold');
       doc.text("Ringkasan Analytics", 14, 90);
 
-      const settledOrders = filteredOrders.filter(o => {
-          const s = (o.status || '').toLowerCase();
-          return s === 'selesai' || s === 'pengembalian';
-      });
-      const batalOrders = filteredOrders.filter(o => o.status?.toLowerCase().includes('batal') || o.status?.toLowerCase().includes('cancel'));
-      const returOrders = filteredOrders.filter(o => o.status?.toLowerCase().includes('retur') || o.status?.toLowerCase().includes('pengembalian'));
-      const validOrders = filteredOrders.filter(o => !o.status?.toLowerCase().includes('batal') && !o.status?.toLowerCase().includes('cancel'));
-      
-      const totalOmzet = settledOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
-      const totalPemasukan = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
-      const totalGmvValid = validOrders.reduce((acc, o) => acc + (o.product_total || 0), 0);
-      const totalPotensiCair = totalGmvValid - totalOmzet;
-
-      const totalHPP = settledOrders.reduce((acc, o) => {
-           const isReturned = (o.status || '').toLowerCase().includes('pengembalian') || (o.status || '').toLowerCase().includes('retur');
-           if (isReturned) return acc;
-           const orderHpp = o.order_items?.reduce((h, item) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0;
-           return acc + orderHpp;
-      }, 0);
-      
-      let biayaIklan = 0;
-      let penyesuaianLain = 0;
-
-      adjustments.forEach(a => {
-        const reason = (a.reason || '').toLowerCase();
-        const amount = Number(a.amount) || 0;
-        const isAds = reason.includes('type: ads') || 
-                      reason.includes('category: isi ulang saldo iklan') ||
-                      (reason.includes('iklan') && !reason.includes('penghasilan')) || 
-                      reason.includes('shopee ads');
-
-        if (isAds) biayaIklan += amount;
-        else if (!reason.includes('[balance_snapshot]')) penyesuaianLain += amount;
-      });
-
-      const totalPenyesuaian = penyesuaianLain;
-      const totalKeuntungan = (totalPemasukan - totalHPP) + totalPenyesuaian + biayaIklan;
-      const roas = Math.abs(biayaIklan) > 0 ? totalOmzet / Math.abs(biayaIklan) : 0;
-      
-      const totalTransaksi = filteredOrders.length;
-      const transaksiBatal = batalOrders.length;
-      const transaksiRetur = returOrders.length;
-      const avgOrderValue = totalTransaksi > 0 ? totalOmzet / totalTransaksi : 0;
-      const margin = totalOmzet > 0 ? (totalKeuntungan / totalOmzet) * 100 : 0;
-      const totalPotongan = settledOrders.reduce((acc, o) => acc + (o.service_fee || 0), 0);
-      const costPercent = totalOmzet > 0 ? (totalPotongan / totalOmzet) * 100 : 0;
+      const summaryBody = dateFilterType === 'order_date' ? [
+        ['Omset Pesanan (GMV)', `Rp ${metrics.totalOmzetPesanan.toLocaleString()}`, 'Total nilai pesanan dibuat pelanggan'],
+        ['Biaya Iklan', `Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 'Total biaya iklan (Top-up Cashflow)'],
+        ['ROAS Aktual', `${metrics.roasAktual.toFixed(2)}x`, 'Return on Ad Spend'],
+        ['Total Pesanan', metrics.totalOrders.toString(), 'Jumlah seluruh transaksi'],
+        ['AOV', `Rp ${metrics.averageOrderValue.toLocaleString()}`, 'Rata-rata nilai per transaksi'],
+        ['Pesanan Dibatalkan', metrics.cancelledCount.toString(), 'Jumlah pesanan batal'],
+      ] : [
+        ['Dana Cair Bersih (Settled)', `Rp ${metrics.netRevenueSelesai.toLocaleString()}`, 'Uang Tunai yang sudah dilepaskan Shopee'],
+        ['Total HPP (Modal)', `Rp ${metrics.totalHPPSelesai.toLocaleString()}`, 'Total modal pokok produk pesanan selesai'],
+        ['Profit Riil Akhir', `Rp ${metrics.totalKeuntungan.toLocaleString()}`, 'Laba Bersih nyata'],
+        ['Potongan Shopee', `Rp ${metrics.totalPotongan.toLocaleString()}`, 'Total biaya yang dipotong platform'],
+        ['Selisih Ongkir', `Rp ${metrics.shippingLeakage.toLocaleString()}`, 'Selisih ongkir pembeli vs aktual'],
+        ['Pesanan Selesai', metrics.completedCount.toString(), 'Jumlah pesanan sudah cair'],
+        ['Pesanan Retur', metrics.returnedCount.toString(), 'Jumlah pesanan retur'],
+      ];
 
       autoTable(doc, {
         startY: 95,
         head: [['Metrik', 'Nilai', 'Keterangan']],
-        body: [
-          ['Total GMV Valid', `Rp ${totalGmvValid.toLocaleString()}`, 'Total omset semua pesanan kecuali batal/cancel'],
-          ['Total Omzet', `Rp ${totalOmzet.toLocaleString()}`, 'Total omset pesanan selesai'],
-          ['Total Potensi Cair', `Rp ${totalPotensiCair.toLocaleString()}`, 'Total potensi uang cair dari pesanan belum selesai'],
-          ['Total Pemasukan', `Rp ${totalPemasukan.toLocaleString()}`, 'Uang yang cair di saldo penjual'],
-          ['Total HPP', `Rp ${totalHPP.toLocaleString()}`, 'Total HPP pesanan selesai'],
-          ['Biaya Iklan', `Rp ${biayaIklan.toLocaleString()}`, 'Total biaya iklan (Top-up Cashflow)'],
-          ['ROAS Aktual', `${roas.toFixed(2)}x`, 'Return on Ad Spend (Omzet / Iklan)'],
-          ['Total Penyesuaian', `Rp ${totalPenyesuaian.toLocaleString()}`, 'Total nilai adjustment lainnya'],
-          ['Total Keuntungan', `Rp ${totalKeuntungan.toLocaleString()}`, 'Laba Bersih (Pemasukan - HPP + Penyesuaian + Iklan)'],
-          ['Total Transaksi', totalTransaksi.toString(), 'Total seluruh transaksi'],
-          ['Transaksi Batal', transaksiBatal.toString(), 'Total transaksi batal/cancel'],
-          ['Transaksi Retur', transaksiRetur.toString(), 'Total transaksi retur/pengembalian'],
-          ['Rata-rata Nilai Order', `Rp ${avgOrderValue.toLocaleString()}`, 'Rata-rata nilai per transaksi'],
-          ['Margin Keuntungan', `${margin.toFixed(2)}%`, 'Persentase keuntungan terhadap omzet'],
-          ['Rata-Rata Potongan', `${costPercent.toFixed(2)}%`, 'Persentase potongan marketplace terhadap omzet'],
-        ],
+        body: summaryBody,
         theme: 'striped',
         headStyles: { fillColor: [37, 99, 235] },
       });
 
-      // 3. Fee Breakdown
-      let feeBreakdown = { admin: 0, ams: 0, service: 0, shippingRebate: 0, refund: 0, shippingForwarded: 0, returnShipping: 0, premium: 0, voucher: 0, processing: 0 };
-      settledOrders.forEach(o => {
-          if (o.fee_details) {
-              feeBreakdown.admin += (o.fee_details.admin_fee || 0);
-              feeBreakdown.ams += (o.fee_details.ams_commission || 0);
-              feeBreakdown.service += (o.fee_details.service_fee || 0);
-              feeBreakdown.shippingRebate += (o.fee_details.shipping_rebate || 0);
-              feeBreakdown.refund += (o.fee_details.refund_amount || 0);
-              feeBreakdown.shippingForwarded += (o.fee_details.shipping_forwarded || 0);
-              feeBreakdown.returnShipping += (o.fee_details.return_shipping_fee || 0);
-              feeBreakdown.premium += (o.fee_details.premium_fee || 0);
-              feeBreakdown.voucher += (o.fee_details.seller_voucher || 0);
-              feeBreakdown.processing += (o.fee_details.processing_fee || 0);
-          }
-      });
+      // 3. Fee Breakdown (Only for Cash Flow)
+      if (dateFilterType === 'release_date') {
+        doc.addPage();
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text("Fee Breakdown (Shopee)", 14, 22);
 
-      const totalFee = -feeBreakdown.admin - feeBreakdown.ams - feeBreakdown.service + feeBreakdown.shippingRebate - feeBreakdown.refund - feeBreakdown.shippingForwarded - feeBreakdown.returnShipping - feeBreakdown.premium - feeBreakdown.voucher - feeBreakdown.processing;
-
-      doc.addPage();
-      doc.setFontSize(16);
-      doc.setFont('helvetica', 'bold');
-      doc.text("Fee Breakdown (Shopee)", 14, 22);
-
-      autoTable(doc, {
-        startY: 27,
-        head: [['Jenis Fee', 'Jumlah', 'Tipe']],
-        body: [
-          ['Biaya Administrasi', `-Rp ${feeBreakdown.admin.toLocaleString()}`, 'Biaya'],
-          ['Biaya Komisi AMS', `-Rp ${feeBreakdown.ams.toLocaleString()}`, 'Biaya'],
-          ['Biaya Layanan', `-Rp ${feeBreakdown.service.toLocaleString()}`, 'Biaya'],
-          ['Gratis Ongkir dari Shopee', `+Rp ${feeBreakdown.shippingRebate.toLocaleString()}`, 'Pemasukan'],
-          ['Jumlah Pengembalian Dana ke Pembeli', `-Rp ${feeBreakdown.refund.toLocaleString()}`, 'Biaya'],
-          ['Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim', `-Rp ${feeBreakdown.shippingForwarded.toLocaleString()}`, 'Biaya'],
-          ['Ongkos Kirim Pengembalian Barang', `-Rp ${feeBreakdown.returnShipping.toLocaleString()}`, 'Biaya'],
-          ['Premi', `-Rp ${feeBreakdown.premium.toLocaleString()}`, 'Biaya'],
-          ['Voucher disponsor oleh Penjual', `-Rp ${feeBreakdown.voucher.toLocaleString()}`, 'Biaya'],
-          ['Total Fee', `${totalFee < 0 ? '-' : ''}Rp ${Math.abs(totalFee).toLocaleString()}`, 'Total Keseluruhan Fee'],
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: [239, 68, 68] },
-      });
+        autoTable(doc, {
+          startY: 27,
+          head: [['Jenis Fee', 'Jumlah', 'Tipe']],
+          body: [
+            ['Biaya Administrasi', `-Rp ${metrics.feeBreakdown.admin.toLocaleString()}`, 'Biaya'],
+            ['Biaya Komisi AMS', `-Rp ${metrics.feeBreakdown.ams.toLocaleString()}`, 'Biaya'],
+            ['Biaya Layanan', `-Rp ${metrics.feeBreakdown.service.toLocaleString()}`, 'Biaya'],
+            ['Gratis Ongkir dari Shopee', `+Rp ${metrics.feeBreakdown.shippingRebate.toLocaleString()}`, 'Pemasukan'],
+            ['Jumlah Pengembalian Dana ke Pembeli', `-Rp ${metrics.feeBreakdown.refund.toLocaleString()}`, 'Biaya'],
+            ['Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim', `-Rp ${metrics.feeBreakdown.shippingForwarded.toLocaleString()}`, 'Biaya'],
+            ['Ongkos Kirim Pengembalian Barang', `-Rp ${metrics.feeBreakdown.returnShipping.toLocaleString()}`, 'Biaya'],
+            ['Premi', `-Rp ${metrics.feeBreakdown.premium.toLocaleString()}`, 'Biaya'],
+            ['Voucher disponsor oleh Penjual', `-Rp ${metrics.feeBreakdown.voucher.toLocaleString()}`, 'Biaya'],
+          ],
+          theme: 'striped',
+          headStyles: { fillColor: [239, 68, 68] },
+        });
+      }
 
       // 4. Detail Transaksi
       const renderTransactionTable = (title: string, orders: Order[]) => {
@@ -835,25 +708,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const rowHeight = 15;
       doc.setFontSize(14);
       
-      // Total Transaksi
-      doc.text("Total Transaksi", 30, summaryYStart);
-      doc.text(totalTransaksi.toString(), 250, summaryYStart, { align: 'right' });
+      if (dateFilterType === 'order_date') {
+        // Performance Mode Summary
+        doc.text("Total Pesanan", 30, summaryYStart);
+        doc.text(metrics.totalOrders.toString(), 250, summaryYStart, { align: 'right' });
 
-      // Total Omzet
-      doc.text("Total Omzet", 30, summaryYStart + rowHeight);
-      doc.text(`Rp ${totalOmzet.toLocaleString()}`, 250, summaryYStart + rowHeight, { align: 'right' });
+        doc.text("Omset Pesanan (GMV)", 30, summaryYStart + rowHeight);
+        doc.text(`Rp ${metrics.totalOmzetPesanan.toLocaleString()}`, 250, summaryYStart + rowHeight, { align: 'right' });
 
-      // Total Keuntungan
-      doc.text("Total Keuntungan", 30, summaryYStart + (rowHeight * 2));
-      doc.text(`Rp ${totalKeuntungan.toLocaleString()}`, 250, summaryYStart + (rowHeight * 2), { align: 'right' });
+        doc.text("Biaya Iklan", 30, summaryYStart + (rowHeight * 2));
+        doc.text(`Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 250, summaryYStart + (rowHeight * 2), { align: 'right' });
 
-      // Total Penyesuaian (New)
-      doc.text("Total Penyesuaian", 30, summaryYStart + (rowHeight * 3));
-      doc.text(`Rp ${totalPenyesuaian.toLocaleString()}`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
+        doc.text("ROAS Aktual", 30, summaryYStart + (rowHeight * 3));
+        doc.text(`${metrics.roasAktual.toFixed(2)} x`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
+      } else {
+        // Cash Flow Mode Summary
+        doc.text("Pesanan Selesai", 30, summaryYStart);
+        doc.text(metrics.completedCount.toString(), 250, summaryYStart, { align: 'right' });
 
-      // Margin Keuntungan
-      doc.text("Margin Keuntungan", 30, summaryYStart + (rowHeight * 4));
-      doc.text(`${margin.toFixed(2)} %`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
+        doc.text("Dana Cair Bersih (Settled)", 30, summaryYStart + rowHeight);
+        doc.text(`Rp ${metrics.netRevenueSelesai.toLocaleString()}`, 250, summaryYStart + rowHeight, { align: 'right' });
+
+        doc.text("Profit Riil Akhir", 30, summaryYStart + (rowHeight * 2));
+        doc.text(`Rp ${metrics.totalKeuntungan.toLocaleString()}`, 250, summaryYStart + (rowHeight * 2), { align: 'right' });
+
+        doc.text("Potongan Shopee", 30, summaryYStart + (rowHeight * 3));
+        doc.text(`Rp ${metrics.totalPotongan.toLocaleString()}`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
+      }
 
       // Footer for the final page
       doc.setFontSize(10);
@@ -863,7 +744,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       doc.text(`Digenerate pada ${exportTime}`, 20, footerY);
       doc.text("ShopeeSales - E-Commerce Analytics Platform", 277, footerY, { align: 'right' });
 
-      const fileName = `Laporan_Proyek_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      const fileName = `Laporan_${store.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);
 
       toast.success("Laporan PDF berhasil dibuat!", { id: toastId });
@@ -1070,78 +951,80 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         </div>
 
         {/* Fee Breakdown Dashboard Section */}
-        <div className="mt-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-50 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-xl">
-                <Percent className="w-5 h-5 text-red-600" />
+        {dateFilterType === 'release_date' && (
+          <div className="mt-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-slate-50 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-xl">
+                  <Percent className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">Breakdown Biaya Platform</h3>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Detail Potongan Marketplace (Shopee)</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">Breakdown Biaya Platform</h3>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Detail Potongan Marketplace (Shopee)</p>
+            </div>
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-medium">Biaya Administrasi</span>
+                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.admin.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-medium">Biaya Komisi AMS</span>
+                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.ams.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-medium">Biaya Layanan</span>
+                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.service.toLocaleString()}</span>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-medium">Gratis Ongkir (Subsidi)</span>
+                  <span className="text-xs font-bold text-green-600">+Rp {metrics.feeBreakdown.shippingRebate.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-medium">Pengembalian Dana</span>
+                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.refund.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-medium">Ongkir Diteruskan</span>
+                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.shippingForwarded.toLocaleString()}</span>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-medium">Ongkir Pengembalian</span>
+                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.returnShipping.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-medium">Premi</span>
+                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.premium.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-medium">Voucher Penjual</span>
+                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.voucher.toLocaleString()}</span>
+                </div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl flex flex-col justify-center">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Potongan</span>
+                <span className="text-xl font-black text-red-600">
+                  -Rp {metrics.totalPotongan.toLocaleString()}
+                </span>
+                <div className="mt-2 h-1 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-red-500" 
+                    style={{ width: `${Math.min(100, (metrics.totalPotongan / (metrics.totalOmzet || 1)) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 font-bold">
+                  {((metrics.totalPotongan / (metrics.totalOmzet || 1)) * 100).toFixed(1)}% dari Omzet
+                </span>
               </div>
             </div>
           </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">Biaya Administrasi</span>
-                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.admin.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">Biaya Komisi AMS</span>
-                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.ams.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">Biaya Layanan</span>
-                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.service.toLocaleString()}</span>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">Gratis Ongkir (Subsidi)</span>
-                <span className="text-xs font-bold text-green-600">+Rp {metrics.feeBreakdown.shippingRebate.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">Pengembalian Dana</span>
-                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.refund.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">Ongkir Diteruskan</span>
-                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.shippingForwarded.toLocaleString()}</span>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">Ongkir Pengembalian</span>
-                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.returnShipping.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">Premi</span>
-                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.premium.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">Voucher Penjual</span>
-                <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.voucher.toLocaleString()}</span>
-              </div>
-            </div>
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl flex flex-col justify-center">
-              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Potongan</span>
-              <span className="text-xl font-black text-red-600">
-                -Rp {metrics.totalPotongan.toLocaleString()}
-              </span>
-              <div className="mt-2 h-1 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-red-500" 
-                  style={{ width: `${Math.min(100, (metrics.totalPotongan / (metrics.totalOmzet || 1)) * 100)}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-slate-400 mt-1 font-bold">
-                {((metrics.totalPotongan / (metrics.totalOmzet || 1)) * 100).toFixed(1)}% dari Omzet
-              </span>
-            </div>
-          </div>
-        </div>
+        )}
 
         <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-2xl flex items-start gap-3 mt-6">
           <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />

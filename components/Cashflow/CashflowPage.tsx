@@ -69,6 +69,27 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     setLoading(true);
 
     try {
+      // Helper function to fetch all data using pagination
+      const fetchAll = async (baseQuery: any) => {
+        let allData: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        let finished = false;
+
+        while (!finished) {
+          const { data, error } = await baseQuery.range(from, from + pageSize - 1);
+          if (error) throw error;
+          if (data && data.length > 0) {
+            allData = [...allData, ...data];
+            if (data.length < pageSize) finished = true;
+            else from += pageSize;
+          } else {
+            finished = true;
+          }
+        }
+        return allData;
+      };
+
       let query = supabase
         .from('orders')
         .select('*, order_items(*)')
@@ -96,12 +117,10 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         query = query.lte('release_date', `${dateRange.end}T23:59:59`);
       }
 
-      const { data, error } = await query;
+      const orders = await fetchAll(query);
       
       if (controller.signal.aborted) return;
-      if (error) throw error;
 
-      const orders = data || [];
       setAllOrders(orders);
       
       // Calculate Metrics
@@ -141,6 +160,27 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
   const fetchManualTransactions = async () => {
     try {
+      // Helper function to fetch all data using pagination
+      const fetchAll = async (baseQuery: any) => {
+        let allData: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        let finished = false;
+
+        while (!finished) {
+          const { data, error } = await baseQuery.range(from, from + pageSize - 1);
+          if (error) throw error;
+          if (data && data.length > 0) {
+            allData = [...allData, ...data];
+            if (data.length < pageSize) finished = true;
+            else from += pageSize;
+          } else {
+            finished = true;
+          }
+        }
+        return allData;
+      };
+
       let query = supabase
         .from('adjustments')
         .select('*');
@@ -159,9 +199,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         query = query.lte('adjustment_date', dateRange.end);
       }
 
-      const { data, error } = await query;
-
-      if (error) throw error;
+      const data = await fetchAll(query);
 
       let latestBalance = 0;
       let latestBalanceDate = '';
