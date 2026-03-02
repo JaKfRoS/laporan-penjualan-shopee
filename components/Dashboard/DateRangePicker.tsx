@@ -3,10 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, RotateCcw, CheckCircle2 } from 'lucide-react';
 
 interface DateRangePickerProps {
+  start: string;
+  end: string;
   onChange: (range: { start: string, end: string }) => void;
 }
 
-export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) => {
+export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, onChange }) => {
   const formatDate = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -14,24 +16,17 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
     return `${year}-${month}-${day}`;
   };
 
-  const [localStartDate, setLocalStartDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 6);
-    return formatDate(d);
-  });
-  const [localEndDate, setLocalEndDate] = useState(() => formatDate(new Date()));
-  const [appliedRange, setAppliedRange] = useState(() => {
-    const d = new Date();
-    const end = formatDate(d);
-    d.setDate(d.getDate() - 6);
-    return { start: formatDate(d), end };
-  });
-  const [activePreset, setActivePreset] = useState<string>('last7');
+  const [localStartDate, setLocalStartDate] = useState(start);
+  const [localEndDate, setLocalEndDate] = useState(end);
+  const [activePreset, setActivePreset] = useState<string>('');
+
+  // Sync local state when props change (important for mode switching or external resets)
+  useEffect(() => {
+    setLocalStartDate(start);
+    setLocalEndDate(end);
+  }, [start, end]);
 
   const applyPreset = (preset: string) => {
-    // If clicking the same preset, do nothing (prevents flicker if logic was server-side, still good for UX)
-    if (activePreset === preset && preset !== '') return;
-
     setActivePreset(preset);
     const today = new Date();
     let startStr = '';
@@ -54,12 +49,6 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
         startStr = formatDate(last7);
         endStr = formatDate(today);
         break;
-      case 'last30':
-        const last30 = new Date(today);
-        last30.setDate(last30.getDate() - 29);
-        startStr = formatDate(last30);
-        endStr = formatDate(today);
-        break;
       case 'thisMonth':
         const startMonth = new Date(today.getFullYear(), today.getMonth(), 1);
         const endMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
@@ -72,12 +61,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
     
     setLocalStartDate(startStr);
     setLocalEndDate(endStr);
-    
-    // Only trigger onChange if the range is actually different
-    if (startStr !== appliedRange.start || endStr !== appliedRange.end) {
-        setAppliedRange({ start: startStr, end: endStr });
-        onChange({ start: startStr, end: endStr });
-    }
+    onChange({ start: startStr, end: endStr });
   };
 
   const handleManualChange = (type: 'start' | 'end', value: string) => {
@@ -87,20 +71,14 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
   };
 
   const handleApply = () => {
-    if (localStartDate !== appliedRange.start || localEndDate !== appliedRange.end) {
-        setAppliedRange({ start: localStartDate, end: localEndDate });
-        onChange({ start: localStartDate, end: localEndDate });
-    }
+    onChange({ start: localStartDate, end: localEndDate });
   };
 
   const handleReset = () => {
     setLocalStartDate('');
     setLocalEndDate('');
     setActivePreset('');
-    if (appliedRange.start !== '' || appliedRange.end !== '') {
-        setAppliedRange({ start: '', end: '' });
-        onChange({ start: '', end: '' });
-    }
+    onChange({ start: '', end: '' });
   };
 
   const presets = [
@@ -110,7 +88,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onChange }) =>
     { id: 'thisMonth', label: 'Bulan Ini' },
   ];
 
-  const hasUnappliedChanges = localStartDate !== appliedRange.start || localEndDate !== appliedRange.end;
+  const hasUnappliedChanges = localStartDate !== start || localEndDate !== end;
   const hasValues = localStartDate || localEndDate;
 
   return (

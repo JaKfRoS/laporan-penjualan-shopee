@@ -202,12 +202,29 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
     try {
       let d: Date;
       if (typeof val === 'number') {
+        // Excel numeric date (e.g., 45678.123)
         d = new Date((val - (25567 + 1)) * 86400 * 1000);
       } else {
+        // For string inputs like '2025-12-01 00:05'
+        const strVal = String(val).trim();
+        // If it's already in YYYY-MM-DD HH:mm:ss format, append +07 (WIB)
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(strVal)) {
+          return strVal.includes('+') ? strVal : `${strVal}+07`;
+        }
         d = new Date(val);
       }
+      
       if (isNaN(d.getTime())) return null;
-      return d.toISOString();
+      
+      // Option B: Store as WIB (Local Time) with explicit offset to avoid UTC shift
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const seconds = String(d.getSeconds()).padStart(2, '0');
+      
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}+07`;
     } catch (e) {
       return null;
     }

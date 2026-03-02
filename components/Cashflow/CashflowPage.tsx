@@ -109,12 +109,19 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         query = query.eq('store_id', store.id);
       }
 
-      // Filter by Release Date (Cashflow Basis)
+      // Filter by Release Date (Cashflow Basis - Option B: WIB Standard with +07 offset)
       if (dateRange.start) {
-        query = query.gte('release_date', `${dateRange.start}T00:00:00`);
+        query = query.gte('release_date', `${dateRange.start} 00:00:00+07`);
       }
       if (dateRange.end) {
-        query = query.lte('release_date', `${dateRange.end}T23:59:59`);
+        // Inclusive Start - Exclusive End (Standard Perbaikan)
+        const [y, m, d] = dateRange.end.split('-').map(Number);
+        const nextDayDate = new Date(y, m - 1, d + 1);
+        const ny = nextDayDate.getFullYear();
+        const nm = String(nextDayDate.getMonth() + 1).padStart(2, '0');
+        const nd = String(nextDayDate.getDate()).padStart(2, '0');
+        const nextDay = `${ny}-${nm}-${nd}`;
+        query = query.lt('release_date', `${nextDay} 00:00:00+07`);
       }
 
       const orders = await fetchAll(query);
@@ -698,7 +705,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header & Controls */}
       <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
-        <DateRangePicker onChange={setDateRange} />
+        <DateRangePicker 
+          start={dateRange.start}
+          end={dateRange.end}
+          onChange={setDateRange} 
+        />
         <div className="flex gap-2 w-full xl:w-auto justify-end">
            <button 
              onClick={generatePDF}

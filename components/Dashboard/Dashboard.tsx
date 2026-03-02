@@ -20,33 +20,58 @@ interface DashboardProps {
   allStores?: Store[]; 
 }
 
+interface DashboardFilters {
+  mode: 'order_date' | 'release_date';
+  start: string;
+  end: string;
+}
+
 export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
+  // 1. Single Source of Truth for Filters
+  const [filters, setFilters] = useState<DashboardFilters>(() => {
+    // Initialize from URL if available, otherwise defaults
+    const params = new URLSearchParams(window.location.search);
+    const now = new Date();
+    const defaultEnd = format(now, 'yyyy-MM-dd');
+    const defaultStart = format(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+
+    return {
+      mode: (params.get('mode') as any) || 'order_date',
+      start: params.get('start') || defaultStart,
+      end: params.get('end') || defaultEnd
+    };
+  });
+
+  // Sync filters to URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('mode', filters.mode);
+    params.set('start', filters.start);
+    params.set('end', filters.end);
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, '', newUrl);
+  }, [filters.mode, filters.start, filters.end]);
+
   // Display Data
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [adjustments, setAdjustments] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState(() => {
-    const now = new Date();
-    const end = format(now, 'yyyy-MM-dd');
-    const start = format(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
-    return { start, end };
-  });
-  const [dateFilterType, setDateFilterType] = useState<'order_date' | 'release_date'>('order_date');
   const [insights, setInsights] = useState<string | null>(null);
   const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
   
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // FETCH DATA SAAT TOKO ATAU TANGGAL BERUBAH (SERVER-SIDE FILTERING)
+  // 3. Refactor useEffect Fetching with specific dependencies
   useEffect(() => {
-    fetchData();
+    fetchData(filters.mode, filters.start, filters.end, store.id);
     return () => {
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [store, dateRange, dateFilterType]);
+  }, [filters.mode, filters.start, filters.end, store.id]);
 
-  const fetchData = async () => {
+  const fetchData = async (mode: string, start: string, end: string, storeId: string) => {
+    // 4. Race Condition Guard with AbortController
     if (abortControllerRef.current) abortControllerRef.current.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -62,6 +87,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         let finished = false;
 
         while (!finished) {
+          if (controller.signal.aborted) throw new Error('AbortError');
+          
           const { data, error } = await baseQuery.range(from, from + pageSize - 1);
           if (error) throw error;
           if (data && data.length > 0) {
@@ -78,14 +105,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       let query = supabase
         .from('orders')
         .select('*, order_items(*)')
-        .order(dateFilterType, { ascending: false });
+        .order(mode, { ascending: false });
 
       let adjQuery = supabase
         .from('adjustments')
         .select('*')
         .order('adjustment_date', { ascending: false });
 
-      if (store.id === 'all') {
+      if (storeId === 'all') {
         if (allStores && allStores.length > 0) {
            const storeIds = allStores.map(s => s.id);
            query = query.in('store_id', storeIds);
@@ -97,18 +124,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
            return;
         }
       } else {
-        query = query.eq('store_id', store.id);
-        adjQuery = adjQuery.eq('store_id', store.id);
+        query = query.eq('store_id', storeId);
+        adjQuery = adjQuery.eq('store_id', storeId);
       }
 
-      // Server-side date filtering
-      if (dateRange.start) {
-        query = query.gte(dateFilterType, `${dateRange.start}T00:00:00`);
-        adjQuery = adjQuery.gte('adjustment_date', dateRange.start);
+      // Server-side date filtering (Option B: WIB Standard with +07 offset)
+      if (start) {
+        query = query.gte(mode, `${start} 00:00:00+07`);
+        adjQuery = adjQuery.gte('adjustment_date', start);
       }
-      if (dateRange.end) {
-        query = query.lte(dateFilterType, `${dateRange.end}T23:59:59`);
-        adjQuery = adjQuery.lte('adjustment_date', dateRange.end);
+      if (end) {
+        // Inclusive Start - Exclusive End (Standard Perbaikan)
+        // We add 1 day to the end date and use 'lt' (less than)
+        const [y, m, d] = end.split('-').map(Number);
+        const nextDayDate = new Date(y, m - 1, d + 1);
+        const ny = nextDayDate.getFullYear();
+        const nm = String(nextDayDate.getMonth() + 1).padStart(2, '0');
+        const nd = String(nextDayDate.getDate()).padStart(2, '0');
+        const nextDay = `${ny}-${nm}-${nd}`;
+        
+        query = query.lt(mode, `${nextDay} 00:00:00+07`);
+        adjQuery = adjQuery.lte('adjustment_date', end); // adjustment_date is 'date' type, so lte is fine
       }
 
       const [ordersData, adjData] = await Promise.all([
@@ -118,12 +154,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       
       if (controller.signal.aborted) return;
 
+      // 5. Jangan Ada Auto Fallback ke Periode Default
       setFilteredOrders(ordersData || []);
       setAdjustments(adjData || []);
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
+      if (err.name !== 'AbortError' && err.message !== 'AbortError') {
         if (err.message?.toLowerCase().includes('refresh token') || err.message?.includes('refresh_token_not_found') || err.message?.toLowerCase().includes('invalid refresh token')) {
-          // Ignore auth errors, let App.tsx handle SIGNED_OUT event
           return;
         }
         toast.error('Gagal memuat data: ' + err.message);
@@ -384,8 +420,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const exportTime = new Date().toLocaleString('id-ID');
       const dataToExport = filteredOrders;
 
-      let startDateStr = dateRange.start;
-      let endDateStr = dateRange.end;
+      let startDateStr = filters.start;
+      let endDateStr = filters.end;
 
       if (!startDateStr && dataToExport.length > 0) {
         const sortedDates = [...dataToExport].sort((a, b) => new Date(a.order_date).getTime() - new Date(b.order_date).getTime());
@@ -414,17 +450,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         rows.push(["powered by OneWaymedia"]);
         rows.push([""]);
         rows.push(["Platform:", "Shopee"]);
-        rows.push(["Tipe Kalkulasi:", dateFilterType === 'order_date' ? "Performa Sales" : "Arus Kas"]);
+        rows.push(["Tipe Kalkulasi:", filters.mode === 'order_date' ? "Performa Sales" : "Arus Kas"]);
         rows.push(["Tanggal Export:", exportTime]);
         rows.push(["Periode:", displayPeriod]);
-        rows.push(["Filter:", dateFilterType === 'order_date' ? "Tanggal Pesanan Dibuat" : "Tanggal Dana Dilepaskan"]);
+        rows.push(["Filter:", filters.mode === 'order_date' ? "Tanggal Pesanan Dibuat" : "Tanggal Dana Dilepaskan"]);
         rows.push([""]);
 
         // Ringkasan Analytics
         rows.push(["Ringkasan Analytics"]);
         rows.push(["Metrik", "Nilai", "Keterangan"]);
 
-        if (dateFilterType === 'order_date') {
+        if (filters.mode === 'order_date') {
           rows.push(["Omset Pesanan (GMV)", metrics.totalOmzetPesanan, "Total nilai pesanan dibuat pelanggan"]);
           rows.push(["Biaya Iklan", metrics.biayaIklan, "Total biaya iklan (Top-up Cashflow)"]);
           rows.push(["ROAS Aktual", `${metrics.roasAktual.toFixed(2)}x`, "Return on Ad Spend"]);
@@ -443,7 +479,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
         rows.push([""]);
 
-        if (dateFilterType === 'release_date') {
+        if (filters.mode === 'release_date') {
           // Fee Breakdown only for Cash Flow
           rows.push(["Fee Breakdown (Shopee)"]);
           rows.push(["Jenis Fee", "Jumlah", "Tipe"]);
@@ -555,8 +591,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       });
       const exportTime = new Date().toLocaleString('id-ID');
       
-      let startDateStr = dateRange.start;
-      let endDateStr = dateRange.end;
+      let startDateStr = filters.start;
+      let endDateStr = filters.end;
       if (!startDateStr && filteredOrders.length > 0) {
         const sortedDates = [...filteredOrders].sort((a, b) => new Date(a.order_date).getTime() - new Date(b.order_date).getTime());
         startDateStr = sortedDates[0].order_date.split('T')[0];
@@ -590,17 +626,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       doc.setTextColor(0);
       doc.setFontSize(11);
       doc.text(`Platform: Shopee`, 14, 45);
-      doc.text(`Tipe Kalkulasi: ${dateFilterType === 'order_date' ? "Performa Sales (Berdasarkan Tanggal Pesanan)" : "Arus Kas (Berdasarkan Tanggal Pencairan)"}`, 14, 52);
+      doc.text(`Tipe Kalkulasi: ${filters.mode === 'order_date' ? "Performa Sales (Berdasarkan Tanggal Pesanan)" : "Arus Kas (Berdasarkan Tanggal Pencairan)"}`, 14, 52);
       doc.text(`Tanggal Export: ${exportTime}`, 14, 59);
       doc.text(`Periode: ${displayPeriod}`, 14, 66);
-      doc.text(`Filter: ${dateFilterType === 'order_date' ? "Tanggal Pesanan Dibuat" : "Tanggal Dana Dilepaskan"}`, 14, 73);
+      doc.text(`Filter: ${filters.mode === 'order_date' ? "Tanggal Pesanan Dibuat" : "Tanggal Dana Dilepaskan"}`, 14, 73);
 
       // 2. Ringkasan Analytics
       doc.setFontSize(16);
       doc.setFont('helvetica', 'bold');
       doc.text("Ringkasan Analytics", 14, 90);
 
-      const summaryBody = dateFilterType === 'order_date' ? [
+      const summaryBody = filters.mode === 'order_date' ? [
         ['Omset Pesanan (GMV)', `Rp ${metrics.totalOmzetPesanan.toLocaleString()}`, 'Total nilai pesanan dibuat pelanggan'],
         ['Biaya Iklan', `Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 'Total biaya iklan (Top-up Cashflow)'],
         ['ROAS Aktual', `${metrics.roasAktual.toFixed(2)}x`, 'Return on Ad Spend'],
@@ -626,7 +662,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       });
 
       // 3. Fee Breakdown (Only for Cash Flow)
-      if (dateFilterType === 'release_date') {
+      if (filters.mode === 'release_date') {
         doc.addPage();
         doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
@@ -708,7 +744,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const rowHeight = 15;
       doc.setFontSize(14);
       
-      if (dateFilterType === 'order_date') {
+      if (filters.mode === 'order_date') {
         // Performance Mode Summary
         doc.text("Total Pesanan", 30, summaryYStart);
         doc.text(metrics.totalOrders.toString(), 250, summaryYStart, { align: 'right' });
@@ -778,17 +814,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         {/* Controls Header */}
         <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
           <div className="w-full xl:w-auto flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <DateRangePicker onChange={setDateRange} />
+            <DateRangePicker 
+              start={filters.start}
+              end={filters.end}
+              onChange={(range) => setFilters(prev => ({ ...prev, ...range }))} 
+            />
             <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
               <button
-                onClick={() => setDateFilterType('order_date')}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${dateFilterType === 'order_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                onClick={() => setFilters(prev => ({ ...prev, mode: 'order_date' }))}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${filters.mode === 'order_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
               >
                 Filter Performa Sales
               </button>
               <button
-                onClick={() => setDateFilterType('release_date')}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${dateFilterType === 'release_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                onClick={() => setFilters(prev => ({ ...prev, mode: 'release_date' }))}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${filters.mode === 'release_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
               >
                 Filter Arus Kas
               </button>
@@ -838,120 +878,136 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4 mt-6">
-          {/* Row 1 */}
-          {dateFilterType === 'order_date' ? (
-            <>
-              <KPICard 
-                title="Omset Pesanan (GMV)" 
-                value={`Rp ${(metrics.totalOmzetPesanan || 0).toLocaleString()}`} 
-                trend="Gross Revenue"
-                icon={<ShoppingBag className="w-4 h-4 text-orange-600" />}
-                description="Total nilai pesanan dibuat pelanggan (sebelum potongan biaya)."
-                isHighlight
-              />
-              <KPICard 
-                title="Biaya Iklan" 
-                value={`Rp ${Math.abs(metrics.biayaIklan || 0).toLocaleString()}`} 
-                trend="Ad Spend"
-                icon={<Percent className="w-4 h-4 text-red-600" />}
-                description="Total biaya iklan yang dikeluarkan (berdasarkan transaksi saldo penjual, sudah termasuk PPN iklan 11%)."
-                isNegative
-              />
-              <KPICard 
-                title="ROAS Aktual" 
-                value={`${(metrics.roasAktual || 0).toFixed(2)}x`} 
-                trend="Return on Ad Spend"
-                icon={<BrainCircuit className="w-4 h-4 text-purple-600" />}
-                description="Efektivitas iklan (Total Omzet / Biaya Iklan)."
-                isHighlight
-              />
-              <KPICard 
-                title="Total Pesanan" 
-                value={`${metrics.totalOrders}`} 
-                trend="Order Count"
-                icon={<PackageSearch className="w-4 h-4 text-blue-600" />}
-                description="Jumlah seluruh transaksi yang masuk dalam periode ini."
-              />
-              <KPICard 
-                title="AOV" 
-                value={`Rp ${(metrics.averageOrderValue || 0).toLocaleString()}`} 
-                trend="Avg Order Value"
-                icon={<ArrowRightLeft className="w-4 h-4 text-indigo-600" />}
-                description="Rata-rata nilai belanja per pelanggan."
-              />
-              <KPICard 
-                title="Pesanan Dibatalkan" 
-                value={`${metrics.cancelledCount}`} 
-                trend="Cancelled"
-                icon={<XCircle className="w-4 h-4 text-red-500" />}
-                description="Jumlah pesanan yang dibatalkan oleh pembeli atau sistem."
-                isNegative
-              />
-            </>
-          ) : (
-            <>
-              <KPICard 
-                title="Dana Cair Bersih (Settled)" 
-                value={`Rp ${(metrics.netRevenueSelesai || 0).toLocaleString()}`} 
-                trend="Cash In"
-                icon={<Wallet className="w-4 h-4 text-green-600" />}
-                description="Uang Tunai yang sudah dilepaskan Shopee ke Saldo Penjual."
-                isHighlight
-              />
-              <KPICard 
-                title="Total HPP (Modal)" 
-                value={`-Rp ${(metrics.totalHPPSelesai || 0).toLocaleString()}`} 
-                trend="COGS"
-                isNegative
-                icon={<PackageSearch className="w-4 h-4 text-orange-600" />}
-                description="Total modal pokok produk untuk pesanan yang dananya sudah cair."
-              />
-              <KPICard 
-                title="Profit Riil Akhir" 
-                value={`Rp ${(metrics.totalKeuntungan || 0).toLocaleString()}`} 
-                trend="Net Profit"
-                icon={<Wallet className="w-4 h-4 text-yellow-600" />}
-                description="Keuntungan bersih nyata setelah dikurangi modal barang dan biaya operasional."
-                isHighlight
-              />
-              <KPICard 
-                title="Potongan Shopee" 
-                value={`-Rp ${(metrics.totalPotongan || 0).toLocaleString()}`} 
-                trend="Marketplace Fees"
-                isNegative
-                icon={<Percent className="w-4 h-4 text-red-600" />}
-                description="Total biaya yang dipotong platform (termasuk program Gratis Ongkir/Promo Xtra)."
-              />
-              <KPICard 
-                title="Selisih Ongkir" 
-                value={`-Rp ${(metrics.shippingLeakage || 0).toLocaleString()}`} 
-                trend="Shipping Diff"
-                isNegative
-                icon={<AlertCircle className="w-4 h-4 text-red-600" />}
-                description="Selisih antara ongkir yang dibayar pembeli dan ongkir aktual jasa kirim."
-              />
-              <KPICard 
-                title="Pesanan Selesai" 
-                value={`${metrics.completedCount}`} 
-                trend="Completed"
-                icon={<CheckCircle2 className="w-4 h-4 text-green-600" />}
-                description="Jumlah pesanan yang sudah selesai dan dananya sudah cair."
-              />
-              <KPICard 
-                title="Pesanan Retur" 
-                value={`${metrics.returnedCount}`} 
-                trend="Returned"
-                icon={<AlertCircle className="w-4 h-4 text-amber-600" />}
-                description="Jumlah pesanan yang diajukan pengembalian barang/dana."
-                isNegative
-              />
-            </>
-          )}
-        </div>
+        {filters.mode === 'order_date' ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4 mt-6">
+            <KPICard 
+              title="Omset Pesanan (GMV)" 
+              value={`Rp ${(metrics.totalOmzetPesanan || 0).toLocaleString()}`} 
+              trend="Gross Revenue"
+              icon={<ShoppingBag className="w-4 h-4 text-orange-600" />}
+              description="Total nilai pesanan dibuat pelanggan (sebelum potongan biaya)."
+              isHighlight
+            />
+            <KPICard 
+              title="Biaya Iklan" 
+              value={`Rp ${Math.abs(metrics.biayaIklan || 0).toLocaleString()}`} 
+              trend="Ad Spend"
+              icon={<Percent className="w-4 h-4 text-red-600" />}
+              description="Total biaya iklan yang dikeluarkan (berdasarkan transaksi saldo penjual, sudah termasuk PPN iklan 11%)."
+              isNegative
+            />
+            <KPICard 
+              title="ROAS Aktual" 
+              value={`${(metrics.roasAktual || 0).toFixed(2)}x`} 
+              trend="Return on Ad Spend"
+              icon={<BrainCircuit className="w-4 h-4 text-purple-600" />}
+              description="Efektivitas iklan (Total Omzet / Biaya Iklan)."
+              isHighlight
+            />
+            <KPICard 
+              title="Total Pesanan" 
+              value={`${metrics.totalOrders}`} 
+              trend="Order Count"
+              icon={<PackageSearch className="w-4 h-4 text-blue-600" />}
+              description="Jumlah seluruh transaksi yang masuk dalam periode ini."
+            />
+            <KPICard 
+              title="AOV" 
+              value={`Rp ${(metrics.averageOrderValue || 0).toLocaleString()}`} 
+              trend="Avg Order Value"
+              icon={<ArrowRightLeft className="w-4 h-4 text-indigo-600" />}
+              description="Rata-rata nilai belanja per pelanggan."
+            />
+            <KPICard 
+              title="Pesanan Dibatalkan" 
+              value={`${metrics.cancelledCount}`} 
+              trend="Cancelled"
+              icon={<XCircle className="w-4 h-4 text-red-500" />}
+              description="Jumlah pesanan yang dibatalkan oleh pembeli atau sistem."
+              isNegative
+            />
+          </div>
+        ) : (
+          <div className="space-y-8 mt-6">
+            {/* Grup 1 – KPI Utama (Primary Cash Metrics) */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-1 bg-orange-500 rounded-full"></div>
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">KPI Utama Arus Kas</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <KPICard 
+                  title="Dana Cair Bersih (Settled)" 
+                  value={`Rp ${(metrics.netRevenueSelesai || 0).toLocaleString()}`} 
+                  trend="Cash In"
+                  icon={<Wallet className="w-4 h-4 text-green-600" />}
+                  description="Uang Tunai yang sudah dilepaskan Shopee ke Saldo Penjual."
+                  isHighlight
+                />
+                <KPICard 
+                  title="Total HPP (Modal)" 
+                  value={`-Rp ${(metrics.totalHPPSelesai || 0).toLocaleString()}`} 
+                  trend="COGS"
+                  isNegative
+                  icon={<PackageSearch className="w-4 h-4 text-orange-600" />}
+                  description="Total modal pokok produk untuk pesanan yang dananya sudah cair."
+                />
+                <KPICard 
+                  title="Profit Riil Akhir" 
+                  value={`Rp ${(metrics.totalKeuntungan || 0).toLocaleString()}`} 
+                  trend="Net Profit"
+                  icon={<Wallet className="w-4 h-4 text-yellow-600" />}
+                  description="Keuntungan bersih nyata setelah dikurangi modal barang dan biaya operasional."
+                  isHighlight
+                />
+              </div>
+            </div>
+
+            {/* Grup 2 – KPI Pendukung (Secondary Metrics) */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-1 bg-slate-300 dark:bg-slate-700 rounded-full"></div>
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Metrik Pendukung</h3>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <KPICard 
+                  title="Potongan Shopee" 
+                  value={`-Rp ${(metrics.totalPotongan || 0).toLocaleString()}`} 
+                  trend="Marketplace Fees"
+                  isNegative
+                  icon={<Percent className="w-4 h-4 text-red-600" />}
+                  description="Total biaya yang dipotong platform (termasuk program Gratis Ongkir/Promo Xtra)."
+                />
+                <KPICard 
+                  title="Selisih Ongkir" 
+                  value={`-Rp ${(metrics.shippingLeakage || 0).toLocaleString()}`} 
+                  trend="Shipping Diff"
+                  isNegative
+                  icon={<AlertCircle className="w-4 h-4 text-red-600" />}
+                  description="Selisih antara ongkir yang dibayar pembeli dan ongkir aktual jasa kirim."
+                />
+                <KPICard 
+                  title="Pesanan Selesai" 
+                  value={`${metrics.completedCount}`} 
+                  trend="Completed"
+                  icon={<CheckCircle2 className="w-4 h-4 text-green-600" />}
+                  description="Jumlah pesanan yang sudah selesai dan dananya sudah cair."
+                />
+                <KPICard 
+                  title="Pesanan Retur" 
+                  value={`${metrics.returnedCount}`} 
+                  trend="Returned"
+                  icon={<AlertCircle className="w-4 h-4 text-amber-600" />}
+                  description="Jumlah pesanan yang diajukan pengembalian barang/dana."
+                  isNegative
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Fee Breakdown Dashboard Section */}
-        {dateFilterType === 'release_date' && (
+        {filters.mode === 'release_date' && (
           <div className="mt-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-50 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
               <div className="flex items-center gap-3">
@@ -1029,13 +1085,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-2xl flex items-start gap-3 mt-6">
           <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
           <div className="text-xs text-blue-800 dark:text-blue-300 font-medium leading-relaxed">
-            <p className="font-bold mb-1 uppercase tracking-tight">Metodologi Perhitungan (Basis Kas/Cair)</p>
-            <ul className="list-disc pl-4 space-y-1">
-                <li><b>Total Omzet:</b> Total harga produk dari pesanan berstatus "Selesai".</li>
-                <li><b>Uang Cair:</b> Total penghasilan bersih dari marketplace (setelah admin/layanan/ongkir).</li>
-                <li><b>Laba Kotor:</b> Uang Cair dikurangi HPP produk terjual.</li>
-                <li><b>Laba Bersih:</b> Laba Kotor ditambah Total Penyesuaian (Retur/Refund).</li>
-            </ul>
+            {filters.mode === 'order_date' ? (
+              <>
+                <p className="font-bold mb-1 uppercase tracking-tight">Metodologi Perhitungan (Basis Performa)</p>
+                <ul className="list-disc pl-4 space-y-1">
+                    <li><b>Total Omzet Pesanan:</b> Total nilai pesanan yang dibuat pelanggan dalam periode terpilih (termasuk yang belum cair).</li>
+                    <li><b>Biaya Iklan:</b> Total biaya top-up iklan yang dilakukan dalam periode terpilih.</li>
+                    <li><b>ROAS Aktual:</b> Perbandingan antara Omzet Pesanan dengan Biaya Iklan (Omzet / Iklan).</li>
+                    <li><b>AOV:</b> Rata-rata nilai per transaksi dari seluruh pesanan masuk.</li>
+                </ul>
+              </>
+            ) : (
+              <>
+                <p className="font-bold mb-1 uppercase tracking-tight">Metodologi Perhitungan (Basis Kas/Cair)</p>
+                <ul className="list-disc pl-4 space-y-1">
+                    <li><b>Dana Cair Bersih:</b> Uang tunai yang sudah dilepaskan Shopee ke saldo penjual (Settled).</li>
+                    <li><b>Total HPP (Modal):</b> Total modal pokok produk untuk pesanan yang dananya sudah cair.</li>
+                    <li><b>Profit Riil Akhir:</b> Laba bersih nyata setelah dikurangi modal barang dan biaya operasional.</li>
+                    <li><b>Selisih Ongkir:</b> Selisih antara ongkir yang dibayar pembeli dan ongkir aktual jasa kirim.</li>
+                </ul>
+              </>
+            )}
           </div>
         </div>
 
