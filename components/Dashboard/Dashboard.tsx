@@ -200,10 +200,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     // A. Omzet Riil (GMV Selesai)
     const omzetRiil = completedOrdersOnly.reduce((acc, o) => acc + (o.product_total || 0), 0);
 
-    // C. Dana Cair (Net Revenue Selesai)
-    const danaCair = completedOrdersOnly.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
+    // H. Kebocoran Ongkir (Shipping Leakage) & Settled Orders for Cash Flow
+    const settledOrders = data.filter(o => {
+        const s = (o.status || '').toLowerCase();
+        return s === 'selesai' || s === 'pengembalian';
+    });
 
-    // B. Potongan Marketplace (Selesai) - Calculated to ensure math consistency: Omzet - Potongan = Dana Cair
+    // C. Dana Cair (Net Revenue Selesai + Pengembalian)
+    const danaCair = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
+
+    // B. Potongan Marketplace (Selesai + Retur) - Calculated to ensure math consistency: Omzet - Potongan = Dana Cair
     const potonganMarketplace = omzetRiil - danaCair;
 
     // D. Total HPP (Hanya untuk order yang SELESAI)
@@ -218,7 +224,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     const profitRiil = danaCair - hppSelesai;
 
     // F. Supporting Metrics
-    const percentNetProfit = danaCair > 0 ? (profitRiil / danaCair) * 100 : 0;
+    const percentNetProfit = omzetRiil > 0 ? (profitRiil / omzetRiil) * 100 : 0;
     const percentPotonganOmzet = omzetRiil > 0 ? (potonganMarketplace / omzetRiil) * 100 : 0;
 
     // G. Total Penyesuaian & Biaya Iklan
@@ -241,12 +247,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       }
     });
 
-    // H. Kebocoran Ongkir (Shipping Leakage) - Based on all settled (Selesai + Retur)
-    const settledOrders = data.filter(o => {
-        const s = (o.status || '').toLowerCase();
-        return s === 'selesai' || s === 'pengembalian';
-    });
-    
+    // H. Kebocoran Ongkir (Shipping Leakage)
     let shippingLeakage = 0;
     settledOrders.forEach(o => {
       if (o.fee_details) {
@@ -258,7 +259,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       }
     });
 
-    // J. Fee Breakdown (Selesai Only for consistency with Omzet Riil)
+    // J. Fee Breakdown (Selesai + Pengembalian for comprehensive cash flow view)
     let feeBreakdown = {
       admin: 0,
       ams: 0,
@@ -272,7 +273,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       processing: 0
     };
 
-    completedOrdersOnly.forEach(o => {
+    settledOrders.forEach(o => {
       if (o.fee_details) {
         feeBreakdown.admin += (o.fee_details.admin_fee || 0);
         feeBreakdown.ams += (o.fee_details.ams_commission || 0);
@@ -378,7 +379,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           rows.push(["Dana Cair", metrics.danaCair, "Omzet Riil - Potongan Marketplace"]);
           rows.push(["HPP", -metrics.hppSelesai, "Total modal pokok produk pesanan selesai"]);
           rows.push(["Profit Riil", metrics.profitRiil, "Dana Cair - HPP"]);
-          rows.push(["% Net Profit", `${metrics.percentNetProfit.toFixed(1)}%`, "Profit Riil / Dana Cair"]);
+          rows.push(["% Net Profit", `${metrics.percentNetProfit.toFixed(1)}%`, "Profit Riil / Omzet Riil"]);
           rows.push(["% Potongan Marketplace", `${metrics.percentPotonganOmzet.toFixed(1)}%`, "Potongan / Omzet Riil"]);
           rows.push(["Selisih Ongkir", -metrics.shippingLeakage, "Selisih ongkir pembeli vs aktual"]);
           rows.push(["Pesanan Selesai", metrics.completedCount, "Jumlah pesanan sudah cair"]);
@@ -557,7 +558,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         ['Dana Cair', `Rp ${metrics.danaCair.toLocaleString()}`, 'Omzet Riil - Potongan Marketplace'],
         ['HPP', `-Rp ${metrics.hppSelesai.toLocaleString()}`, 'Total modal pokok produk pesanan selesai'],
         ['Profit Riil', `Rp ${metrics.profitRiil.toLocaleString()}`, 'Dana Cair - HPP'],
-        ['% Net Profit', `${metrics.percentNetProfit.toFixed(1)}%`, 'Profit Riil / Dana Cair'],
+        ['% Net Profit', `${metrics.percentNetProfit.toFixed(1)}%`, 'Profit Riil / Omzet Riil'],
         ['% Potongan Marketplace', `${metrics.percentPotonganOmzet.toFixed(1)}%`, 'Potongan / Omzet Riil'],
         ['Selisih Ongkir', `-Rp ${metrics.shippingLeakage.toLocaleString()}`, 'Selisih ongkir pembeli vs aktual'],
         ['Pesanan Selesai', metrics.completedCount.toString(), 'Jumlah pesanan sudah cair'],
@@ -904,7 +905,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   value={`${metrics.percentNetProfit.toFixed(1)}%`} 
                   trend="Profitability"
                   icon={<Percent className="w-4 h-4 text-green-600" />}
-                  description="Profit Riil / Dana Cair × 100%."
+                  description="Profit Riil / Omzet Riil × 100%."
                 />
                 <KPICard 
                   title="% Potongan" 
