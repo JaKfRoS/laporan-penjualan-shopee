@@ -434,8 +434,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           if (isAds || isWithdrawal || isIncome) {
               if (isAds) totalAds += Math.abs(amount);
               
-              const uniqueId = orderNo !== '-' ? orderNo : `UPLOAD-${formattedDate}-${Math.abs(amount)}-${i}`;
               const originalDesc = String(row[descColIdx]);
+              const uniqueId = orderNo !== '-' ? orderNo : `UPLOAD-${formattedDate}-${Math.abs(amount)}-${originalDesc.replace(/\s+/g, '').substring(0, 50)}`;
 
               transactionsToSave.push({
                   store_id: store.id,
@@ -571,7 +571,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     const isAllStores = store.id === 'all';
     
     doc.setFontSize(18);
-    doc.text(isAllStores ? "Laporan Konsolidasi Arus Kas (Semua Toko)" : `Laporan Audit Arus Kas - ${store.name}`, 14, 20);
+    doc.text(isAllStores ? "Laporan Konsolidasi Keuangan (Semua Toko)" : `Laporan Audit Keuangan - ${store.name}`, 14, 20);
     doc.setFontSize(10);
     doc.text(`Periode: ${dateRange.start || '-'} s/d ${dateRange.end || '-'}`, 14, 28);
     doc.text(`Tanggal Cetak: ${new Date().toLocaleString('id-ID')}`, 14, 34);
@@ -698,7 +698,16 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       });
     }
 
-    doc.save(`Audit_Cashflow_${new Date().toISOString().split('T')[0]}.pdf`);
+    // Add Page Numbers
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(`Halaman ${i} dari ${pageCount}`, doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+    }
+
+    doc.save(`Audit_Keuangan_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   return (

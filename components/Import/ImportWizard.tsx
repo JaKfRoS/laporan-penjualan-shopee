@@ -561,7 +561,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
               const adjDate = dateRaw ? getSafeDate(dateRaw) : new Date().toISOString();
               const amount = parseNumberIndonesia(row['Biaya Penyesuaian'] || '0');
               const reason = row['Alasan Penyesuaian'] || row['Tipe Penyesuaian | Deskripsi'] || '';
-              const orderId = row['No. Pesanan Terhubung'] || '';
+              const orderId = row['No. Pesanan Terhubung'] || `ADJ-${adjDate}-${amount}-${reason.replace(/\s+/g, '').substring(0, 30)}`;
               
               return {
                   store_id: store.id,

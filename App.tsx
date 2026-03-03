@@ -26,7 +26,7 @@ import { AlertCircle, Loader2, Trash2, AlertTriangle, RefreshCcw, UserCircle, Sh
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products' | 'cashflow'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products' | 'keuangan'>('dashboard');
   const [currentStore, setCurrentStore] = useState<Store | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
@@ -434,7 +434,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'cashflow' && currentStore && (
+          {activeTab === 'keuangan' && currentStore && (
              <CashflowPage 
                store={currentStore} 
                allStores={stores} 
@@ -628,7 +628,7 @@ export default function App() {
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-[100] bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-safe">
         <div className="grid grid-cols-7 gap-0.5 p-2 max-w-md mx-auto">
           <MobileNavItem id="dashboard" label="Home" icon={LayoutDashboard} />
-          <MobileNavItem id="cashflow" label="Cashflow" icon={Wallet} />
+          <MobileNavItem id="keuangan" label="Keuangan" icon={Wallet} />
           <MobileNavItem id="products" label="Produk" icon={PackageSearch} />
           <MobileNavItem id="ads" label="Ads" icon={Megaphone} />
           <MobileNavItem id="calculator" label="Harga" icon={Calculator} />

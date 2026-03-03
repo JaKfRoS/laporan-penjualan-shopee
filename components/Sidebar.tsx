@@ -3,8 +3,8 @@ import React from 'react';
 import { LayoutDashboard, UploadCloud, Settings, LogOut, BarChart3, Moon, Sun, Megaphone, Calculator, PackageSearch, Wallet } from 'lucide-react';
 
 interface SidebarProps {
-  activeTab: 'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products' | 'cashflow';
-  setActiveTab: (tab: 'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products' | 'cashflow') => void;
+  activeTab: 'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products' | 'keuangan';
+  setActiveTab: (tab: 'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products' | 'keuangan') => void;
   isDarkMode: boolean;
   toggleDarkMode: () => void;
 }
@@ -12,7 +12,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isDarkMode, toggleDarkMode }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Sales Dashboard', icon: LayoutDashboard },
-    { id: 'cashflow', label: 'Cashflow', icon: Wallet },
+    { id: 'keuangan', label: 'Keuangan', icon: Wallet },
     { id: 'products', label: 'Produk & HPP', icon: PackageSearch },
     { id: 'ads', label: 'Ads & Pemasaran', icon: Megaphone },
     { id: 'calculator', label: 'Kalkulator Harga', icon: Calculator },

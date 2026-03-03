@@ -364,7 +364,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         rows.push(["powered by OneWaymedia"]);
         rows.push([""]);
         rows.push(["Platform:", "Shopee"]);
-        rows.push(["Tipe Kalkulasi:", filters.mode === 'order_date' ? "Performa Sales" : "Arus Kas"]);
+        rows.push(["Tipe Kalkulasi:", filters.mode === 'order_date' ? "Performa Sales" : "Keuangan"]);
         rows.push(["Tanggal Export:", exportTime]);
         rows.push(["Periode:", displayPeriod]);
         rows.push(["Filter:", filters.mode === 'order_date' ? "Tanggal Pesanan Dibuat" : "Tanggal Dana Dilepaskan"]);
@@ -377,7 +377,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         if (filters.mode === 'order_date') {
           rows.push(["Omset Pesanan (GMV)", metrics.totalOmzetPesanan, "Total nilai seluruh pesanan masuk (termasuk Batal/Retur)"]);
           rows.push(["Omset Bersih (Net GMV)", metrics.totalOmzetBersih, "Total nilai pesanan aktif (mengecualikan Batal/Retur)"]);
-          rows.push(["Biaya Iklan", metrics.biayaIklan, "Total biaya iklan (Top-up Cashflow)"]);
+          rows.push(["Biaya Iklan", metrics.biayaIklan, "Total biaya iklan (Top-up Keuangan)"]);
           rows.push(["ROAS Aktual", `${metrics.roasAktual.toFixed(2)}x`, "Return on Ad Spend"]);
           rows.push(["Total Pesanan", metrics.totalOrders, "Jumlah seluruh transaksi"]);
           rows.push(["AOV", metrics.averageOrderValue, "Rata-rata nilai per transaksi"]);
@@ -544,7 +544,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       doc.setTextColor(0);
       doc.setFontSize(11);
       doc.text(`Platform: Shopee`, 14, 45);
-      doc.text(`Tipe Kalkulasi: ${filters.mode === 'order_date' ? "Performa Sales (Berdasarkan Tanggal Pesanan)" : "Arus Kas (Berdasarkan Tanggal Pencairan)"}`, 14, 52);
+      doc.text(`Tipe Kalkulasi: ${filters.mode === 'order_date' ? "Performa Sales (Berdasarkan Tanggal Pesanan)" : "Keuangan (Berdasarkan Tanggal Pencairan)"}`, 14, 52);
       doc.text(`Tanggal Export: ${exportTime}`, 14, 59);
       doc.text(`Periode: ${displayPeriod}`, 14, 66);
       doc.text(`Filter: ${filters.mode === 'order_date' ? "Tanggal Pesanan Dibuat" : "Tanggal Dana Dilepaskan"}`, 14, 73);
@@ -557,7 +557,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const summaryBody = filters.mode === 'order_date' ? [
         ['Omset Pesanan (GMV)', `Rp ${metrics.totalOmzetPesanan.toLocaleString()}`, 'Total nilai pesanan dibuat pelanggan'],
         ['Omset Bersih (Net GMV)', `Rp ${metrics.totalOmzetBersih.toLocaleString()}`, 'Total nilai pesanan aktif (mengecualikan Batal/Retur)'],
-        ['Biaya Iklan', `Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 'Total biaya iklan (Top-up Cashflow)'],
+        ['Biaya Iklan', `Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 'Total biaya iklan (Top-up Keuangan)'],
         ['ROAS Aktual', `${metrics.roasAktual.toFixed(2)}x`, 'Return on Ad Spend'],
         ['Total Pesanan', metrics.totalOrders.toString(), 'Jumlah seluruh transaksi'],
         ['AOV', `Rp ${metrics.averageOrderValue.toLocaleString()}`, 'Rata-rata nilai per transaksi'],
@@ -709,7 +709,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       doc.text("ShopeeSales - E-Commerce Analytics Platform", 277, footerY, { align: 'right' });
 
       // 6. Add Page Numbers
-      const pageCount = doc.internal.getNumberOfPages();
+      const pageCount = doc.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
         doc.setFontSize(8);
@@ -767,7 +767,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 onClick={() => setFilters(prev => ({ ...prev, mode: 'release_date' }))}
                 className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${filters.mode === 'release_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
               >
-                Filter Arus Kas
+                Filter Keuangan
               </button>
             </div>
           </div>
