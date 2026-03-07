@@ -573,21 +573,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
           }).filter(a => a.amount !== 0);
 
           if (adjustmentsToInsert.length > 0) {
-              // Local Deduplication
-              const uniqueAdjustments = Array.from(
-                adjustmentsToInsert.reduce((map, adj) => {
-                  map.set(adj.order_id, adj);
-                  return map;
-                }, new Map()).values()
-              ) as any[];
-
               // We use upsert with unique constraint on store_id, order_id, adjustment_date, amount
               const { error: adjError } = await supabase
                   .from('adjustments')
-                  .upsert(uniqueAdjustments, { onConflict: 'store_id,order_id,adjustment_date,amount' });
-              
+                  .upsert(adjustmentsToInsert, { onConflict: 'store_id, order_id, adjustment_date, amount' });
               if (adjError) {
                   console.error("Adjustment Error:", adjError);
+                  // Non-fatal, just log
               }
           }
       }

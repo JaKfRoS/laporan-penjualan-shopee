@@ -234,7 +234,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
            if (type === 'Income') category = 'Penghasilan dari Pesanan';
            else if (type === 'Ads') category = 'Iklan Shopee';
            else if (type === 'Withdrawal') category = 'Penarikan Dana';
-           else if (type === 'Adjustment') category = 'Penyesuaian Saldo';
            else category = 'Transaksi Shopee Otomatis';
 
            description = descMatch ? descMatch[1].trim() : reason.replace('[AUTO_UPLOAD]', '').trim();
@@ -363,19 +362,13 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         if (rowStr.includes('tanggal') && rowStr.includes('deskripsi') && (rowStr.includes('jumlah') || rowStr.includes('amount'))) {
             foundHeader = true;
             row.forEach((cell: any, idx: number) => {
-                const c = String(cell).toLowerCase().trim();
-                // Saldo Akhir / Balance
-                if ((c.includes('saldo') || c.includes('balance')) && !c.includes('awal') && !c.includes('start')) balanceColIdx = idx;
-                // Jumlah / Amount
+                const c = String(cell).toLowerCase();
+                if (c.includes('saldo') && !c.includes('awal')) balanceColIdx = idx;
                 if (c === 'jumlah' || c === 'amount' || (c.includes('jumlah') && !c.includes('transaksi'))) amountColIdx = idx;
-                // Deskripsi / Description
-                if (c.includes('deskripsi') || c.includes('description') || c.includes('rincian')) descColIdx = idx;
-                // Tanggal / Date
-                if (c.includes('tanggal') || c.includes('date') || c === 'waktu') dateColIdx = idx;
-                // No. Pesanan / Order ID
-                if (c.includes('pesanan') || c.includes('order no') || c === 'order id') orderIdColIdx = idx;
-                // No. Transaksi / Transaction ID
-                if (c.includes('transaksi') || c.includes('transaction') || c === 'id') transactionIdColIdx = idx;
+                if (c.includes('deskripsi') || c.includes('description')) descColIdx = idx;
+                if (c.includes('tanggal') || c.includes('date')) dateColIdx = idx;
+                if (c.includes('pesanan') || c.includes('order')) orderIdColIdx = idx;
+                if (c.includes('transaksi') || c.includes('transaction')) transactionIdColIdx = idx;
             });
             continue;
         }
@@ -426,26 +419,23 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                         desc.includes('biaya');
           
           const isWithdrawal = desc.includes('penarikan') || desc.includes('withdrawal');
-          const isIncome = desc.includes('penghasilan') || desc.includes('income') || desc.includes('pesanan') || desc.includes('order');
-          const isAdjustment = desc.includes('penyesuaian') || desc.includes('adjustment') || desc.includes('kompensasi') || desc.includes('reimbursement');
+          const isIncome = desc.includes('penghasilan') || desc.includes('income') || desc.includes('order');
 
           let type = 'Other';
           if (isAds) type = 'Ads';
           else if (isWithdrawal) type = 'Withdrawal';
           else if (isIncome) type = 'Income';
-          else if (isAdjustment) type = 'Adjustment';
 
-          if (amount !== 0) {
+          if (isAds || isWithdrawal || isIncome) {
               if (isAds) totalAds += Math.abs(amount);
               
               const originalDesc = String(row[descColIdx]);
               const stableRef = transactionNo !== '-' ? transactionNo : (orderNo !== '-' ? orderNo : '-');
               
-              // Improved uniqueId: Use stableRef if available, otherwise fallback to a hash-like string
-              const normalizedDesc = originalDesc.toLowerCase().replace(/\s+/g, '').substring(0, 50);
-              const uniqueId = stableRef !== '-' 
-                ? stableRef 
-                : `UP-${formattedDate}-${Math.abs(amount)}-${normalizedDesc}`;
+              // Improved uniqueId for Ads to prevent duplicates even if transactionNo is missing
+              // We include a normalized description to handle minor variations
+              const normalizedDesc = originalDesc.toLowerCase().replace(/\s+/g, '').substring(0, 30);
+              const uniqueId = stableRef !== '-' ? stableRef : `UPLOAD-${formattedDate}-${Math.abs(amount)}-${normalizedDesc}`;
 
               transactionsToSave.push({
                   store_id: store.id,
@@ -479,16 +469,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
        });
     }
 
-    // Local Deduplication: Ensure we don't send duplicate order_ids in the same batch
-    const uniqueTransactions = Array.from(
-      transactionsToSave.reduce((map, tx) => {
-        map.set(tx.order_id, tx);
-        return map;
-      }, new Map()).values()
-    );
-
-    if (uniqueTransactions.length > 0) {
-        await saveUploadedTransactions(uniqueTransactions);
+    if (transactionsToSave.length > 0) {
+        await saveUploadedTransactions(transactionsToSave);
     } else {
         toast.success(`Berhasil memproses! Ditemukan Biaya Iklan: Rp ${totalAds.toLocaleString()}`);
     }
@@ -497,34 +479,13 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const saveUploadedTransactions = async (transactions: any[]) => {
       const toastId = toast.loading('Menyimpan data ke database...');
       try {
-          // Manual Duplicate Prevention: Fetch existing order_ids for this store to double-check
-          // This acts as a safety net if the DB unique constraint is somehow missing or bypassed
-          const orderIds = transactions.map(t => t.order_id);
-          const { data: existing } = await supabase
-            .from('adjustments')
-            .select('order_id')
-            .eq('store_id', store.id)
-            .in('order_id', orderIds);
-          
-          const existingIds = new Set(existing?.map(e => e.order_id) || []);
-          
-          // Filter out transactions that already exist AND have the same amount/date
-          // Actually, if order_id is stable, that's enough.
-          // But we use upsert anyway to update existing ones if they changed.
-          
           const { error } = await supabase
               .from('adjustments')
-              .upsert(transactions, { 
-                onConflict: 'store_id,order_id,adjustment_date,amount',
-                ignoreDuplicates: false // We want to update existing ones to be sure
-              });
+              .upsert(transactions, { onConflict: 'store_id, order_id, adjustment_date, amount' });
           
           if (error) throw error;
           
-          const newCount = transactions.filter(t => !existingIds.has(t.order_id)).length;
-          const updatedCount = transactions.length - newCount;
-          
-          toast.success(`Berhasil! ${newCount} data baru disimpan, ${updatedCount} data diperbarui.`, { id: toastId });
+          toast.success(`Berhasil menyimpan ${transactions.length} transaksi iklan!`, { id: toastId });
           fetchManualTransactions();
       } catch (err: any) {
           console.error(err);
