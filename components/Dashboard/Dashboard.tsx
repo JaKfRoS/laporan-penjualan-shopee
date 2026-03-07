@@ -299,6 +299,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     }, 0);
     const averageOrderValue = totalOrdersCount > 0 ? totalOmzetPesanan / totalOrdersCount : 0;
     const roasAktual = Math.abs(biayaIklan) > 0 ? totalOmzetPesanan / Math.abs(biayaIklan) : 0;
+    const acosAktual = totalOmzetPesanan > 0 ? (Math.abs(biayaIklan) / totalOmzetPesanan) * 100 : 0;
 
     return { 
       totalOrders: totalOrdersCount,
@@ -314,6 +315,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       shippingLeakage,
       biayaIklan,
       roasAktual,
+      acosAktual,
       totalOmzetPesanan,
       totalOmzetBersih,
       averageOrderValue,
@@ -379,6 +381,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           rows.push(["Omset Bersih (Net GMV)", metrics.totalOmzetBersih, "Total nilai pesanan aktif (mengecualikan Batal/Retur)"]);
           rows.push(["Biaya Iklan", metrics.biayaIklan, "Total biaya iklan (Top-up Keuangan)"]);
           rows.push(["ROAS Aktual", `${metrics.roasAktual.toFixed(2)}x`, "Return on Ad Spend"]);
+          rows.push(["% ACOS", `${metrics.acosAktual.toFixed(2)}%`, "Advertising Cost of Sales"]);
           rows.push(["Total Pesanan", metrics.totalOrders, "Jumlah seluruh transaksi"]);
           rows.push(["AOV", metrics.averageOrderValue, "Rata-rata nilai per transaksi"]);
           rows.push(["Pesanan Dibatalkan", metrics.cancelledCount, "Jumlah pesanan batal"]);
@@ -554,15 +557,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       doc.setFont('helvetica', 'bold');
       doc.text("Ringkasan Analytics", 14, 90);
 
-      const summaryBody = filters.mode === 'order_date' ? [
-        ['Omset Pesanan (GMV)', `Rp ${metrics.totalOmzetPesanan.toLocaleString()}`, 'Total nilai pesanan dibuat pelanggan'],
-        ['Omset Bersih (Net GMV)', `Rp ${metrics.totalOmzetBersih.toLocaleString()}`, 'Total nilai pesanan aktif (mengecualikan Batal/Retur)'],
-        ['Biaya Iklan', `Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 'Total biaya iklan (Top-up Keuangan)'],
-        ['ROAS Aktual', `${metrics.roasAktual.toFixed(2)}x`, 'Return on Ad Spend'],
-        ['Total Pesanan', metrics.totalOrders.toString(), 'Jumlah seluruh transaksi'],
-        ['AOV', `Rp ${metrics.averageOrderValue.toLocaleString()}`, 'Rata-rata nilai per transaksi'],
-        ['Pesanan Dibatalkan', metrics.cancelledCount.toString(), 'Jumlah pesanan batal'],
-      ] : [
+        const summaryBody = filters.mode === 'order_date' ? [
+          ['Omset Pesanan (GMV)', `Rp ${metrics.totalOmzetPesanan.toLocaleString()}`, 'Total nilai pesanan dibuat pelanggan'],
+          ['Omset Bersih (Net GMV)', `Rp ${metrics.totalOmzetBersih.toLocaleString()}`, 'Total nilai pesanan aktif (mengecualikan Batal/Retur)'],
+          ['Biaya Iklan', `Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 'Total biaya iklan (Top-up Keuangan)'],
+          ['ROAS Aktual', `${metrics.roasAktual.toFixed(2)}x`, 'Return on Ad Spend'],
+          ['% ACOS', `${metrics.acosAktual.toFixed(2)}%`, 'Advertising Cost of Sales'],
+          ['Total Pesanan', metrics.totalOrders.toString(), 'Jumlah seluruh transaksi'],
+          ['AOV', `Rp ${metrics.averageOrderValue.toLocaleString()}`, 'Rata-rata nilai per transaksi'],
+          ['Pesanan Dibatalkan', metrics.cancelledCount.toString(), 'Jumlah pesanan batal'],
+        ] : [
         ['Omzet Riil', `Rp ${metrics.omzetRiil.toLocaleString()}`, 'Total nilai pesanan status Selesai'],
         ['Potongan Marketplace', `-Rp ${metrics.potonganMarketplace.toLocaleString()}`, 'Total komisi/biaya marketplace'],
         ['Dana Cair', `Rp ${metrics.danaCair.toLocaleString()}`, 'Omzet Riil - Potongan Marketplace'],
@@ -682,6 +686,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
         doc.text("ROAS Aktual", 30, summaryYStart + (rowHeight * 4));
         doc.text(`${metrics.roasAktual.toFixed(2)} x`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
+
+        doc.text("% ACOS", 30, summaryYStart + (rowHeight * 5));
+        doc.text(`${metrics.acosAktual.toFixed(2)} %`, 250, summaryYStart + (rowHeight * 5), { align: 'right' });
       } else {
         // Cash Flow Mode Summary
         doc.text("Omzet Riil", 30, summaryYStart);
@@ -848,6 +855,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               icon={<BrainCircuit className="w-4 h-4 text-purple-600" />}
               description="Efektivitas iklan (Total Omzet / Biaya Iklan)."
               isHighlight
+            />
+            <KPICard 
+              title="% ACOS" 
+              value={`${(metrics.acosAktual || 0).toFixed(2)}%`} 
+              trend="Ad Cost of Sales"
+              icon={<Percent className="w-4 h-4 text-rose-600" />}
+              description="Persentase biaya iklan dibandingkan total omzet (Biaya Iklan / Total Omzet)."
+              isNegative
             />
             <KPICard 
               title="Total Pesanan" 
