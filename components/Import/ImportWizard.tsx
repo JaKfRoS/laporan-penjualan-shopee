@@ -355,18 +355,29 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         
         if (!isMapped) unmappedCount++;
 
-        orderGroups[orderId].items.push({
-          order_id: orderId,
-          store_id: store.id,
-          product_name: csvName, 
-          variation: csvVariation, 
-          quantity: qty,
-          product_total: prodTotal,
-          unit_price: qty > 0 ? prodTotal / qty : 0,
-          final_sku: finalSku,
-          hpp_at_time: hppAtTime,
-          is_sku_mapped: isMapped
-        });
+        // CEK DUPLIKASI ITEM DALAM SATU PESANAN (Merge jika ada produk & variasi yang sama)
+        const existingItem = orderGroups[orderId].items.find(item => 
+          item.product_name === csvName && item.variation === csvVariation
+        );
+
+        if (existingItem) {
+          existingItem.quantity += qty;
+          existingItem.product_total += prodTotal;
+          existingItem.unit_price = existingItem.quantity > 0 ? existingItem.product_total / existingItem.quantity : 0;
+        } else {
+          orderGroups[orderId].items.push({
+            order_id: orderId,
+            store_id: store.id,
+            product_name: csvName, 
+            variation: csvVariation || '', // Pastikan tidak null untuk unique constraint
+            quantity: qty,
+            product_total: prodTotal,
+            unit_price: qty > 0 ? prodTotal / qty : 0,
+            final_sku: finalSku,
+            hpp_at_time: hppAtTime,
+            is_sku_mapped: isMapped
+          });
+        }
       });
 
       // 3. PROCESS INCOME DATA (Enrichment)
@@ -514,20 +525,12 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         
         if (orderError) throw orderError;
 
-        const orderIds = ordersToUpsert.map(o => o.order_id);
-        
-        for (let i = 0; i < orderIds.length; i += 500) {
-            const chunk = orderIds.slice(i, i + 500);
-            await supabase
-              .from('order_items')
-              .delete()
-              .eq('store_id', store.id) 
-              .in('order_id', chunk);
-        }
-        
+        // BATCH UPSERT UNTUK ORDER ITEMS (Mencegah Duplikasi & Data Hilang)
         for (let i = 0; i < itemsToUpsert.length; i += 500) {
             const chunk = itemsToUpsert.slice(i, i + 500);
-            const { error: itemError } = await supabase.from('order_items').insert(chunk);
+            const { error: itemError } = await supabase
+              .from('order_items')
+              .upsert(chunk, { onConflict: 'store_id, order_id, product_name, variation' });
             if (itemError) throw itemError;
         }
       }
