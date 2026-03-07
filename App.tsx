@@ -393,6 +393,7 @@ export default function App() {
                   activeTab === 'calculator' ? 'Kalkulator Harga' :
                   activeTab === 'import' ? 'Import Data' :
                   activeTab === 'products' ? 'Produk & HPP' :
+                  activeTab === 'keuangan' ? 'Keuangan' :
                   'Pengaturan'
                 )}
               </h1>

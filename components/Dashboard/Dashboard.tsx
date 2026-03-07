@@ -6,7 +6,7 @@ import autoTable from 'jspdf-autotable';
 import { supabase } from '../../services/supabase';
 import { Store, Order } from '../../types';
 import { KPICard } from './KPICard';
-import { RevenueChart } from './RevenueChart';
+import { PerformanceTrendChart } from './PerformanceTrendChart';
 import { ProductChart } from './ProductChart';
 import { OrdersTable } from './OrdersTable';
 import { DateRangePicker } from './DateRangePicker';
@@ -1048,35 +1048,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
         )}
 
-        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-2xl flex items-start gap-3 mt-6">
-          <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-          <div className="text-xs text-blue-800 dark:text-blue-300 font-medium leading-relaxed">
-            {filters.mode === 'order_date' ? (
-              <>
-                <p className="font-bold mb-1 uppercase tracking-tight">Metodologi Perhitungan (Basis Performa)</p>
-                <ul className="list-disc pl-4 space-y-1">
-                    <li><b>Total Omzet Pesanan:</b> Total nilai pesanan yang dibuat pelanggan dalam periode terpilih (termasuk yang belum cair).</li>
-                    <li><b>Biaya Iklan:</b> Total biaya top-up iklan yang dilakukan dalam periode terpilih.</li>
-                    <li><b>ROAS Aktual:</b> Perbandingan antara Omzet Pesanan dengan Biaya Iklan (Omzet / Iklan).</li>
-                    <li><b>AOV:</b> Rata-rata nilai per transaksi dari seluruh pesanan masuk.</li>
-                </ul>
-              </>
-            ) : (
-              <>
-                <p className="font-bold mb-1 uppercase tracking-tight">Metodologi Perhitungan (Basis Kas/Cair)</p>
-                <ul className="list-disc pl-4 space-y-1">
-                    <li><b>Dana Cair Bersih:</b> Uang tunai yang sudah dilepaskan Shopee ke saldo penjual (Settled).</li>
-                    <li><b>Total HPP (Modal):</b> Total modal pokok produk untuk pesanan yang dananya sudah cair.</li>
-                    <li><b>Profit Riil Akhir:</b> Laba bersih nyata setelah dikurangi modal barang dan biaya operasional.</li>
-                    <li><b>Selisih Ongkir:</b> Selisih antara ongkir yang dibayar pembeli dan ongkir aktual jasa kirim.</li>
-                </ul>
-              </>
-            )}
+        {filters.mode === 'order_date' && (
+          <div className="mt-6">
+            <PerformanceTrendChart 
+              orders={filteredOrders.filter(o => !o.status?.toLowerCase().includes('batal'))} 
+              startDate={filters.start}
+              endDate={filters.end}
+            />
           </div>
-        </div>
+        )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-          <RevenueChart orders={filteredOrders.filter(o => !o.status?.toLowerCase().includes('batal'))} />
+        <div className="mt-6">
           <ProductChart 
             storeId={store.id} 
             allStoreIds={store.id === 'all' ? allStores?.map(s => s.id) : undefined} 

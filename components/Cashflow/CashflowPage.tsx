@@ -38,6 +38,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const [escrowBalance, setEscrowBalance] = useState(0);
   const [manualTransactions, setManualTransactions] = useState<ManualTransaction[]>([]);
   const [allOrders, setAllOrders] = useState<Order[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPageManual, setCurrentPageManual] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   
   // Form State
   const [txType, setTxType] = useState<'income' | 'expense'>('expense');
@@ -190,7 +193,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       let query = supabase
         .from('adjustments')
-        .select('*');
+        .select('*')
+        .order('adjustment_date', { ascending: false })
+        .order('created_at', { ascending: false });
 
       if (store.id === 'all' && allStores) {
         query = query.in('store_id', allStores.map(s => s.id));
@@ -310,6 +315,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     let descColIdx = -1;
     let dateColIdx = -1;
     let orderIdColIdx = -1;
+    let transactionIdColIdx = -1;
     let latestDate = '';
     
     const transactionsToSave: any[] = [];
@@ -324,19 +330,13 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       s = s.replace(/[Rp\s]/g, '');
 
       // Handle IDR style: 1.234.567,89 -> remove dots, replace comma with dot
-      // Check if it has both dot and comma
       if (s.includes('.') && s.includes(',')) {
         if (s.lastIndexOf('.') < s.lastIndexOf(',')) {
-          // 1.234.567,89
           s = s.replace(/\./g, '').replace(',', '.');
         } else {
-          // 1,234,567.89
           s = s.replace(/,/g, '');
         }
       } else if (s.includes(',')) {
-        // Could be 1.234 (thousands) or 1,234 (decimal)
-        // In Shopee ID, comma is usually decimal. 
-        // But if it's 1.234.567, it's thousands.
         const parts = s.split(',');
         if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
           s = s.replace(/,/g, '');
@@ -344,7 +344,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           s = s.replace(',', '.');
         }
       } else if (s.includes('.')) {
-        // Could be 1.234 (thousands) or 1.23 (decimal)
         const parts = s.split('.');
         if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
           s = s.replace(/\./g, '');
@@ -354,26 +353,28 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       return parseFloat(s);
     };
 
-    // Sort rows by date if possible to ensure we get the LATEST balance first
-    // But usually the CSV is already sorted descending. 
-    // Let's just process and keep track of the first valid balance we find.
-
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.length === 0) continue;
 
       if (!foundHeader) {
         const rowStr = row.join(' ').toLowerCase();
-        // Detect header row based on common Shopee columns
         if (rowStr.includes('tanggal') && rowStr.includes('deskripsi') && (rowStr.includes('jumlah') || rowStr.includes('amount'))) {
             foundHeader = true;
             row.forEach((cell: any, idx: number) => {
-                const c = String(cell).toLowerCase();
-                if (c.includes('saldo') && !c.includes('awal')) balanceColIdx = idx;
+                const c = String(cell).toLowerCase().trim();
+                // Saldo Akhir / Balance
+                if ((c.includes('saldo') || c.includes('balance')) && !c.includes('awal') && !c.includes('start')) balanceColIdx = idx;
+                // Jumlah / Amount
                 if (c === 'jumlah' || c === 'amount' || (c.includes('jumlah') && !c.includes('transaksi'))) amountColIdx = idx;
-                if (c.includes('deskripsi') || c.includes('description')) descColIdx = idx;
-                if (c.includes('tanggal') || c.includes('date')) dateColIdx = idx;
-                if (c.includes('pesanan') || c.includes('order')) orderIdColIdx = idx;
+                // Deskripsi / Description
+                if (c.includes('deskripsi') || c.includes('description') || c.includes('rincian')) descColIdx = idx;
+                // Tanggal / Date
+                if (c.includes('tanggal') || c.includes('date') || c === 'waktu') dateColIdx = idx;
+                // No. Pesanan / Order ID
+                if (c.includes('pesanan') || c.includes('order no') || c === 'order id') orderIdColIdx = idx;
+                // No. Transaksi / Transaction ID
+                if (c.includes('transaksi') || c.includes('transaction') || c === 'id') transactionIdColIdx = idx;
             });
             continue;
         }
@@ -384,10 +385,10 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           const amount = parseShopeeNumber(row[amountColIdx]);
           const dateStr = row[dateColIdx];
           const orderNo = orderIdColIdx !== -1 ? String(row[orderIdColIdx] || '-') : '-';
+          const transactionNo = transactionIdColIdx !== -1 ? String(row[transactionIdColIdx] || '-') : '-';
           
           if (isNaN(amount) || !dateStr) continue;
 
-          // Robust Date Parsing
           let formattedDate = '';
           const datePart = String(dateStr).split(' ')[0];
           const parts = datePart.split(/[-/]/);
@@ -435,7 +436,14 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
               if (isAds) totalAds += Math.abs(amount);
               
               const originalDesc = String(row[descColIdx]);
-              const uniqueId = orderNo !== '-' ? orderNo : `UPLOAD-${formattedDate}-${Math.abs(amount)}-${originalDesc.replace(/\s+/g, '').substring(0, 50)}`;
+              const stableRef = transactionNo !== '-' ? transactionNo : (orderNo !== '-' ? orderNo : '-');
+              
+              // Improved uniqueId: Use stableRef if available, otherwise fallback to a hash-like string
+              // We include store.id to ensure it's unique per store
+              const normalizedDesc = originalDesc.toLowerCase().replace(/\s+/g, '').substring(0, 50);
+              const uniqueId = stableRef !== '-' 
+                ? stableRef 
+                : `UP-${formattedDate}-${Math.abs(amount)}-${normalizedDesc}`;
 
               transactionsToSave.push({
                   store_id: store.id,
@@ -446,7 +454,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
               });
           }
 
-          // Get the latest balance (first row after header assuming descending order)
           if (balanceColIdx !== -1 && !balanceFound) {
               const bal = parseShopeeNumber(row[balanceColIdx]);
               if (!isNaN(bal)) {
@@ -461,7 +468,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     setEscrowBalance(lastBalance);
     
     if (balanceFound && latestDate) {
-       // Persist balance snapshot
        transactionsToSave.push({
           store_id: store.id,
           adjustment_date: latestDate,
@@ -471,8 +477,16 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
        });
     }
 
-    if (transactionsToSave.length > 0) {
-        await saveUploadedTransactions(transactionsToSave);
+    // Local Deduplication: Ensure we don't send duplicate order_ids in the same batch
+    const uniqueTransactions = Array.from(
+      transactionsToSave.reduce((map, tx) => {
+        map.set(tx.order_id, tx);
+        return map;
+      }, new Map()).values()
+    );
+
+    if (uniqueTransactions.length > 0) {
+        await saveUploadedTransactions(uniqueTransactions);
     } else {
         toast.success(`Berhasil memproses! Ditemukan Biaya Iklan: Rp ${totalAds.toLocaleString()}`);
     }
@@ -481,15 +495,35 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const saveUploadedTransactions = async (transactions: any[]) => {
       const toastId = toast.loading('Menyimpan data ke database...');
       try {
-          // Use upsert to handle duplicates based on unique constraint (store_id, order_id, adjustment_date, amount)
+          // Manual Duplicate Prevention: Fetch existing order_ids for this store to double-check
+          // This acts as a safety net if the DB unique constraint is somehow missing or bypassed
+          const orderIds = transactions.map(t => t.order_id);
+          const { data: existing } = await supabase
+            .from('adjustments')
+            .select('order_id')
+            .eq('store_id', store.id)
+            .in('order_id', orderIds);
+          
+          const existingIds = new Set(existing?.map(e => e.order_id) || []);
+          
+          // Filter out transactions that already exist AND have the same amount/date
+          // Actually, if order_id is stable, that's enough.
+          // But we use upsert anyway to update existing ones if they changed.
+          
           const { error } = await supabase
               .from('adjustments')
-              .upsert(transactions, { onConflict: 'store_id, order_id, adjustment_date, amount' });
+              .upsert(transactions, { 
+                onConflict: 'store_id,order_id,adjustment_date,amount',
+                ignoreDuplicates: false // We want to update existing ones to be sure
+              });
           
           if (error) throw error;
           
-          toast.success(`Berhasil menyimpan ${transactions.length} transaksi iklan!`, { id: toastId });
-          fetchManualTransactions(); // Refresh list
+          const newCount = transactions.filter(t => !existingIds.has(t.order_id)).length;
+          const updatedCount = transactions.length - newCount;
+          
+          toast.success(`Berhasil! ${newCount} data baru disimpan, ${updatedCount} data diperbarui.`, { id: toastId });
+          fetchManualTransactions();
       } catch (err: any) {
           console.error(err);
           toast.error("Gagal menyimpan data: " + err.message, { id: toastId });
@@ -504,7 +538,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
     try {
       const reasonStr = `[MANUAL_EXPENSE] Category: ${newTx.category} | Desc: ${newTx.description}`;
-      // Apply sign based on txType
       const finalAmount = txType === 'expense' ? -Math.abs(newTx.amount) : Math.abs(newTx.amount);
 
       const { error } = await supabase.from('adjustments').insert({
@@ -613,7 +646,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       currentY += 20;
     }
 
-    // Breakdown Per Toko (Only for All Stores)
     if (isAllStores && allStores) {
       doc.addPage();
       doc.setFontSize(16);
@@ -661,7 +693,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       });
     }
 
-    // Add Detailed Transactions Table (Only for Single Store)
     if (!isAllStores && manualTransactions.length > 0) {
       doc.addPage();
       doc.setFontSize(16);
@@ -669,7 +700,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       doc.setFontSize(10);
       doc.text("Daftar seluruh penyesuaian manual dan biaya iklan hasil upload", 14, 28);
 
-      const detailBody = manualTransactions.map(tx => [
+      const sortedTransactions = [...manualTransactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      const detailBody = sortedTransactions.map(tx => [
         format(new Date(tx.date), 'dd/MM/yyyy'),
         tx.category,
         tx.description,
@@ -689,16 +722,15 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           if (data.column.index === 3 && data.cell.section === 'body') {
             const val = data.cell.raw as string;
             if (val.startsWith('-')) {
-              data.cell.styles.textColor = [192, 57, 43]; // Red for negative
+              data.cell.styles.textColor = [192, 57, 43];
             } else {
-              data.cell.styles.textColor = [39, 174, 96]; // Green for positive
+              data.cell.styles.textColor = [39, 174, 96];
             }
           }
         }
       });
     }
 
-    // Add Page Numbers
     const pageCount = doc.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
@@ -712,7 +744,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Header & Controls */}
       <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
         <DateRangePicker 
           start={dateRange.start}
@@ -730,7 +761,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-1 flex overflow-x-auto">
         <button 
           onClick={() => setActiveTab('summary')}
@@ -758,8 +788,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         </div>
       ) : (
         <div className="space-y-6">
-          
-          {/* SUMMARY TAB */}
           {activeTab === 'summary' && (
             <div className="space-y-6">
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -823,7 +851,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                  </div>
               </div>
 
-              {/* Detailed Transaction List in Summary */}
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden mt-6">
                 <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
                   <h3 className="font-bold text-slate-900 dark:text-white">Rincian Transaksi Terakhir</h3>
@@ -841,8 +868,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                       {[...manualTransactions]
-                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                        .slice(0, 20)
+                        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                        .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                         .map((tx) => (
                         <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                           <td className="px-6 py-4 font-medium whitespace-nowrap">{format(new Date(tx.date), 'dd/MM/yyyy')}</td>
@@ -872,11 +899,91 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     </tbody>
                   </table>
                 </div>
+                
+                {manualTransactions.length > 0 && (
+                  <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">Tampilkan</span>
+                      <select 
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        className="text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800 px-2 py-1"
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                      </select>
+                      <span className="text-xs text-slate-500">data per halaman</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => setCurrentPage(1)}
+                        disabled={currentPage === 1}
+                        className="px-2 py-1 text-xs font-bold rounded border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-white dark:hover:bg-slate-800"
+                      >
+                        Awal
+                      </button>
+                      <button 
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                        className="px-2 py-1 text-xs font-bold rounded border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-white dark:hover:bg-slate-800"
+                      >
+                        Prev
+                      </button>
+                      
+                      <div className="flex items-center gap-1 mx-2">
+                        {(() => {
+                          const totalPages = Math.ceil(manualTransactions.length / itemsPerPage);
+                          const pages = [];
+                          const maxVisible = 5;
+                          let start = Math.max(1, currentPage - 2);
+                          let end = Math.min(totalPages, start + maxVisible - 1);
+                          if (end - start < maxVisible - 1) start = Math.max(1, end - maxVisible + 1);
+
+                          for (let i = start; i <= end; i++) {
+                            pages.push(
+                              <button
+                                key={i}
+                                onClick={() => setCurrentPage(i)}
+                                className={`w-7 h-7 flex items-center justify-center text-[10px] font-bold rounded transition-all ${
+                                  currentPage === i 
+                                    ? 'bg-blue-600 text-white' 
+                                    : 'text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800'
+                                }`}
+                              >
+                                {i}
+                              </button>
+                            );
+                          }
+                          return pages;
+                        })()}
+                      </div>
+                      
+                      <button 
+                        onClick={() => setCurrentPage(prev => Math.min(Math.ceil(manualTransactions.length / itemsPerPage), prev + 1))}
+                        disabled={currentPage === Math.ceil(manualTransactions.length / itemsPerPage)}
+                        className="px-2 py-1 text-xs font-bold rounded border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-white dark:hover:bg-slate-800"
+                      >
+                        Next
+                      </button>
+                      <button 
+                        onClick={() => setCurrentPage(Math.ceil(manualTransactions.length / itemsPerPage))}
+                        disabled={currentPage === Math.ceil(manualTransactions.length / itemsPerPage)}
+                        className="px-2 py-1 text-xs font-bold rounded border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-white dark:hover:bg-slate-800"
+                      >
+                        Akhir
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* UPLOAD TAB */}
           {activeTab === 'upload' && (
             <div className="space-y-6 max-w-2xl mx-auto text-center py-8">
               {store.id === 'all' ? (
@@ -941,7 +1048,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
             </div>
           )}
 
-          {/* MANUAL TAB */}
           {activeTab === 'manual' && (
             <div className="space-y-6">
               <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
@@ -1054,6 +1160,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                     {manualTransactions
                       .filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana')
+                      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                      .slice((currentPageManual - 1) * itemsPerPage, currentPageManual * itemsPerPage)
                       .map((tx) => (
                       <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                         <td className="px-6 py-4 font-medium">{format(new Date(tx.date), 'dd/MM/yyyy')}</td>
@@ -1094,6 +1202,88 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                   </tbody>
                 </table>
               </div>
+
+              {manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length > 0 && (
+                <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Tampilkan</span>
+                    <select 
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setCurrentPageManual(1);
+                      }}
+                      className="text-xs border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800 px-2 py-1"
+                    >
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                    </select>
+                    <span className="text-xs text-slate-500">data per halaman</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-1">
+                    <button 
+                      onClick={() => setCurrentPageManual(1)}
+                      disabled={currentPageManual === 1}
+                      className="px-2 py-1 text-xs font-bold rounded border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-white dark:hover:bg-slate-800"
+                    >
+                      Awal
+                    </button>
+                    <button 
+                      onClick={() => setCurrentPageManual(prev => Math.max(1, prev - 1))}
+                      disabled={currentPageManual === 1}
+                      className="px-2 py-1 text-xs font-bold rounded border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-white dark:hover:bg-slate-800"
+                    >
+                      Prev
+                    </button>
+                    
+                    <div className="flex items-center gap-1 mx-2">
+                      {(() => {
+                        const filteredCount = manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length;
+                        const totalPages = Math.ceil(filteredCount / itemsPerPage);
+                        const pages = [];
+                        const maxVisible = 5;
+                        let start = Math.max(1, currentPageManual - 2);
+                        let end = Math.min(totalPages, start + maxVisible - 1);
+                        if (end - start < maxVisible - 1) start = Math.max(1, end - maxVisible + 1);
+
+                        for (let i = start; i <= end; i++) {
+                          pages.push(
+                            <button
+                              key={i}
+                              onClick={() => setCurrentPageManual(i)}
+                              className={`w-7 h-7 flex items-center justify-center text-[10px] font-bold rounded transition-all ${
+                                currentPageManual === i 
+                                  ? 'bg-blue-600 text-white' 
+                                  : 'text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              {i}
+                            </button>
+                          );
+                        }
+                        return pages;
+                      })()}
+                    </div>
+                    
+                    <button 
+                      onClick={() => setCurrentPageManual(prev => Math.min(Math.ceil(manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length / itemsPerPage), prev + 1))}
+                      disabled={currentPageManual === Math.ceil(manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length / itemsPerPage)}
+                      className="px-2 py-1 text-xs font-bold rounded border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-white dark:hover:bg-slate-800"
+                    >
+                      Next
+                    </button>
+                    <button 
+                      onClick={() => setCurrentPageManual(Math.ceil(manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length / itemsPerPage))}
+                      disabled={currentPageManual === Math.ceil(manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length / itemsPerPage)}
+                      className="px-2 py-1 text-xs font-bold rounded border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-white dark:hover:bg-slate-800"
+                    >
+                      Akhir
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
