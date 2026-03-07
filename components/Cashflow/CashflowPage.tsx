@@ -234,6 +234,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
            if (type === 'Income') category = 'Penghasilan dari Pesanan';
            else if (type === 'Ads') category = 'Iklan Shopee';
            else if (type === 'Withdrawal') category = 'Penarikan Dana';
+           else if (type === 'Adjustment') category = 'Penyesuaian Saldo';
            else category = 'Transaksi Shopee Otomatis';
 
            description = descMatch ? descMatch[1].trim() : reason.replace('[AUTO_UPLOAD]', '').trim();
@@ -425,21 +426,22 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                         desc.includes('biaya');
           
           const isWithdrawal = desc.includes('penarikan') || desc.includes('withdrawal');
-          const isIncome = desc.includes('penghasilan') || desc.includes('income') || desc.includes('order');
+          const isIncome = desc.includes('penghasilan') || desc.includes('income') || desc.includes('pesanan') || desc.includes('order');
+          const isAdjustment = desc.includes('penyesuaian') || desc.includes('adjustment') || desc.includes('kompensasi') || desc.includes('reimbursement');
 
           let type = 'Other';
           if (isAds) type = 'Ads';
           else if (isWithdrawal) type = 'Withdrawal';
           else if (isIncome) type = 'Income';
+          else if (isAdjustment) type = 'Adjustment';
 
-          if (isAds || isWithdrawal || isIncome) {
+          if (amount !== 0) {
               if (isAds) totalAds += Math.abs(amount);
               
               const originalDesc = String(row[descColIdx]);
               const stableRef = transactionNo !== '-' ? transactionNo : (orderNo !== '-' ? orderNo : '-');
               
               // Improved uniqueId: Use stableRef if available, otherwise fallback to a hash-like string
-              // We include store.id to ensure it's unique per store
               const normalizedDesc = originalDesc.toLowerCase().replace(/\s+/g, '').substring(0, 50);
               const uniqueId = stableRef !== '-' 
                 ? stableRef 
