@@ -41,6 +41,7 @@ export default function AdsCenter({ store }: AdsCenterProps) {
         .from('ads_performance')
         .select('*')
         .eq('store_id', store.id)
+        .order('report_date', { ascending: false, nullsFirst: false })
         .order('periode', { ascending: false });
 
       if (error) {
@@ -232,6 +233,20 @@ export default function AdsCenter({ store }: AdsCenterProps) {
               }
             }
           });
+
+          // Fallback: Try to extract reportDate from periode if not found in columns
+          if (!reportDate && periode) {
+            const dateMatch = periode.match(/(\d{4})[.-](\d{2})[.-](\d{2})/);
+            if (dateMatch) {
+              reportDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+            } else {
+              // Try DD/MM/YYYY or DD.MM.YYYY
+              const reverseDateMatch = periode.match(/(\d{2})[./-](\d{2})[./-](\d{4})/);
+              if (reverseDateMatch) {
+                reportDate = `${reverseDateMatch[3]}-${reverseDateMatch[2]}-${reverseDateMatch[1]}`;
+              }
+            }
+          }
 
           // Upsert to database
           const { error } = await supabase

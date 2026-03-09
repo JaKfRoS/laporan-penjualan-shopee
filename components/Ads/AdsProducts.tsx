@@ -128,9 +128,15 @@ export default function AdsProducts({ store }: AdsProductsProps) {
     const productPerfs = allPerformances
       .filter(p => p.ads_product_id === productId)
       .sort((a, b) => {
-         const dateA = a.report_date ? new Date(a.report_date).getTime() : new Date(a.created_at).getTime();
-         const dateB = b.report_date ? new Date(b.report_date).getTime() : new Date(b.created_at).getTime();
-         return dateB - dateA;
+         const parseDate = (item: any) => {
+           if (item.report_date) return new Date(item.report_date).getTime();
+           const dateMatch = item.periode?.match(/(\d{4})[.-](\d{2})[.-](\d{2})/);
+           if (dateMatch) return new Date(`${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`).getTime();
+           const reverseDateMatch = item.periode?.match(/(\d{2})[./-](\d{2})[./-](\d{4})/);
+           if (reverseDateMatch) return new Date(`${reverseDateMatch[3]}-${reverseDateMatch[2]}-${reverseDateMatch[1]}`).getTime();
+           return new Date(item.created_at).getTime();
+         };
+         return parseDate(b) - parseDate(a);
       })
       .slice(0, 4); // Ambil 4 laporan terakhir (asumsi mingguan = 28-30 hari)
 
@@ -152,9 +158,15 @@ export default function AdsProducts({ store }: AdsProductsProps) {
     return allPerformances
       .filter(p => p.ads_product_id === selectedProduct.id)
       .sort((a, b) => {
-         const dateA = a.report_date ? new Date(a.report_date).getTime() : new Date(a.created_at).getTime();
-         const dateB = b.report_date ? new Date(b.report_date).getTime() : new Date(b.created_at).getTime();
-         return dateB - dateA;
+         const parseDate = (item: any) => {
+           if (item.report_date) return new Date(item.report_date).getTime();
+           const dateMatch = item.periode?.match(/(\d{4})[.-](\d{2})[.-](\d{2})/);
+           if (dateMatch) return new Date(`${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`).getTime();
+           const reverseDateMatch = item.periode?.match(/(\d{2})[./-](\d{2})[./-](\d{4})/);
+           if (reverseDateMatch) return new Date(`${reverseDateMatch[3]}-${reverseDateMatch[2]}-${reverseDateMatch[1]}`).getTime();
+           return new Date(item.created_at).getTime();
+         };
+         return parseDate(b) - parseDate(a);
       });
   }, [selectedProduct, allPerformances]);
 
