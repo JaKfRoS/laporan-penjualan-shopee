@@ -23,6 +23,8 @@ interface ManualTransaction {
   amount: number;
   description: string;
   affectOmzet: boolean;
+  isManual?: boolean;
+  fullReason?: string;
 }
 
 export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) => {
@@ -197,6 +199,48 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         .order('adjustment_date', { ascending: false })
         .order('created_at', { ascending: false });
 
+      // Fetch latest balance snapshot separately (without date filter)
+      let latestBalData = null;
+      if (store.id !== 'all') {
+        const { data } = await supabase
+          .from('adjustments')
+          .select('amount, adjustment_date, reason')
+          .eq('store_id', store.id)
+          .ilike('reason', '%[BALANCE_SNAPSHOT]%')
+          .order('adjustment_date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(1);
+        latestBalData = data;
+      }
+
+      if (latestBalData && latestBalData.length > 0) {
+        const balMatch = latestBalData[0].reason.match(/Balance: ([\d.-]+)/);
+        if (balMatch) {
+          setEscrowBalance(parseFloat(balMatch[1]));
+        }
+      } else if (store.id === 'all' && allStores) {
+        // For 'all stores', we might want to sum the latest balance of each store
+        let totalEscrow = 0;
+        for (const s of allStores) {
+          const { data: sBalData } = await supabase
+            .from('adjustments')
+            .select('reason')
+            .eq('store_id', s.id)
+            .ilike('reason', '%[BALANCE_SNAPSHOT]%')
+            .order('adjustment_date', { ascending: false })
+            .order('created_at', { ascending: false })
+            .limit(1);
+          
+          if (sBalData && sBalData.length > 0) {
+            const m = sBalData[0].reason.match(/Balance: ([\d.-]+)/);
+            if (m) totalEscrow += parseFloat(m[1]);
+          }
+        }
+        setEscrowBalance(totalEscrow);
+      } else {
+        setEscrowBalance(0);
+      }
+
       if (store.id === 'all' && allStores) {
         query = query.in('store_id', allStores.map(s => s.id));
       } else {
@@ -221,23 +265,27 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         const categoryMatch = reason.match(/Category: ([^|]+)/);
         const descMatch = reason.match(/Desc: (.*)/);
         
+        let type = 'Other';
+        let isManual = false;
         let category = 'General';
         let description = reason;
 
         if (reason.includes('[MANUAL_EXPENSE]')) {
+           isManual = true;
            category = categoryMatch ? categoryMatch[1].trim() : 'General';
            description = descMatch ? descMatch[1].trim() : reason.replace('[MANUAL_EXPENSE]', '').trim();
         } else if (reason.includes('[AUTO_UPLOAD]')) {
            const typeMatch = reason.match(/Type: ([^|]+)/);
-           const type = typeMatch ? typeMatch[1].trim() : '';
+           const typeVal = typeMatch ? typeMatch[1].trim() : '';
            
-           if (type === 'Income') category = 'Penghasilan dari Pesanan';
-           else if (type === 'Ads') category = 'Iklan Shopee';
-           else if (type === 'Withdrawal') category = 'Penarikan Dana';
-           else if (type === 'Adjustment') category = 'Penyesuaian Saldo';
+           if (typeVal === 'Income') category = 'Penghasilan dari Pesanan';
+           else if (typeVal === 'Ads') category = 'Isi Ulang Saldo Iklan/Koin Penjual';
+           else if (typeVal === 'Withdrawal') category = 'Penarikan Dana';
+           else if (typeVal === 'Adjustment') category = 'Penyesuaian Saldo';
            else category = 'Transaksi Shopee Otomatis';
 
-           description = descMatch ? descMatch[1].trim() : reason.replace('[AUTO_UPLOAD]', '').trim();
+           const fullDesc = descMatch ? descMatch[1].trim() : reason.replace('[AUTO_UPLOAD]', '').trim();
+           description = fullDesc.split('|')[0].trim();
         } else if (reason.includes('[BALANCE_SNAPSHOT]')) {
            const balMatch = reason.match(/Balance: ([\d.-]+)/);
            if (balMatch) {
@@ -265,25 +313,24 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           amount: item.amount, // Keep original sign
           category,
           description,
-          affectOmzet: false
+          affectOmzet: false,
+          isManual,
+          fullReason: reason
         };
       }).filter(Boolean) as ManualTransaction[];
 
       // Update summary metrics based on fetched data
       const ads = parsed
-        .filter(tx => tx.category === 'Iklan Shopee')
+        .filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual' && !tx.isManual)
         .reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
       
       const withdrawals = parsed
-        .filter(tx => tx.category === 'Penarikan Dana')
+        .filter(tx => tx.category === 'Penarikan Dana' && !tx.isManual)
         .reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
       
       setAdsTotal(ads);
       setWithdrawalsTotal(withdrawals);
       setManualTransactions(parsed);
-      if (latestBalanceDate) {
-         setEscrowBalance(latestBalance);
-      }
     } catch (err) {
       console.error("Error fetching transactions:", err);
     }
@@ -317,7 +364,16 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     let dateColIdx = -1;
     let orderIdColIdx = -1;
     let transactionIdColIdx = -1;
+    let statusColIdx = -1;
+    let typeColIdx = -1;
     let latestDate = '';
+    let latestBalanceDateForSnap = '';
+    let latestBalanceForSnap = 0;
+    let balanceFoundInFile = false;
+    
+    let summaryTotalMasuk = 0;
+    let summaryTotalKeluar = 0;
+    let summaryFound = false;
     
     const transactionsToSave: any[] = [];
 
@@ -360,6 +416,34 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       if (!foundHeader) {
         const rowStr = row.join(' ').toLowerCase();
+        
+        if (rowStr.includes('total saldo masuk')) {
+            for (let j = 1; j < row.length; j++) {
+                const cellStr = String(row[j]).trim();
+                if (cellStr && cellStr.match(/\d/)) {
+                    const num = parseShopeeNumber(cellStr);
+                    if (!isNaN(num)) {
+                        summaryTotalMasuk = num;
+                        summaryFound = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (rowStr.includes('total saldo keluar')) {
+            for (let j = 1; j < row.length; j++) {
+                const cellStr = String(row[j]).trim();
+                if (cellStr && cellStr.match(/\d/)) {
+                    const num = parseShopeeNumber(cellStr);
+                    if (!isNaN(num)) {
+                        summaryTotalKeluar = num;
+                        summaryFound = true;
+                        break;
+                    }
+                }
+            }
+        }
+
         if (rowStr.includes('tanggal') && rowStr.includes('deskripsi') && (rowStr.includes('jumlah') || rowStr.includes('amount'))) {
             foundHeader = true;
             row.forEach((cell: any, idx: number) => {
@@ -376,6 +460,10 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                 if (c.includes('pesanan') || c.includes('order no') || c === 'order id') orderIdColIdx = idx;
                 // No. Transaksi / Transaction ID
                 if (c.includes('transaksi') || c.includes('transaction') || c === 'id') transactionIdColIdx = idx;
+                // Status
+                if (c === 'status') statusColIdx = idx;
+                // Jenis Transaksi / Transaction Type
+                if (c.includes('jenis transaksi') || c.includes('transaction type')) typeColIdx = idx;
             });
             continue;
         }
@@ -387,6 +475,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           const dateStr = row[dateColIdx];
           const orderNo = orderIdColIdx !== -1 ? String(row[orderIdColIdx] || '-') : '-';
           const transactionNo = transactionIdColIdx !== -1 ? String(row[transactionIdColIdx] || '-') : '-';
+          const status = statusColIdx !== -1 ? String(row[statusColIdx] || '-') : '-';
+          const transType = typeColIdx !== -1 ? String(row[typeColIdx] || '-') : '-';
           
           if (isNaN(amount) || !dateStr) continue;
 
@@ -418,12 +508,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
              latestDate = formattedDate;
           }
 
-          const isAds = desc.includes('iklan') || 
-                        desc.includes('ads') || 
-                        desc.includes('top up') || 
-                        desc.includes('isi ulang') ||
-                        desc.includes('spend') ||
-                        desc.includes('biaya');
+          const isAds = (desc.includes('iklan') || desc.includes('ads') || desc.includes('koin penjual')) && 
+                        !desc.includes('admin') && !desc.includes('layanan');
           
           const isWithdrawal = desc.includes('penarikan') || desc.includes('withdrawal');
           const isIncome = desc.includes('penghasilan') || desc.includes('income') || desc.includes('pesanan') || desc.includes('order');
@@ -441,41 +527,48 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
               const originalDesc = String(row[descColIdx]);
               const stableRef = transactionNo !== '-' ? transactionNo : (orderNo !== '-' ? orderNo : '-');
               
-              // Improved uniqueId: Use stableRef if available, otherwise fallback to a hash-like string
-              const normalizedDesc = originalDesc.toLowerCase().replace(/\s+/g, '').substring(0, 50);
+              // Improved uniqueId: Combine store, date, type, amount, and reference to ensure uniqueness 
+              // even if multiple rows have the same No. Pesanan (e.g., income vs shipping fee)
+              const normalizedDesc = originalDesc.toLowerCase().replace(/\s+/g, '').substring(0, 30);
               const uniqueId = stableRef !== '-' 
-                ? stableRef 
-                : `UP-${formattedDate}-${Math.abs(amount)}-${normalizedDesc}`;
+                ? `TRX-${store.id}-${formattedDate}-${type}-${Math.abs(amount)}-${stableRef}`
+                : `TRX-${store.id}-${formattedDate}-${type}-${Math.abs(amount)}-${normalizedDesc}-${i}`;
 
               transactionsToSave.push({
                   store_id: store.id,
                   adjustment_date: formattedDate,
                   amount: amount,
-                  reason: `[AUTO_UPLOAD] Type: ${type} | Desc: ${originalDesc}`,
+                  reason: `[AUTO_UPLOAD] Type: ${type} | Desc: ${originalDesc} | Status: ${status} | TransType: ${transType} | Order: ${orderNo} | Trans: ${transactionNo}`,
                   order_id: uniqueId
               });
           }
 
-          if (balanceColIdx !== -1 && !balanceFound) {
+          if (balanceColIdx !== -1) {
               const bal = parseShopeeNumber(row[balanceColIdx]);
               if (!isNaN(bal)) {
-                 lastBalance = bal;
-                 balanceFound = true;
+                  if (!latestBalanceDateForSnap || formattedDate >= latestBalanceDateForSnap) {
+                      latestBalanceDateForSnap = formattedDate;
+                      latestBalanceForSnap = bal;
+                      balanceFoundInFile = true;
+                  }
               }
           }
       }
     }
 
-    setAdsTotal(totalAds);
-    setEscrowBalance(lastBalance);
-    
-    if (balanceFound && latestDate) {
+    if (summaryFound && latestDate) {
+        latestBalanceForSnap = summaryTotalMasuk + summaryTotalKeluar;
+        latestBalanceDateForSnap = latestDate;
+        balanceFoundInFile = true;
+    }
+
+    if (balanceFoundInFile && latestBalanceDateForSnap) {
        transactionsToSave.push({
           store_id: store.id,
-          adjustment_date: latestDate,
+          adjustment_date: latestBalanceDateForSnap,
           amount: 0,
-          reason: `[BALANCE_SNAPSHOT] Balance: ${lastBalance}`,
-          order_id: `BAL-SNAP-${latestDate}`
+          reason: `[BALANCE_SNAPSHOT] Balance: ${latestBalanceForSnap}`,
+          order_id: `BAL-SNAP-${latestBalanceDateForSnap}-${Date.now()}`
        });
     }
 
@@ -508,20 +601,18 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           
           const existingIds = new Set(existing?.map(e => e.order_id) || []);
           
-          // Filter out transactions that already exist AND have the same amount/date
-          // Actually, if order_id is stable, that's enough.
-          // But we use upsert anyway to update existing ones if they changed.
+          // Filter out transactions that already exist
+          const newTransactions = transactions.filter(t => !existingIds.has(t.order_id));
           
-          const { error } = await supabase
-              .from('adjustments')
-              .upsert(transactions, { 
-                onConflict: 'store_id,order_id,adjustment_date,amount',
-                ignoreDuplicates: false // We want to update existing ones to be sure
-              });
+          if (newTransactions.length > 0) {
+              const { error } = await supabase
+                  .from('adjustments')
+                  .insert(newTransactions);
+              
+              if (error) throw error;
+          }
           
-          if (error) throw error;
-          
-          const newCount = transactions.filter(t => !existingIds.has(t.order_id)).length;
+          const newCount = newTransactions.length;
           const updatedCount = transactions.length - newCount;
           
           toast.success(`Berhasil! ${newCount} data baru disimpan, ${updatedCount} data diperbarui.`, { id: toastId });
@@ -596,7 +687,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   };
 
   const totalManualExpenses = manualTransactions
-    .filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana')
+    .filter(tx => tx.isManual)
     .reduce((acc, tx) => acc + tx.amount, 0);
   
   const labaBersihRiil = netRevenueSelesai - adsTotal + totalManualExpenses - totalHPPSelesai;
@@ -664,8 +755,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         }, 0);
         
         const storeTxs = manualTransactions.filter(tx => tx.storeId === s.id);
-        const storeAds = storeTxs.filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual').reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
-        const storeManual = storeTxs.filter(tx => tx.category !== 'Isi Ulang Saldo Iklan/Koin Penjual').reduce((acc, tx) => acc + tx.amount, 0);
+        const storeAds = storeTxs.filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual' && !tx.isManual).reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
+        const storeManual = storeTxs.filter(tx => tx.isManual).reduce((acc, tx) => acc + tx.amount, 0);
         
         const storeProfit = storeRevenue - storeAds + storeManual - storeHpp;
 
@@ -878,14 +969,35 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                           <td className="px-6 py-4">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                               tx.category === 'Penghasilan dari Pesanan' ? 'bg-green-100 text-green-700' :
-                              tx.category === 'Iklan Shopee' ? 'bg-red-100 text-red-700' :
+                              tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual' ? 'bg-red-100 text-red-700' :
                               tx.category === 'Penarikan Dana' ? 'bg-blue-100 text-blue-700' :
                               'bg-slate-100 text-slate-700'
                             }`}>
                               {tx.category}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-slate-600 dark:text-slate-400 max-w-xs truncate">{tx.description}</td>
+                           <td className="px-6 py-4 text-slate-600 dark:text-slate-400 max-w-xs">
+                             <div className="truncate font-medium" title={tx.description}>{tx.description}</div>
+                             {tx.fullReason?.includes('[AUTO_UPLOAD]') && (
+                               <div className="text-[10px] text-slate-400 mt-1 flex flex-wrap gap-1">
+                                 {(() => {
+                                   const reason = tx.fullReason || '';
+                                   const orderMatch = reason.match(/Order: ([^|]+)/);
+                                   const transMatch = reason.match(/Trans: ([^|]+)/);
+                                   const statusMatch = reason.match(/Status: ([^|]+)/);
+                                   const typeMatch = reason.match(/TransType: ([^|]+)/);
+                                   return (
+                                     <>
+                                       {orderMatch && orderMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Ord: {orderMatch[1]}</span>}
+                                       {transMatch && transMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Trx: {transMatch[1]}</span>}
+                                       {statusMatch && statusMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Stat: {statusMatch[1]}</span>}
+                                       {typeMatch && typeMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Tipe: {typeMatch[1]}</span>}
+                                     </>
+                                   );
+                                 })()}
+                               </div>
+                             )}
+                           </td>
                           <td className={`px-6 py-4 text-right font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
                             {tx.amount < 0 ? '-' : '+'}Rp {Math.abs(tx.amount).toLocaleString()}
                           </td>
@@ -1161,7 +1273,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                     {manualTransactions
-                      .filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana')
+                      .filter(tx => tx.isManual)
                       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
                       .slice((currentPageManual - 1) * itemsPerPage, currentPageManual * itemsPerPage)
                       .map((tx) => (
@@ -1191,7 +1303,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                         </td>
                       </tr>
                     ))}
-                    {manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length === 0 && (
+                    {manualTransactions.filter(tx => tx.isManual).length === 0 && (
                       <tr>
                         <td colSpan={store.id === 'all' ? 6 : 5} className="px-6 py-12 text-center text-slate-400 italic">
                           <div className="flex flex-col items-center gap-2">
@@ -1205,7 +1317,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                 </table>
               </div>
 
-              {manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length > 0 && (
+              {manualTransactions.filter(tx => tx.isManual).length > 0 && (
                 <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-500">Tampilkan</span>
@@ -1242,7 +1354,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     
                     <div className="flex items-center gap-1 mx-2">
                       {(() => {
-                        const filteredCount = manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length;
+                        const filteredCount = manualTransactions.filter(tx => tx.isManual).length;
                         const totalPages = Math.ceil(filteredCount / itemsPerPage);
                         const pages = [];
                         const maxVisible = 5;
@@ -1270,15 +1382,15 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     </div>
                     
                     <button 
-                      onClick={() => setCurrentPageManual(prev => Math.min(Math.ceil(manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length / itemsPerPage), prev + 1))}
-                      disabled={currentPageManual === Math.ceil(manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length / itemsPerPage)}
+                      onClick={() => setCurrentPageManual(prev => Math.min(Math.ceil(manualTransactions.filter(tx => tx.isManual).length / itemsPerPage), prev + 1))}
+                      disabled={currentPageManual === Math.ceil(manualTransactions.filter(tx => tx.isManual).length / itemsPerPage)}
                       className="px-2 py-1 text-xs font-bold rounded border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-white dark:hover:bg-slate-800"
                     >
                       Next
                     </button>
                     <button 
-                      onClick={() => setCurrentPageManual(Math.ceil(manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length / itemsPerPage))}
-                      disabled={currentPageManual === Math.ceil(manualTransactions.filter(tx => tx.category !== 'Penghasilan dari Pesanan' && tx.category !== 'Iklan Shopee' && tx.category !== 'Penarikan Dana').length / itemsPerPage)}
+                      onClick={() => setCurrentPageManual(Math.ceil(manualTransactions.filter(tx => tx.isManual).length / itemsPerPage))}
+                      disabled={currentPageManual === Math.ceil(manualTransactions.filter(tx => tx.isManual).length / itemsPerPage)}
                       className="px-2 py-1 text-xs font-bold rounded border border-slate-200 dark:border-slate-700 disabled:opacity-30 hover:bg-white dark:hover:bg-slate-800"
                     >
                       Akhir

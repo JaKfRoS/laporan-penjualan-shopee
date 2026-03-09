@@ -238,7 +238,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const isAds = reason.includes('type: ads') || 
                     reason.includes('category: isi ulang saldo iklan') ||
                     (reason.includes('iklan') && !reason.includes('penghasilan')) || 
-                    reason.includes('shopee ads');
+                    reason.includes('shopee ads') ||
+                    reason.includes('koin penjual');
 
       if (isAds) {
         biayaIklan += amount;

@@ -564,7 +564,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
               const adjDate = dateRaw ? getSafeDate(dateRaw) : new Date().toISOString();
               const amount = parseNumberIndonesia(row['Biaya Penyesuaian'] || '0');
               const reason = row['Alasan Penyesuaian'] || row['Tipe Penyesuaian | Deskripsi'] || '';
-              const orderId = row['No. Pesanan Terhubung'] || `ADJ-${adjDate}-${amount}-${reason.replace(/\s+/g, '').substring(0, 30)}`;
+              const orderId = `ADJ-${store.id}-${adjDate}-${amount}-${reason.replace(/\s+/g, '').substring(0, 30)}-${row['No. Pesanan Terhubung'] || '-'}`;
               
               return {
                   store_id: store.id,
@@ -576,13 +576,25 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
           }).filter(a => a.amount !== 0);
 
           if (adjustmentsToInsert.length > 0) {
-              // We use upsert with unique constraint on store_id, order_id, adjustment_date, amount
-              const { error: adjError } = await supabase
-                  .from('adjustments')
-                  .upsert(adjustmentsToInsert, { onConflict: 'store_id, order_id, adjustment_date, amount' });
-              if (adjError) {
-                  console.error("Adjustment Error:", adjError);
-                  // Non-fatal, just log
+              // Manual Duplicate Prevention
+              const orderIds = adjustmentsToInsert.map(a => a.order_id);
+              const { data: existing } = await supabase
+                .from('adjustments')
+                .select('order_id')
+                .eq('store_id', store.id)
+                .in('order_id', orderIds);
+              
+              const existingIds = new Set(existing?.map(e => e.order_id) || []);
+              const newAdjustments = adjustmentsToInsert.filter(a => !existingIds.has(a.order_id));
+
+              if (newAdjustments.length > 0) {
+                  const { error: adjError } = await supabase
+                      .from('adjustments')
+                      .insert(newAdjustments);
+                  if (adjError) {
+                      console.error("Adjustment Error:", adjError);
+                      // Non-fatal, just log
+                  }
               }
           }
       }
