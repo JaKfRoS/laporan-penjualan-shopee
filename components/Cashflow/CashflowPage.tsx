@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabase';
 import { Store, Order } from '../../types';
 import { DateRangePicker } from '../Dashboard/DateRangePicker';
-import { Loader2, FileText, Wallet, Upload, Plus, Trash2, Save, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Loader2, FileText, Wallet, Upload, Plus, Trash2, Save, CheckCircle2, AlertCircle, ArrowDownUp } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -43,6 +43,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const [currentPage, setCurrentPage] = useState(1);
   const [currentPageManual, setCurrentPageManual] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   
   // Form State
   const [txType, setTxType] = useState<'income' | 'expense'>('expense');
@@ -703,17 +704,17 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     doc.text(`Tanggal Cetak: ${new Date().toLocaleString('id-ID')}`, 14, 34);
 
     const tableBody = [
-      ['1. Total Dana Masuk (Penghasilan Pesanan)', `Rp ${netRevenueSelesai.toLocaleString()}`, 'Dari Laporan Income Shopee'],
-      ['2. Total Potongan Saldo (Iklan/Koin)', `(Rp ${adsTotal.toLocaleString()})`, 'Dari Laporan Saldo (Topup Iklan)'],
-      ['3. Total Penarikan Dana (Withdrawal)', `(Rp ${withdrawalsTotal.toLocaleString()})`, 'Dana yang sudah masuk rekening'],
-      ['4. Total Penyesuaian Manual', `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`, 'Input Manual (Biaya/Pemasukan)'],
-      ['5. Total HPP (Modal Produk)', `(Rp ${totalHPPSelesai.toLocaleString()})`, 'Dari Master Produk'],
-      ['LABA BERSIH RIIL', `Rp ${labaBersihRiil.toLocaleString()}`, 'Net Profit Final'],
+      ['1. Total Dana Masuk (Penghasilan Pesanan)', `Rp ${netRevenueSelesai.toLocaleString()}`],
+      ['2. Total Potongan Saldo (Iklan/Koin)', `(Rp ${adsTotal.toLocaleString()})`],
+      ['3. Total Penarikan Dana (Withdrawal)', `(Rp ${withdrawalsTotal.toLocaleString()})`],
+      ['4. Total Penyesuaian Manual', `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`],
+      ['5. Total HPP (Modal Produk)', `(Rp ${totalHPPSelesai.toLocaleString()})`],
+      ['LABA BERSIH RIIL', `Rp ${labaBersihRiil.toLocaleString()}`],
     ];
 
     autoTable(doc, {
       startY: 45,
-      head: [['Komponen', 'Nilai', 'Keterangan']],
+      head: [['Komponen', 'Nilai']],
       body: tableBody,
       theme: 'grid',
       headStyles: { fillColor: [41, 128, 185] },
@@ -946,8 +947,17 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden mt-6">
                 <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
-                  <h3 className="font-bold text-slate-900 dark:text-white">Rincian Transaksi Terakhir</h3>
-                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Kronologis</span>
+                  <div className="flex items-center gap-3">
+                    <h3 className="font-bold text-slate-900 dark:text-white">Rincian Transaksi Terakhir</h3>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">Kronologis</span>
+                  </div>
+                  <button 
+                    onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700"
+                  >
+                    <ArrowDownUp size={14} />
+                    {sortOrder === 'asc' ? 'Terlama - Terbaru' : 'Terbaru - Terlama'}
+                  </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left">
@@ -961,7 +971,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                       {[...manualTransactions]
-                        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                        .sort((a, b) => {
+                          const timeA = new Date(a.date).getTime();
+                          const timeB = new Date(b.date).getTime();
+                          return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+                        })
                         .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                         .map((tx) => (
                         <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
