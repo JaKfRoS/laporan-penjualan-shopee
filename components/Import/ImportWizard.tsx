@@ -408,7 +408,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          const shippingRebate = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_rebate']]));
          const transactionFee = Math.abs(parseNumberIndonesia(row['Biaya Transaksi'] || '0'));
          
-         const totalMarketplaceFee = (adminFee + amsFee + serviceFee + procFee + premFee + shippingForwarded + returnShippingFee + sellerVoucher + refundAmount + transactionFee) - shippingRebate;
+         const totalMarketplaceFee = (adminFee + amsFee + serviceFee + procFee + premFee + shippingForwarded + returnShippingFee + sellerVoucher + refundAmount) - shippingRebate;
          
          const feeDetails = {
             admin_fee: adminFee,
@@ -420,8 +420,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
             return_shipping_fee: returnShippingFee,
             premium_fee: premFee,
             seller_voucher: sellerVoucher,
-            processing_fee: procFee,
-            transaction_fee: transactionFee
+            processing_fee: procFee
          };
 
          // Parse Release Date if available
@@ -448,7 +447,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
                  currentOrder.fee_details.premium_fee += premFee;
                  currentOrder.fee_details.seller_voucher += sellerVoucher;
                  currentOrder.fee_details.processing_fee += procFee;
-                 currentOrder.fee_details.transaction_fee = (currentOrder.fee_details.transaction_fee || 0) + transactionFee;
              }
 
              currentOrder.admin_fee = 0;
@@ -481,7 +479,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
                  payload.fee_details.premium_fee += premFee;
                  payload.fee_details.seller_voucher += sellerVoucher;
                  payload.fee_details.processing_fee += procFee;
-                 payload.fee_details.transaction_fee = (payload.fee_details.transaction_fee || 0) + transactionFee;
                  
                  if (releaseDate) payload.release_date = releaseDate;
                  if (refundAmount > 0) payload.status = 'Pengembalian';
