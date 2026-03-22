@@ -28,7 +28,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   "product_name": ["Nama Produk", "Product Name"],
   "quantity": ["Jumlah", "Quantity", "Qty"],
   // PENTING: "Total Harga Produk" harus dideteksi, jangan sampai tertukar dengan "Harga Awal"
-  "product_total": ["Total Harga Produk", "Product Subtotal", "Harga Awal"],
+  "product_total": ["Dibayar Pembeli", "Total Harga Produk", "Product Subtotal", "Harga Awal"],
   "variation": ["Variasi", "Nama Variasi", "Variation Name", "Model Name"], 
   "city": ["Kota/Kabupaten", "City"],
   "province": ["Provinsi", "Province"],
@@ -37,21 +37,34 @@ const HEADER_ALIASES: Record<string, string[]> = {
 };
 
 const INCOME_HEADER_ALIASES: Record<string, string[]> = {
-  "order_id": ["No. Pesanan", "Order ID"],
+  "order_id": ["No. Pesanan", "Order ID", "No. Referensi", "ID Pesanan"],
+  "order_date": ["Waktu Pesanan Dibuat", "Order Creation Date"],
+  "release_date": ["Tanggal Dana Dilepaskan", "Waktu Pesanan Selesai", "Order Complete Time", "Waktu Pencairan", "Tanggal Pencairan"],
   "original_price": ["Harga Asli Produk", "Original Price", "Harga Awal"],
   "product_discount": ["Total Diskon Produk", "Product Discount", "Diskon Produk"],
   "shopee_product_discount": ["Diskon Produk dari Shopee", "Shopee Product Discount"],
   "seller_voucher": ["Voucher disponsor oleh Penjual", "Seller Voucher", "Voucher Penjual"],
   "admin_fee": ["Biaya Administrasi", "Admin Fee"],
   "service_fee": ["Biaya Layanan", "Service Fee"],
-  "order_processing_fee": ["Biaya Proses Pesanan", "Order Processing Fee", "Biaya Transaksi", "Transaction Fee"],
+  "order_processing_fee": ["Biaya Proses Pesanan", "Order Processing Fee", "Biaya Penanganan", "Processing Fee"],
+  "transaction_fee": ["Biaya Transaksi", "Transaction Fee"],
   "premium_fee": ["Premi", "Premium Fee"],
   "ams_commission": ["Biaya Komisi AMS", "AMS Commission Fee"],
-  "net_revenue": ["Total Penghasilan", "Net Revenue"],
+  "net_revenue": ["Total Penghasilan", "Net Revenue", "Jumlah Dana Dilepaskan", "Pendapatan Bersih", "Total Dana Dilepaskan"],
   "refund_amount": ["Jumlah Pengembalian Dana ke Pembeli", "Refund Amount"],
   "return_shipping_fee": ["Ongkos Kirim Pengembalian Barang", "Return Shipping Fee"],
   "shipping_fee_forwarded": ["Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim", "Shipping Fee Paid by Seller", "Shipping Fee Forwarded"],
-  "shipping_rebate": ["Gratis Ongkir dari Shopee", "Shipping Fee Rebate", "Shipping Rebate"]
+  "shipping_rebate": ["Gratis Ongkir dari Shopee", "Shipping Fee Rebate", "Shipping Rebate"],
+  "shipping_paid_by_buyer": ["Ongkos Kirim Dibayar oleh Pembeli", "Shipping Fee Paid by Buyer", "Ongkir Dibayar Pembeli"],
+  "seller_cofund_voucher": ["Voucher co-fund disponsor oleh Penjual", "Seller Co-fund Voucher"],
+  "seller_coin_cashback": ["Cashback Koin disponsori Penjual", "Seller Coin Cashback"],
+  "seller_cofund_coin_cashback": ["Cashback Koin Co-fund disponsori Penjual", "Seller Co-fund Coin Cashback"],
+  "shipping_discount_by_courier": ["Diskon Ongkir Ditanggung Jasa Kirim", "Shipping Discount by Courier"],
+  "shipping_refund": ["Pengembalian Biaya Kirim", "Shipping Refund"],
+  "return_to_sender_shipping_fee": ["Kembali ke Biaya Pengiriman Pengirim", "Return to Sender Shipping Fee"],
+  "save_shipping_program_fee": ["Biaya Program Hemat Biaya Kirim", "Save Shipping Program Fee"],
+  "campaign_fee": ["Biaya Kampanye", "Campaign Fee"],
+  "auto_topup_fee": ["Biaya Isi Saldo Otomatis (dari Penghasilan)", "Auto Top-up Fee"]
 };
 
 // Helper: Normalize Text for Matching (Trim & Lowercase)
@@ -190,10 +203,80 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
   const parseNumberIndonesia = (val: any): number => {
     if (val === undefined || val === null || val === '') return 0;
-    let clean = String(val).replace(/Rp/g, '').replace(/\s/g, '').replace(/\./g, '');
-    clean = clean.replace(/,/g, '.');
-    const num = parseFloat(clean);
-    return isNaN(num) ? 0 : num;
+    
+    let num: number;
+    let isNegative = false;
+
+    if (typeof val === 'number') {
+        num = val;
+        if (num < 0) {
+            isNegative = true;
+            num = Math.abs(num);
+        }
+    } else {
+        let str = String(val).trim();
+        
+        // Remove Rp, spaces, and currency symbols
+        str = str.replace(/Rp/gi, '').replace(/IDR/gi, '').replace(/\s/g, '');
+        
+        // Handle negative sign at the beginning or end
+        if (str.startsWith('-') || str.endsWith('-') || (str.startsWith('(') && str.endsWith(')'))) {
+            isNegative = true;
+            str = str.replace(/[-()]/g, '');
+        }
+
+        const dotCount = (str.match(/\./g) || []).length;
+        const commaCount = (str.match(/,/g) || []).length;
+
+        if (dotCount > 0 && commaCount > 0) {
+            if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+                // 1.234,56 -> 1234.56
+                str = str.replace(/\./g, '').replace(',', '.');
+            } else {
+                // 1,234.56 -> 1234.56
+                str = str.replace(/,/g, '');
+            }
+        } else if (dotCount > 0 && commaCount === 0) {
+            if (dotCount === 1) {
+                const parts = str.split('.');
+                if (parts[1].length === 3) {
+                    // 145.600 -> 145600
+                    str = str.replace(/\./g, '');
+                } else {
+                    // 145.6 -> 145.6
+                }
+            } else {
+                // 1.234.567 -> 1234567
+                str = str.replace(/\./g, '');
+            }
+        } else if (commaCount > 0 && dotCount === 0) {
+            if (commaCount === 1) {
+                const parts = str.split(',');
+                if (parts[1].length === 3) {
+                    // 145,600 -> 145600
+                    str = str.replace(/,/g, '');
+                } else {
+                    // 145,6 -> 145.6
+                    str = str.replace(',', '.');
+                }
+            } else {
+                // 1,234,567 -> 1234567
+                str = str.replace(/,/g, '');
+            }
+        }
+        
+        num = parseFloat(str.replace(/[^\d.-]/g, ''));
+        if (isNaN(num)) num = 0;
+    }
+
+    // Fix for Excel parsing "145.600" as "145.6" (English locale issue)
+    // In IDR, we don't use decimals for GMV/Fees. If it has decimals and is < 10000, 
+    // it's highly likely it was divided by 1000 by Excel.
+    if (num % 1 !== 0 && num < 10000) {
+        num = Math.round(num * 1000);
+    }
+
+    return isNegative ? -Math.abs(num) : num;
   };
 
   // --- SAFE DATE PARSER ---
@@ -205,13 +288,20 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         // Excel numeric date (e.g., 45678.123)
         d = new Date((val - (25567 + 1)) * 86400 * 1000);
       } else {
-        // For string inputs like '2025-12-01 00:05'
-        const strVal = String(val).trim();
+        // For string inputs like '2025-12-01 00:05' or '31/12/2025 15:30'
+        let strVal = String(val).trim();
+        
+        // Handle DD/MM/YYYY or DD-MM-YYYY format
+        const ddMmYyyyMatch = strVal.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})(.*)$/);
+        if (ddMmYyyyMatch) {
+            strVal = `${ddMmYyyyMatch[3]}-${ddMmYyyyMatch[2]}-${ddMmYyyyMatch[1]}${ddMmYyyyMatch[4]}`;
+        }
+
         // If it's already in YYYY-MM-DD HH:mm:ss format, append +07 (WIB)
         if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(strVal)) {
           return strVal.includes('+') ? strVal : `${strVal}+07`;
         }
-        d = new Date(val);
+        d = new Date(strVal);
       }
       
       if (isNaN(d.getTime())) return null;
@@ -392,23 +482,43 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       const incomeUpdates: { orderId: string, payload: any }[] = [];
 
       incomeData.forEach(row => {
-         const orderId = String(row[incomeMapping['order_id']] || '').trim();
+         const orderId = String(row[incomeMapping['order_id']] || row['No. Pesanan'] || '').trim();
          if (!orderId) return;
 
-         const netRevenue = parseNumberIndonesia(row[incomeMapping['net_revenue']]);
-         const adminFee = Math.abs(parseNumberIndonesia(row[incomeMapping['admin_fee']]));
-         const serviceFee = Math.abs(parseNumberIndonesia(row[incomeMapping['service_fee']]));
-         const amsFee = Math.abs(parseNumberIndonesia(row[incomeMapping['ams_commission']]));
-         const procFee = Math.abs(parseNumberIndonesia(row[incomeMapping['order_processing_fee']]));
-         const premFee = Math.abs(parseNumberIndonesia(row[incomeMapping['premium_fee']]));
-         const refundAmount = Math.abs(parseNumberIndonesia(row[incomeMapping['refund_amount']]));
-         const returnShippingFee = Math.abs(parseNumberIndonesia(row[incomeMapping['return_shipping_fee']]));
-         const shippingForwarded = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_fee_forwarded']]));
-         const sellerVoucher = Math.abs(parseNumberIndonesia(row[incomeMapping['seller_voucher']]));
-         const shippingRebate = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_rebate']]));
-         const transactionFee = Math.abs(parseNumberIndonesia(row['Biaya Transaksi'] || '0'));
+         const netRevenue = parseNumberIndonesia(row[incomeMapping['net_revenue']] || row['Total Penghasilan'] || row['Jumlah Dana Dilepaskan']);
+         const adminFee = Math.abs(parseNumberIndonesia(row[incomeMapping['admin_fee']] || row['Biaya Administrasi']));
+         const serviceFee = Math.abs(parseNumberIndonesia(row[incomeMapping['service_fee']] || row['Biaya Layanan']));
+         const amsFee = Math.abs(parseNumberIndonesia(row[incomeMapping['ams_commission']] || row['Biaya Komisi AMS']));
+         const procFee = Math.abs(parseNumberIndonesia(row[incomeMapping['order_processing_fee']] || row['Biaya Proses Pesanan']));
+         const premFee = Math.abs(parseNumberIndonesia(row[incomeMapping['premium_fee']] || row['Premi']));
+         const refundAmount = Math.abs(parseNumberIndonesia(row[incomeMapping['refund_amount']] || row['Jumlah Pengembalian Dana ke Pembeli']));
+         const returnShippingFee = Math.abs(parseNumberIndonesia(row[incomeMapping['return_shipping_fee']] || row['Ongkos Kirim Pengembalian Barang']));
+         const shippingForwarded = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_fee_forwarded']] || row['Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim']));
+         const sellerVoucher = Math.abs(parseNumberIndonesia(row[incomeMapping['seller_voucher']] || row['Voucher disponsor oleh Penjual']));
+         const shippingRebate = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_rebate']] || row['Diskon Ongkos Kirim Ditanggung Shopee'] || row['Gratis Ongkir dari Shopee']));
+         const transactionFee = Math.abs(parseNumberIndonesia(row[incomeMapping['transaction_fee']] || row['Biaya Transaksi']));
+         const shippingPaidByBuyer = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_paid_by_buyer']] || row['Ongkos Kirim Dibayar oleh Pembeli'] || row['Ongkir Dibayar Pembeli']));
          
-         const totalMarketplaceFee = (adminFee + amsFee + serviceFee + procFee + premFee + shippingForwarded + returnShippingFee + sellerVoucher + refundAmount + transactionFee) - shippingRebate;
+         const shopeeProductDiscount = Math.abs(parseNumberIndonesia(row[incomeMapping['shopee_product_discount']] || row['Diskon Produk dari Shopee']));
+         const sellerCofundVoucher = Math.abs(parseNumberIndonesia(row[incomeMapping['seller_cofund_voucher']] || row['Voucher co-fund disponsor oleh Penjual']));
+         const sellerCoinCashback = Math.abs(parseNumberIndonesia(row[incomeMapping['seller_coin_cashback']] || row['Cashback Koin disponsori Penjual']));
+         const sellerCofundCoinCashback = Math.abs(parseNumberIndonesia(row[incomeMapping['seller_cofund_coin_cashback']] || row['Cashback Koin Co-fund disponsori Penjual']));
+         const shippingDiscountByCourier = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_discount_by_courier']] || row['Diskon Ongkir Ditanggung Jasa Kirim']));
+         const shippingRefund = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_refund']] || row['Pengembalian Biaya Kirim']));
+         const returnToSenderShippingFee = Math.abs(parseNumberIndonesia(row[incomeMapping['return_to_sender_shipping_fee']] || row['Kembali ke Biaya Pengiriman Pengirim']));
+         const saveShippingProgramFee = Math.abs(parseNumberIndonesia(row[incomeMapping['save_shipping_program_fee']] || row['Biaya Program Hemat Biaya Kirim']));
+         const campaignFee = Math.abs(parseNumberIndonesia(row[incomeMapping['campaign_fee']] || row['Biaya Kampanye']));
+         const autoTopupFee = Math.abs(parseNumberIndonesia(row[incomeMapping['auto_topup_fee']] || row['Biaya Isi Saldo Otomatis (dari Penghasilan)']));
+
+         const originalPrice = Math.abs(parseNumberIndonesia(row[incomeMapping['original_price']] || row['Harga Asli Produk']));
+         const productDiscount = Math.abs(parseNumberIndonesia(row[incomeMapping['product_discount']] || row['Total Diskon Produk']));
+         const incomeGmv = originalPrice - productDiscount;
+
+         // Calculate total marketplace fee using GMV - Net Revenue for perfect accuracy if GMV is available
+         // Note: Net Revenue = GMV + ShippingPaidByBuyer - TotalMarketplaceFee
+         // So TotalMarketplaceFee = GMV + ShippingPaidByBuyer - Net Revenue
+         const calculatedFee = (adminFee + amsFee + serviceFee + procFee + premFee + shippingForwarded + returnShippingFee + sellerVoucher + refundAmount + transactionFee) - shippingRebate - shippingPaidByBuyer;
+         const totalMarketplaceFee = incomeGmv > 0 ? (incomeGmv + shippingPaidByBuyer - netRevenue) : calculatedFee;
          
          const feeDetails = {
             admin_fee: adminFee,
@@ -421,12 +531,26 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
             premium_fee: premFee,
             seller_voucher: sellerVoucher,
             processing_fee: procFee,
-            transaction_fee: transactionFee
+            transaction_fee: transactionFee,
+            shopee_product_discount: shopeeProductDiscount,
+            seller_cofund_voucher: sellerCofundVoucher,
+            seller_coin_cashback: sellerCoinCashback,
+            seller_cofund_coin_cashback: sellerCofundCoinCashback,
+            shipping_paid_by_buyer: shippingPaidByBuyer,
+            shipping_discount_by_courier: shippingDiscountByCourier,
+            shipping_refund: shippingRefund,
+            return_to_sender_shipping_fee: returnToSenderShippingFee,
+            save_shipping_program_fee: saveShippingProgramFee,
+            campaign_fee: campaignFee,
+            auto_topup_fee: autoTopupFee
          };
 
-         // Parse Release Date if available
-         const releaseDateRaw = row['Tanggal Dana Dilepaskan'];
+         // Parse Release Date and Order Date if available
+         const releaseDateRaw = row[incomeMapping['release_date']] || row['Tanggal Dana Dilepaskan'] || row['Waktu Pencairan'];
          const releaseDate = releaseDateRaw ? getSafeDate(releaseDateRaw) : null;
+         
+         const orderDateRaw = row[incomeMapping['order_date']] || row['Waktu Pesanan Dibuat'];
+         const orderDate = orderDateRaw ? getSafeDate(orderDateRaw) : null;
 
          if (orderGroups[orderId]) {
              // Update Order in memory (Accumulate values to handle multi-row income reports)
@@ -434,6 +558,15 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
              currentOrder.net_revenue = (currentOrder.net_revenue || 0) + netRevenue;
              currentOrder.service_fee = (currentOrder.service_fee || 0) + totalMarketplaceFee;
              
+             // Use Income Report as source of truth for GMV if available
+             if (incomeGmv > 0) {
+                 if (!(currentOrder as any)._has_income_gmv) {
+                     currentOrder.product_total = 0;
+                     (currentOrder as any)._has_income_gmv = true;
+                 }
+                 currentOrder.product_total += incomeGmv;
+             }
+
              // Accumulate Fee Details
              if (!currentOrder.fee_details) {
                  currentOrder.fee_details = { ...feeDetails };
@@ -455,13 +588,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
              if (releaseDate) {
                  currentOrder.release_date = releaseDate;
              }
+             if (orderDate && !currentOrder.order_date) {
+                 currentOrder.order_date = orderDate;
+             }
              if (refundAmount > 0) {
                  currentOrder.status = 'Pengembalian';
              } else {
-                 const currentStatus = (currentOrder.status || '').toLowerCase();
-                 if (!currentStatus.includes('batal') && !currentStatus.includes('cancel')) {
-                    currentOrder.status = 'Selesai';
-                 }
+                 currentOrder.status = 'Selesai';
              }
          } else {
              // Order is not in current Orders file, but might be in DB
@@ -471,6 +604,14 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
                  payload.net_revenue += netRevenue;
                  payload.service_fee += totalMarketplaceFee;
                  
+                 if (incomeGmv > 0) {
+                     if (!payload._has_income_gmv) {
+                         payload.product_total = 0;
+                         payload._has_income_gmv = true;
+                     }
+                     payload.product_total += incomeGmv;
+                 }
+
                  payload.fee_details.admin_fee += adminFee;
                  payload.fee_details.ams_commission += amsFee;
                  payload.fee_details.service_fee += serviceFee;
@@ -484,15 +625,27 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
                  payload.fee_details.transaction_fee = (payload.fee_details.transaction_fee || 0) + transactionFee;
                  
                  if (releaseDate) payload.release_date = releaseDate;
-                 if (refundAmount > 0) payload.status = 'Pengembalian';
+                 if (orderDate && !payload.order_date) payload.order_date = orderDate;
+                 if (refundAmount > 0) {
+                     payload.status = 'Pengembalian';
+                 } else {
+                     payload.status = 'Selesai';
+                 }
              } else {
                  const updatePayload: any = {
                      net_revenue: netRevenue,
                      service_fee: totalMarketplaceFee,
                      fee_details: { ...feeDetails },
-                     admin_fee: 0
+                     admin_fee: 0,
+                     total_payment: 0, // Safe defaults for new orders
+                     product_total: incomeGmv > 0 ? incomeGmv : 0,
+                     _has_income_gmv: incomeGmv > 0,
+                     shipping_estimated: 0,
+                     total_discount: 0,
+                     seller_voucher: 0
                  };
                  if (releaseDate) updatePayload.release_date = releaseDate;
+                 if (orderDate) updatePayload.order_date = orderDate;
                  if (refundAmount > 0) {
                      updatePayload.status = 'Pengembalian';
                  } else {
@@ -507,11 +660,15 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
       // 4. PREPARE PAYLOADS
       const ordersToUpsert = Object.values(orderGroups).map(g => {
-        const o = g.order;
-        // ALWAYS use grossProductValue from Orders Report for consistency with user's manual calculation
+        const o = g.order as any;
+        const finalProductTotal = o._has_income_gmv ? o.product_total : g.grossProductValue;
+        
+        // Remove temporary flag before saving
+        delete o._has_income_gmv;
+
         return { 
           ...o, 
-          product_total: g.grossProductValue,
+          product_total: finalProductTotal,
         };
       });
 
@@ -550,6 +707,9 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
               if (existingOrders && existingOrders.length > 0) {
                   const upserts = existingOrders.map(eo => {
                       const update = incomeUpdates.find(u => u.orderId === eo.order_id)?.payload;
+                      if (update && update._has_income_gmv !== undefined) {
+                          delete update._has_income_gmv;
+                      }
                       return { ...eo, ...update };
                   });
                   await supabase.from('orders').upsert(upserts, { onConflict: 'store_id, order_id' });
@@ -590,7 +750,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
               if (newAdjustments.length > 0) {
                   const { error: adjError } = await supabase
                       .from('adjustments')
-                      .upsert(newAdjustments, { onConflict: 'store_id, order_id' });
+                      .insert(newAdjustments);
                   if (adjError) {
                       console.error("Adjustment Error:", adjError);
                       // Non-fatal, just log

@@ -144,7 +144,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         const nextDay = `${ny}-${nm}-${nd}`;
         
         query = query.lt(mode, `${nextDay} 00:00:00+07`);
-        adjQuery = adjQuery.lte('adjustment_date', end); // adjustment_date is 'date' type, so lte is fine
+        adjQuery = adjQuery.lt('adjustment_date', `${nextDay} 00:00:00+07`);
       }
 
       const [ordersData, adjData] = await Promise.all([
@@ -189,43 +189,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
     // 4. METRICS CALCULATION (SETTLED DATA FOCUS)
     // 1. Filter: Hanya Order yang SUDAH SELESAI (Omzet Riil)
-    const completedOrdersOnly = data.filter(o => (o.status || '').toLowerCase() === 'selesai');
+    const completedOrdersOnly = data.filter(o => (o.status || '').trim().toLowerCase() === 'selesai');
     
     // Filter: Transaksi Retur untuk Penyesuaian & Count
-    const returnedOrders = data.filter(o => 
-      (o.status || '').toLowerCase().includes('retur') || 
-      (o.status || '').toLowerCase().includes('pengembalian')
-    );
+    const returnedOrders = data.filter(o => {
+      const s = (o.status || '').trim().toLowerCase();
+      return s.includes('retur') || s.includes('pengembalian');
+    });
 
     // A. Omzet Riil (GMV Selesai)
-    const omzetRiil = completedOrdersOnly.reduce((acc, o) => acc + (o.product_total || 0), 0);
+    const omzetRiil = completedOrdersOnly.reduce((acc, o) => acc + Number(o.product_total || 0), 0);
 
     // H. Kebocoran Ongkir (Shipping Leakage) & Settled Orders for Cash Flow
     const settledOrders = data.filter(o => {
-        const s = (o.status || '').toLowerCase();
+        const s = (o.status || '').trim().toLowerCase();
         return s === 'selesai' || s === 'pengembalian';
     });
-
-    // C. Dana Cair (Net Revenue Selesai + Pengembalian)
-    const danaCair = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
-
-    // B. Potongan Marketplace (Selesai + Retur) - Calculated to ensure math consistency: Omzet - Potongan = Dana Cair
-    const potonganMarketplace = omzetRiil - danaCair;
-
-    // D. Total HPP (Hanya untuk order yang SELESAI)
-    const hppSelesai = completedOrdersOnly.reduce((acc, o) => {
-      const orderHpp = o.order_items?.reduce((h, item) => {
-        return h + ((item.hpp_at_time || 0) * item.quantity);
-      }, 0) || 0;
-      return acc + orderHpp;
-    }, 0);
-
-    // E. Profit Riil = Dana Cair - HPP
-    const profitRiil = danaCair - hppSelesai;
-
-    // F. Supporting Metrics
-    const percentNetProfit = omzetRiil > 0 ? (profitRiil / omzetRiil) * 100 : 0;
-    const percentPotonganOmzet = omzetRiil > 0 ? (potonganMarketplace / omzetRiil) * 100 : 0;
 
     // G. Total Penyesuaian & Biaya Iklan
     let biayaIklan = 0;
@@ -248,17 +227,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       }
     });
 
-    // H. Kebocoran Ongkir (Shipping Leakage)
-    let shippingLeakage = 0;
-    settledOrders.forEach(o => {
-      if (o.fee_details) {
-        const absForwarded = Math.abs(o.fee_details.shipping_forwarded || 0);
-        const absEstimated = Math.abs(o.shipping_estimated || 0);
-        if (absForwarded > absEstimated) {
-           shippingLeakage += (absForwarded - absEstimated);
-        }
-      }
-    });
+    // C. Dana Cair (Net Revenue Selesai + Pengembalian + Penyesuaian Lain)
+    const totalNetRevenue = settledOrders.reduce((acc, o) => acc + Number(o.net_revenue || 0), 0);
+    const danaCair = totalNetRevenue + penyesuaianLain;
 
     // J. Fee Breakdown (Selesai + Pengembalian for comprehensive cash flow view)
     let feeBreakdown = {
@@ -271,7 +242,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       returnShipping: 0,
       premium: 0,
       voucher: 0,
-      processing: 0
+      processing: 0,
+      transaction: 0,
+      shopeeProductDiscount: 0,
+      sellerCofundVoucher: 0,
+      sellerCoinCashback: 0,
+      sellerCofundCoinCashback: 0,
+      shippingPaidByBuyer: 0,
+      shippingDiscountByCourier: 0,
+      shippingRefund: 0,
+      returnToSenderShippingFee: 0,
+      saveShippingProgramFee: 0,
+      campaignFee: 0,
+      autoTopupFee: 0
     };
 
     settledOrders.forEach(o => {
@@ -286,8 +269,61 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         feeBreakdown.premium += (o.fee_details.premium_fee || 0);
         feeBreakdown.voucher += (o.fee_details.seller_voucher || 0);
         feeBreakdown.processing += (o.fee_details.processing_fee || 0);
+        feeBreakdown.transaction += (o.fee_details.transaction_fee || 0);
+        feeBreakdown.shopeeProductDiscount += (o.fee_details.shopee_product_discount || 0);
+        feeBreakdown.sellerCofundVoucher += (o.fee_details.seller_cofund_voucher || 0);
+        feeBreakdown.sellerCoinCashback += (o.fee_details.seller_coin_cashback || 0);
+        feeBreakdown.sellerCofundCoinCashback += (o.fee_details.seller_cofund_coin_cashback || 0);
+        feeBreakdown.shippingPaidByBuyer += (o.fee_details.shipping_paid_by_buyer || 0);
+        feeBreakdown.shippingDiscountByCourier += (o.fee_details.shipping_discount_by_courier || 0);
+        feeBreakdown.shippingRefund += (o.fee_details.shipping_refund || 0);
+        feeBreakdown.returnToSenderShippingFee += (o.fee_details.return_to_sender_shipping_fee || 0);
+        feeBreakdown.saveShippingProgramFee += (o.fee_details.save_shipping_program_fee || 0);
+        feeBreakdown.campaignFee += (o.fee_details.campaign_fee || 0);
+        feeBreakdown.autoTopupFee += (o.fee_details.auto_topup_fee || 0);
       }
     });
+
+    // B. Potongan Marketplace (Selesai + Retur) - Calculated from fee breakdown to match UI
+    const potonganMarketplace = (
+      feeBreakdown.admin + 
+      feeBreakdown.ams + 
+      feeBreakdown.service + 
+      feeBreakdown.refund + 
+      feeBreakdown.shippingForwarded + 
+      feeBreakdown.returnShipping + 
+      feeBreakdown.premium + 
+      feeBreakdown.voucher + 
+      feeBreakdown.processing + 
+      feeBreakdown.transaction +
+      feeBreakdown.sellerCofundVoucher +
+      feeBreakdown.sellerCoinCashback +
+      feeBreakdown.sellerCofundCoinCashback +
+      feeBreakdown.shippingRefund +
+      feeBreakdown.returnToSenderShippingFee +
+      feeBreakdown.saveShippingProgramFee +
+      feeBreakdown.campaignFee +
+      feeBreakdown.autoTopupFee
+    ) - feeBreakdown.shippingRebate - feeBreakdown.shippingPaidByBuyer - feeBreakdown.shippingDiscountByCourier - feeBreakdown.shopeeProductDiscount;
+
+    // D. Total HPP (Hanya untuk order yang SELESAI)
+    const hppSelesai = completedOrdersOnly.reduce((acc, o) => {
+      const orderHpp = o.order_items?.reduce((h, item) => {
+        return h + ((item.hpp_at_time || 0) * item.quantity);
+      }, 0) || 0;
+      return acc + orderHpp;
+    }, 0);
+
+    // E. Profit Riil = Dana Cair - HPP
+    const profitRiil = danaCair - hppSelesai;
+
+    // F. Supporting Metrics
+    const percentNetProfit = omzetRiil > 0 ? (profitRiil / omzetRiil) * 100 : 0;
+    const percentPotonganOmzet = omzetRiil > 0 ? (potonganMarketplace / omzetRiil) * 100 : 0;
+
+    // H. Kebocoran Ongkir (Shipping Leakage)
+    // Rumus: (Ongkir Dibayar Pembeli + Gratis Ongkir dari Shopee) - (Ongkir Diteruskan ke Jasa Kirim + Ongkos Kirim Pengembalian Barang)
+    const shippingLeakage = (feeBreakdown.shippingPaidByBuyer + feeBreakdown.shippingRebate) - (feeBreakdown.shippingForwarded + feeBreakdown.returnShipping);
 
     // Performance Mode Metrics (Keep existing)
     const totalOmzetPesanan = data.reduce((acc, o) => acc + (o.product_total || 0), 0);
@@ -387,14 +423,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           rows.push(["AOV", metrics.averageOrderValue, "Rata-rata nilai per transaksi"]);
           rows.push(["Pesanan Dibatalkan", metrics.cancelledCount, "Jumlah pesanan batal"]);
         } else {
-          rows.push(["Omzet Riil", metrics.omzetRiil, "Total nilai pesanan status Selesai"]);
+          rows.push(["Omzet Riil", metrics.omzetRiil, "Total nilai pesanan (Dibayar Pembeli) status Selesai"]);
           rows.push(["Potongan Marketplace", -metrics.potonganMarketplace, "Total komisi/biaya marketplace"]);
-          rows.push(["Dana Cair", metrics.danaCair, "Omzet Riil - Potongan Marketplace"]);
+          rows.push(["Dana Cair", metrics.danaCair, "Total pendapatan bersih yang diterima"]);
           rows.push(["HPP", -metrics.hppSelesai, "Total modal pokok produk pesanan selesai"]);
           rows.push(["Profit Riil", metrics.profitRiil, "Dana Cair - HPP"]);
           rows.push(["% Net Profit", `${metrics.percentNetProfit.toFixed(1)}%`, "Profit Riil / Omzet Riil"]);
           rows.push(["% Potongan Marketplace", `${metrics.percentPotonganOmzet.toFixed(1)}%`, "Potongan / Omzet Riil"]);
-          rows.push(["Selisih Ongkir", -metrics.shippingLeakage, "Selisih ongkir pembeli vs aktual"]);
+          rows.push(["Selisih Ongkir", metrics.shippingLeakage, "(Ongkir Pembeli + Gratis Ongkir) - (Ongkir Diteruskan + Ongkir Retur)"]);
           rows.push(["Pesanan Selesai", metrics.completedCount, "Jumlah pesanan sudah cair"]);
           rows.push(["Pesanan Retur", metrics.returnedCount, "Jumlah pesanan retur"]);
         }
@@ -405,15 +441,43 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           // Fee Breakdown only for Cash Flow
           rows.push(["Fee Breakdown (Shopee)"]);
           rows.push(["Jenis Fee", "Jumlah", "Tipe"]);
-          rows.push(["Biaya Administrasi", -metrics.feeBreakdown.admin, "Biaya"]);
-          rows.push(["Biaya Komisi AMS", -metrics.feeBreakdown.ams, "Biaya"]);
-          rows.push(["Biaya Layanan", -metrics.feeBreakdown.service, "Biaya"]);
-          rows.push(["Gratis Ongkir dari Shopee", metrics.feeBreakdown.shippingRebate, "Pemasukan"]);
-          rows.push(["Jumlah Pengembalian Dana ke Pembeli", -metrics.feeBreakdown.refund, "Biaya"]);
-          rows.push(["Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim", -metrics.feeBreakdown.shippingForwarded, "Biaya"]);
-          rows.push(["Ongkos Kirim Pengembalian Barang", -metrics.feeBreakdown.returnShipping, "Biaya"]);
-          rows.push(["Premi", -metrics.feeBreakdown.premium, "Biaya"]);
-          rows.push(["Voucher disponsor oleh Penjual", -metrics.feeBreakdown.voucher, "Biaya"]);
+          
+          const addRowIfNonZero = (name: string, value: number, type: string, alwaysShow: boolean = false) => {
+            if (value !== 0 || alwaysShow) {
+              rows.push([name, value, type]);
+            }
+          };
+
+          // Voucher & Subsidi Shopee
+          addRowIfNonZero("Diskon Produk dari Shopee", metrics.feeBreakdown.shopeeProductDiscount, "Pemasukan");
+          addRowIfNonZero("Voucher disponsor oleh Penjual", -metrics.feeBreakdown.voucher, "Biaya");
+          addRowIfNonZero("Voucher co-fund disponsor oleh Penjual", -metrics.feeBreakdown.sellerCofundVoucher, "Biaya");
+          addRowIfNonZero("Cashback Koin disponsori Penjual", -metrics.feeBreakdown.sellerCoinCashback, "Biaya");
+          addRowIfNonZero("Cashback Koin Co-fund disponsori Penjual", -metrics.feeBreakdown.sellerCofundCoinCashback, "Biaya");
+
+          // Total Biaya Pengiriman
+          addRowIfNonZero("Ongkir Dibayar Pembeli", metrics.feeBreakdown.shippingPaidByBuyer, "Pemasukan");
+          addRowIfNonZero("Diskon Ongkir Ditanggung Jasa Kirim", metrics.feeBreakdown.shippingDiscountByCourier, "Pemasukan");
+          addRowIfNonZero("Gratis Ongkir dari Shopee", metrics.feeBreakdown.shippingRebate, "Pemasukan");
+          addRowIfNonZero("Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim", -metrics.feeBreakdown.shippingForwarded, "Biaya");
+          addRowIfNonZero("Ongkos Kirim Pengembalian Barang", -metrics.feeBreakdown.returnShipping, "Biaya", true);
+          addRowIfNonZero("Pengembalian Biaya Kirim", -metrics.feeBreakdown.shippingRefund, "Biaya");
+          addRowIfNonZero("Kembali ke Biaya Pengiriman Pengirim", -metrics.feeBreakdown.returnToSenderShippingFee, "Biaya");
+
+          // Biaya Admin & Layanan
+          addRowIfNonZero("Biaya Komisi AMS", -metrics.feeBreakdown.ams, "Biaya");
+          addRowIfNonZero("Biaya Administrasi", -metrics.feeBreakdown.admin, "Biaya");
+          addRowIfNonZero("Biaya Layanan", -metrics.feeBreakdown.service, "Biaya");
+          addRowIfNonZero("Biaya Proses Pesanan", -metrics.feeBreakdown.processing, "Biaya");
+          addRowIfNonZero("Premi", -metrics.feeBreakdown.premium, "Biaya");
+          addRowIfNonZero("Biaya Program Hemat Biaya Kirim", -metrics.feeBreakdown.saveShippingProgramFee, "Biaya");
+          addRowIfNonZero("Biaya Transaksi", -metrics.feeBreakdown.transaction, "Biaya");
+          addRowIfNonZero("Biaya Kampanye", -metrics.feeBreakdown.campaignFee, "Biaya");
+          addRowIfNonZero("Biaya Isi Saldo Otomatis (dari Penghasilan)", -metrics.feeBreakdown.autoTopupFee, "Biaya");
+
+          // Pengembalian Dana
+          addRowIfNonZero("Jumlah Pengembalian Dana ke Pembeli", -metrics.feeBreakdown.refund, "Biaya", true);
+          
           rows.push([""]);
         }
 
@@ -568,9 +632,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           ['AOV', `Rp ${metrics.averageOrderValue.toLocaleString()}`, 'Rata-rata nilai per transaksi'],
           ['Pesanan Dibatalkan', metrics.cancelledCount.toString(), 'Jumlah pesanan batal'],
         ] : [
-        ['Omzet Riil', `Rp ${metrics.omzetRiil.toLocaleString()}`, 'Total nilai pesanan status Selesai'],
+        ['Omzet Riil', `Rp ${metrics.omzetRiil.toLocaleString()}`, 'Total nilai pesanan (Dibayar Pembeli) status Selesai'],
         ['Potongan Marketplace', `-Rp ${metrics.potonganMarketplace.toLocaleString()}`, 'Total komisi/biaya marketplace'],
-        ['Dana Cair', `Rp ${metrics.danaCair.toLocaleString()}`, 'Omzet Riil - Potongan Marketplace'],
+        ['Dana Cair', `Rp ${metrics.danaCair.toLocaleString()}`, 'Total pendapatan bersih yang diterima'],
         ['HPP', `-Rp ${metrics.hppSelesai.toLocaleString()}`, 'Total modal pokok produk pesanan selesai'],
         ['Profit Riil', `Rp ${metrics.profitRiil.toLocaleString()}`, 'Dana Cair - HPP'],
         ['% Net Profit', `${metrics.percentNetProfit.toFixed(1)}%`, 'Profit Riil / Omzet Riil'],
@@ -602,6 +666,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             ['Biaya Administrasi', `-Rp ${metrics.feeBreakdown.admin.toLocaleString()}`, 'Biaya'],
             ['Biaya Komisi AMS', `-Rp ${metrics.feeBreakdown.ams.toLocaleString()}`, 'Biaya'],
             ['Biaya Layanan', `-Rp ${metrics.feeBreakdown.service.toLocaleString()}`, 'Biaya'],
+            ['Biaya Proses Pesanan', `-Rp ${metrics.feeBreakdown.processing.toLocaleString()}`, 'Biaya'],
+            ['Biaya Transaksi', `-Rp ${metrics.feeBreakdown.transaction.toLocaleString()}`, 'Biaya'],
             ['Gratis Ongkir dari Shopee', `+Rp ${metrics.feeBreakdown.shippingRebate.toLocaleString()}`, 'Pemasukan'],
             ['Jumlah Pengembalian Dana ke Pembeli', `-Rp ${metrics.feeBreakdown.refund.toLocaleString()}`, 'Biaya'],
             ['Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim', `-Rp ${metrics.feeBreakdown.shippingForwarded.toLocaleString()}`, 'Biaya'],
@@ -902,7 +968,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   value={`Rp ${(metrics.omzetRiil || 0).toLocaleString()}`} 
                   trend="Gross Revenue"
                   icon={<ShoppingBag className="w-4 h-4 text-blue-600" />}
-                  description="Total nilai pesanan dengan status 'Selesai'."
+                  description="Total nilai pesanan (Dibayar Pembeli) dengan status 'Selesai'."
                 />
                 <KPICard 
                   title="Potongan Marketplace" 
@@ -917,7 +983,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   value={`Rp ${(metrics.danaCair || 0).toLocaleString()}`} 
                   trend="Net Revenue"
                   icon={<Wallet className="w-4 h-4 text-green-600" />}
-                  description="Omzet Riil - Potongan Marketplace."
+                  description="Total pendapatan bersih yang diterima."
                   isHighlight
                 />
                 <KPICard 
@@ -962,11 +1028,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 />
                 <KPICard 
                   title="Selisih Ongkir" 
-                  value={`-Rp ${(metrics.shippingLeakage || 0).toLocaleString()}`} 
+                  value={`${metrics.shippingLeakage < 0 ? '-' : '+'}Rp ${Math.abs(metrics.shippingLeakage || 0).toLocaleString()}`} 
                   trend="Shipping Diff"
-                  isNegative
-                  icon={<AlertCircle className="w-4 h-4 text-red-600" />}
-                  description="Selisih antara ongkir pembeli dan ongkir aktual."
+                  isNegative={metrics.shippingLeakage < 0}
+                  icon={<AlertCircle className={`w-4 h-4 ${metrics.shippingLeakage < 0 ? 'text-red-600' : 'text-green-600'}`} />}
+                  description="(Ongkir Pembeli + Gratis Ongkir) - (Ongkir Diteruskan + Ongkir Retur)"
                 />
                 <KPICard 
                   title="Pesanan Selesai" 
@@ -1003,48 +1069,151 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               </div>
             </div>
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-medium">Biaya Administrasi</span>
-                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.admin.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-medium">Biaya Komisi AMS</span>
-                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.ams.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-medium">Biaya Layanan</span>
-                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.service.toLocaleString()}</span>
-                </div>
+              
+              {/* Voucher & Subsidi Shopee */}
+              <div className="space-y-3">
+                <h4 className="text-[11px] font-black uppercase text-slate-400 tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 mb-3">Voucher & Subsidi Shopee</h4>
+                {metrics.feeBreakdown.shopeeProductDiscount !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Diskon Produk dari Shopee</span>
+                    <span className="text-xs font-bold text-green-600">+Rp {metrics.feeBreakdown.shopeeProductDiscount.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.voucher !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Voucher disponsor oleh Penjual</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.voucher.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.sellerCofundVoucher !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Voucher co-fund Penjual</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.sellerCofundVoucher.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.sellerCoinCashback !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Cashback Koin Penjual</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.sellerCoinCashback.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.sellerCofundCoinCashback !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Cashback Koin Co-fund Penjual</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.sellerCofundCoinCashback.toLocaleString()}</span>
+                  </div>
+                )}
               </div>
-              <div className="space-y-4">
+
+              {/* Total Biaya Pengiriman */}
+              <div className="space-y-3">
+                <h4 className="text-[11px] font-black uppercase text-slate-400 tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 mb-3">Total Biaya Pengiriman</h4>
+                {metrics.feeBreakdown.shippingPaidByBuyer !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Ongkir Dibayar Pembeli</span>
+                    <span className="text-xs font-bold text-green-600">+Rp {metrics.feeBreakdown.shippingPaidByBuyer.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.shippingDiscountByCourier !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Diskon Ongkir Jasa Kirim</span>
+                    <span className="text-xs font-bold text-green-600">+Rp {metrics.feeBreakdown.shippingDiscountByCourier.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.shippingRebate !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Gratis Ongkir dari Shopee</span>
+                    <span className="text-xs font-bold text-green-600">+Rp {metrics.feeBreakdown.shippingRebate.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.shippingForwarded !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Ongkir Diteruskan ke Jasa Kirim</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.shippingForwarded.toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-medium">Gratis Ongkir (Subsidi)</span>
-                  <span className="text-xs font-bold text-green-600">+Rp {metrics.feeBreakdown.shippingRebate.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-medium">Pengembalian Dana</span>
-                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.refund.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-medium">Ongkir Diteruskan</span>
-                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.shippingForwarded.toLocaleString()}</span>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-medium">Ongkir Pengembalian</span>
+                  <span className="text-xs text-slate-500 font-medium">Ongkir Pengembalian Barang</span>
                   <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.returnShipping.toLocaleString()}</span>
                 </div>
+                {metrics.feeBreakdown.shippingRefund !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Pengembalian Biaya Kirim</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.shippingRefund.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.returnToSenderShippingFee !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Kembali ke Biaya Pengiriman Pengirim</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.returnToSenderShippingFee.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Biaya Admin & Layanan */}
+              <div className="space-y-3">
+                <h4 className="text-[11px] font-black uppercase text-slate-400 tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 mb-3">Biaya Admin & Layanan</h4>
+                {metrics.feeBreakdown.ams !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Biaya Komisi AMS</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.ams.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.admin !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Biaya Administrasi</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.admin.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.service !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Biaya Layanan</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.service.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.processing !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Biaya Proses Pesanan</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.processing.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.premium !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Premi</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.premium.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.saveShippingProgramFee !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Biaya Program Hemat Biaya Kirim</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.saveShippingProgramFee.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.transaction !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Biaya Transaksi</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.transaction.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.campaignFee !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Biaya Kampanye</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.campaignFee.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.autoTopupFee !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Biaya Isi Saldo Otomatis</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.autoTopupFee.toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-medium">Premi</span>
-                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.premium.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-medium">Voucher Penjual</span>
-                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.voucher.toLocaleString()}</span>
+                  <span className="text-xs text-slate-500 font-medium">Pengembalian Dana ke Pembeli</span>
+                  <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.refund.toLocaleString()}</span>
                 </div>
               </div>
+
+              {/* Total Potongan */}
               <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl flex flex-col justify-center">
                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Potongan</span>
                 <span className="text-xl font-black text-red-600">

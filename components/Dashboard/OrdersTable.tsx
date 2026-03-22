@@ -262,7 +262,8 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/50">
                 <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider whitespace-nowrap">Order ID</th>
-                <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Date</th>
+                <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Tanggal Pesanan</th>
+                <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Tanggal Selesai</th>
                 {/* Product Column */}
                 <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider w-1/3">Produk & Variasi</th>
                 {/* Mapping Status Column */}
@@ -299,6 +300,7 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, stores }) => {
                       </div>
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">{format(new Date(order.order_date), 'dd MMM yyyy')}</td>
+                  <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">{order.release_date ? format(new Date(order.release_date), 'dd MMM yyyy') : '-'}</td>
                   
                   {/* Product Column - Clickable to Open Modal */}
                   <td 
