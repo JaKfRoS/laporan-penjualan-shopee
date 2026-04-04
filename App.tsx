@@ -294,9 +294,17 @@ export default function App() {
         .delete()
         .eq('store_id', currentStore.id);
         
+      // Hapus data penyesuaian (adjustments)
+      const { error: deleteAdjustments } = await supabase
+        .from('adjustments')
+        .delete()
+        .eq('store_id', currentStore.id);
+        
       // Also clear mappings? Optional. Let's keep mappings for convenience, only clear transactions.
 
       if (deleteOrders) throw deleteOrders;
+      if (deleteAds) throw deleteAds;
+      if (deleteAdjustments) throw deleteAdjustments;
 
       toast.success("Data pesanan & iklan berhasil dikosongkan.", { id: loadingToast });
       setIsConfirmingClear(false);
