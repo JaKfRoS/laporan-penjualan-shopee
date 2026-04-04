@@ -553,10 +553,10 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          const orderDate = orderDateRaw ? getSafeDate(orderDateRaw) : null;
 
          if (orderGroups[orderId]) {
-             // Update Order in memory (Accumulate values to handle multi-row income reports)
+             // Update Order in memory (Do not accumulate to avoid doubling if duplicate rows exist)
              const currentOrder = orderGroups[orderId].order;
-             currentOrder.net_revenue = (currentOrder.net_revenue || 0) + netRevenue;
-             currentOrder.service_fee = (currentOrder.service_fee || 0) + totalMarketplaceFee;
+             currentOrder.net_revenue = netRevenue;
+             currentOrder.service_fee = totalMarketplaceFee;
              
              // Use Income Report as source of truth for GMV if available
              if (incomeGmv > 0) {
@@ -564,24 +564,24 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
                      currentOrder.product_total = 0;
                      (currentOrder as any)._has_income_gmv = true;
                  }
-                 currentOrder.product_total += incomeGmv;
+                 currentOrder.product_total = incomeGmv; // Do not accumulate
              }
 
-             // Accumulate Fee Details
+             // Overwrite Fee Details (Do not accumulate)
              if (!currentOrder.fee_details) {
                  currentOrder.fee_details = { ...feeDetails };
              } else {
-                 currentOrder.fee_details.admin_fee += adminFee;
-                 currentOrder.fee_details.ams_commission += amsFee;
-                 currentOrder.fee_details.service_fee += serviceFee;
-                 currentOrder.fee_details.shipping_rebate += shippingRebate;
-                 currentOrder.fee_details.refund_amount += refundAmount;
-                 currentOrder.fee_details.shipping_forwarded += shippingForwarded;
-                 currentOrder.fee_details.return_shipping_fee += returnShippingFee;
-                 currentOrder.fee_details.premium_fee += premFee;
-                 currentOrder.fee_details.seller_voucher += sellerVoucher;
-                 currentOrder.fee_details.processing_fee += procFee;
-                 currentOrder.fee_details.transaction_fee = (currentOrder.fee_details.transaction_fee || 0) + transactionFee;
+                 currentOrder.fee_details.admin_fee = adminFee;
+                 currentOrder.fee_details.ams_commission = amsFee;
+                 currentOrder.fee_details.service_fee = serviceFee;
+                 currentOrder.fee_details.shipping_rebate = shippingRebate;
+                 currentOrder.fee_details.refund_amount = refundAmount;
+                 currentOrder.fee_details.shipping_forwarded = shippingForwarded;
+                 currentOrder.fee_details.return_shipping_fee = returnShippingFee;
+                 currentOrder.fee_details.premium_fee = premFee;
+                 currentOrder.fee_details.seller_voucher = sellerVoucher;
+                 currentOrder.fee_details.processing_fee = procFee;
+                 currentOrder.fee_details.transaction_fee = transactionFee;
              }
 
              currentOrder.admin_fee = 0;
@@ -601,28 +601,28 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
              const existingUpdate = incomeUpdates.find(u => u.orderId === orderId);
              if (existingUpdate) {
                  const payload = existingUpdate.payload;
-                 payload.net_revenue += netRevenue;
-                 payload.service_fee += totalMarketplaceFee;
+                 payload.net_revenue = netRevenue;
+                 payload.service_fee = totalMarketplaceFee;
                  
                  if (incomeGmv > 0) {
                      if (!payload._has_income_gmv) {
                          payload.product_total = 0;
                          payload._has_income_gmv = true;
                      }
-                     payload.product_total += incomeGmv;
+                     payload.product_total = incomeGmv;
                  }
 
-                 payload.fee_details.admin_fee += adminFee;
-                 payload.fee_details.ams_commission += amsFee;
-                 payload.fee_details.service_fee += serviceFee;
-                 payload.fee_details.shipping_rebate += shippingRebate;
-                 payload.fee_details.refund_amount += refundAmount;
-                 payload.fee_details.shipping_forwarded += shippingForwarded;
-                 payload.fee_details.return_shipping_fee += returnShippingFee;
-                 payload.fee_details.premium_fee += premFee;
-                 payload.fee_details.seller_voucher += sellerVoucher;
-                 payload.fee_details.processing_fee += procFee;
-                 payload.fee_details.transaction_fee = (payload.fee_details.transaction_fee || 0) + transactionFee;
+                 payload.fee_details.admin_fee = adminFee;
+                 payload.fee_details.ams_commission = amsFee;
+                 payload.fee_details.service_fee = serviceFee;
+                 payload.fee_details.shipping_rebate = shippingRebate;
+                 payload.fee_details.refund_amount = refundAmount;
+                 payload.fee_details.shipping_forwarded = shippingForwarded;
+                 payload.fee_details.return_shipping_fee = returnShippingFee;
+                 payload.fee_details.premium_fee = premFee;
+                 payload.fee_details.seller_voucher = sellerVoucher;
+                 payload.fee_details.processing_fee = procFee;
+                 payload.fee_details.transaction_fee = transactionFee;
                  
                  if (releaseDate) payload.release_date = releaseDate;
                  if (orderDate && !payload.order_date) payload.order_date = orderDate;

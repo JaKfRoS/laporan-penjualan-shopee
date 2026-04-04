@@ -47,12 +47,17 @@ export default function App() {
     }
   }, [isDarkMode]);
 
+  const isRefreshTokenError = (err: any) => {
+    const msg = err?.message?.toLowerCase() || '';
+    return msg.includes('refresh token') || msg.includes('refresh_token_not_found') || msg.includes('invalid refresh token');
+  };
+
   const handleSupabaseError = async (err: any) => {
-    if (err?.message?.toLowerCase().includes('refresh token') || err?.message?.includes('refresh_token_not_found') || err?.message?.toLowerCase().includes('invalid refresh token')) {
+    if (isRefreshTokenError(err)) {
         try {
           await supabase.auth.signOut();
         } catch (e) {
-          console.error("Error signing out:", e);
+          // Suppress sign out errors if it's already a refresh token issue
         }
         Object.keys(localStorage).forEach(key => {
           if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
@@ -77,7 +82,9 @@ export default function App() {
         const { data: { session: currentSession }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error("Auth Error:", error);
+          if (!isRefreshTokenError(error)) {
+            console.error("Auth Error:", error);
+          }
           await handleSupabaseError(error);
         } else {
           setSession(currentSession);
@@ -86,7 +93,9 @@ export default function App() {
           }
         }
       } catch (err: any) {
-        console.error("Auth Exception:", err);
+        if (!isRefreshTokenError(err)) {
+          console.error("Auth Exception:", err);
+        }
         await handleSupabaseError(err);
       } finally {
         setLoading(false);
@@ -320,7 +329,7 @@ export default function App() {
         if (error.code === 'PGRST202' || error.message.includes('function not found')) {
             toast.error("Update database diperlukan. Menghapus data manual...", { id: loadingToast });
             await supabase.from('stores').delete().eq('user_id', session.user.id);
-            await supabase.auth.signOut();
+            await handleLogout();
             window.location.reload();
             return;
         }
@@ -328,7 +337,7 @@ export default function App() {
       }
 
       toast.success(`Akun dihapus.`, { id: loadingToast });
-      await supabase.auth.signOut();
+      await handleLogout();
       window.location.reload(); 
     } catch (err: any) {
       console.error(err);
@@ -337,6 +346,21 @@ export default function App() {
       setShowSqlGuide(true);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      // Ignore sign out errors
+    } finally {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+          localStorage.removeItem(key);
+        }
+      });
+      setSession(null);
     }
   };
 
@@ -410,7 +434,7 @@ export default function App() {
                 onAddStore={handleAddStore}
               />
               <button 
-                onClick={() => supabase.auth.signOut()}
+                onClick={handleLogout}
                 className="hidden md:block px-5 py-2.5 text-xs font-black bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl hover:text-red-600 transition-all uppercase tracking-widest"
               >
                 Logout
@@ -552,7 +576,7 @@ export default function App() {
 
                 <div className="md:hidden">
                   <button 
-                    onClick={() => supabase.auth.signOut()}
+                    onClick={handleLogout}
                     className="w-full mt-4 px-5 py-3 text-sm font-black bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all uppercase tracking-widest"
                   >
                     Logout
