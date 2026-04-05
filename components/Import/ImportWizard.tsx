@@ -719,12 +719,14 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
       // 5.6 PROCESS ADJUSTMENT DATA
       if (adjustmentData.length > 0) {
-          const adjustmentsToInsert = adjustmentData.map(row => {
+          const adjustmentsToInsert = adjustmentData.map((row, index) => {
               const dateRaw = row['Tanggal Penyesuaian Dibuat'] || row['Tanggal Dana Dilepaskan'];
               const adjDate = dateRaw ? getSafeDate(dateRaw) : new Date().toISOString();
               const amount = parseNumberIndonesia(row['Biaya Penyesuaian'] || '0');
               const reason = row['Alasan Penyesuaian'] || row['Tipe Penyesuaian | Deskripsi'] || '';
-              const orderId = `ADJ-${store.id}-${adjDate}-${amount}-${reason.replace(/\s+/g, '').substring(0, 30)}-${row['No. Pesanan Terhubung'] || '-'}`;
+              // Use index to ensure deterministic ID for the same file upload, preventing duplicates
+              const deterministicDate = dateRaw ? adjDate : 'NODATE';
+              const orderId = `ADJ-${store.id}-${deterministicDate}-${amount}-${reason.replace(/\s+/g, '').substring(0, 30)}-${row['No. Pesanan Terhubung'] || '-'}-${index}`;
               
               return {
                   store_id: store.id,
