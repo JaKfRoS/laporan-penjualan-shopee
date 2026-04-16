@@ -147,15 +147,89 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         adjQuery = adjQuery.lt('adjustment_date', `${nextDay} 00:00:00+07`);
       }
 
-      const [ordersData, adjData] = await Promise.all([
+      let incomeQuery = supabase
+        .from('income_reports')
+        .select('*');
+
+      if (storeId === 'all') {
+        if (allStores && allStores.length > 0) {
+           const storeIds = allStores.map(s => s.id);
+           incomeQuery = incomeQuery.in('store_id', storeIds);
+        }
+      } else {
+        incomeQuery = incomeQuery.eq('store_id', storeId);
+      }
+
+      if (start) {
+        incomeQuery = incomeQuery.gte(mode, `${start} 00:00:00+07`);
+      }
+      if (end) {
+        const [y, m, d] = end.split('-').map(Number);
+        const nextDayDate = new Date(y, m - 1, d + 1);
+        const ny = nextDayDate.getFullYear();
+        const nm = String(nextDayDate.getMonth() + 1).padStart(2, '0');
+        const nd = String(nextDayDate.getDate()).padStart(2, '0');
+        const nextDay = `${ny}-${nm}-${nd}`;
+        
+        incomeQuery = incomeQuery.lt(mode, `${nextDay} 00:00:00+07`);
+      }
+
+    const [ordersData, adjData, incomeData] = await Promise.all([
         fetchAll(query),
-        fetchAll(adjQuery)
+        fetchAll(adjQuery),
+        fetchAll(incomeQuery).catch(err => {
+            if (err.message?.includes('relation "income_reports" does not exist')) {
+                // Return empty array if relation not found, will prompt sql guide
+                return [];
+            }
+            throw err;
+        })
       ]);
       
       if (controller.signal.aborted) return;
 
+      const orderMap = new Map();
+      (ordersData || []).forEach((o: any) => orderMap.set(o.order_id, o));
+
+      const missingOrderIds: string[] = [];
+      (incomeData || []).forEach((inc: any) => {
+         if (!orderMap.has(inc.order_id)) {
+             missingOrderIds.push(inc.order_id);
+         }
+      });
+
+      let additionalOrdersData: any[] = [];
+      if (missingOrderIds.length > 0) {
+          for (let i = 0; i < missingOrderIds.length; i += 500) {
+             const chunk = missingOrderIds.slice(i, i + 500);
+             let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', chunk);
+             if (storeId !== 'all') {
+                 chunkQuery = chunkQuery.eq('store_id', storeId);
+             }
+             const { data } = await chunkQuery;
+             if (data && data.length > 0) {
+                 additionalOrdersData = [...additionalOrdersData, ...data];
+             }
+          }
+      }
+
+      const combinedOrders = [...(ordersData || []), ...additionalOrdersData];
+
+      const mergedOrders = [...combinedOrders];
+      const combinedOrderMap = new Map();
+      mergedOrders.forEach((o, index) => combinedOrderMap.set(o.order_id, index));
+
+      (incomeData || []).forEach(inc => {
+        if (combinedOrderMap.has(inc.order_id)) {
+           const idx = combinedOrderMap.get(inc.order_id);
+           mergedOrders[idx] = { ...mergedOrders[idx], ...inc, is_from_income: true };
+        } else {
+           mergedOrders.push({ ...inc, is_from_income: true });
+        }
+      });
+
       // 5. Jangan Ada Auto Fallback ke Periode Default
-      setFilteredOrders(ordersData || []);
+      setFilteredOrders(mergedOrders);
       setAdjustments(adjData || []);
     } catch (err: any) {
       if (err.name !== 'AbortError' && err.message !== 'AbortError') {
@@ -209,6 +283,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     // G. Total Penyesuaian & Biaya Iklan
     let biayaIklan = 0;
     let penyesuaianLain = 0;
+    let totalWithdrawals = 0;
 
     adjustments.forEach(a => {
       const reason = (a.reason || '').toLowerCase();
@@ -219,11 +294,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                     (reason.includes('iklan') && !reason.includes('penghasilan')) || 
                     reason.includes('shopee ads') ||
                     reason.includes('koin penjual');
+      
+      const isWithdrawal = reason.includes('type: withdrawal') || reason.includes('penarikan dana');
+      const isIncome = reason.includes('type: income') || reason.includes('penghasilan dari pesanan');
 
       if (isAds) {
-        biayaIklan += amount;
-      } else if (!reason.includes('[balance_snapshot]')) {
+        biayaIklan += Math.abs(amount);
+      } else if (isWithdrawal) {
+        totalWithdrawals += Math.abs(amount);
+      } else if (!isIncome && !reason.includes('[balance_snapshot]')) {
+        // Only include true adjustments (corrections, compensations, etc)
+        // Skip 'Income' because it's already counted in totalNetRevenue via income_reports table
         penyesuaianLain += amount;
+      }
+    });
+
+    completedOrdersOnly.forEach(o => {
+      if (o.fee_details) {
+        if (o.fee_details.auto_topup_fee) biayaIklan += Math.abs(o.fee_details.auto_topup_fee);
+        if (o.fee_details.seller_coin_cashback) biayaIklan += Math.abs(o.fee_details.seller_coin_cashback);
+        if (o.fee_details.seller_cofund_coin_cashback) biayaIklan += Math.abs(o.fee_details.seller_cofund_coin_cashback);
       }
     });
 

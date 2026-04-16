@@ -36,6 +36,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const [netRevenueSelesai, setNetRevenueSelesai] = useState(0);
   const [totalHPPSelesai, setTotalHPPSelesai] = useState(0);
   const [adsTotal, setAdsTotal] = useState(0);
+  const [autoTopupTotal, setAutoTopupTotal] = useState(0);
   const [withdrawalsTotal, setWithdrawalsTotal] = useState(0);
   const [escrowBalance, setEscrowBalance] = useState(0);
   const [manualTransactions, setManualTransactions] = useState<ManualTransaction[]>([]);
@@ -130,16 +131,87 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         query = query.lt('release_date', `${nextDay} 00:00:00+07`);
       }
 
-      const orders = await fetchAll(query);
+      const ordersData = await fetchAll(query);
       
+      let incomeQuery = supabase
+        .from('income_reports')
+        .select('*');
+
+      if (store.id === 'all') {
+        if (allStores && allStores.length > 0) {
+           const storeIds = allStores.map(s => s.id);
+           incomeQuery = incomeQuery.in('store_id', storeIds);
+        }
+      } else {
+        incomeQuery = incomeQuery.eq('store_id', store.id);
+      }
+
+      if (dateRange.start) {
+        incomeQuery = incomeQuery.gte('release_date', `${dateRange.start} 00:00:00+07`);
+      }
+      if (dateRange.end) {
+        const [y, m, d] = dateRange.end.split('-').map(Number);
+        const nextDayDate = new Date(y, m - 1, d + 1);
+        const ny = nextDayDate.getFullYear();
+        const nm = String(nextDayDate.getMonth() + 1).padStart(2, '0');
+        const nd = String(nextDayDate.getDate()).padStart(2, '0');
+        const nextDay = `${ny}-${nm}-${nd}`;
+        incomeQuery = incomeQuery.lt('release_date', `${nextDay} 00:00:00+07`);
+      }
+
+      const incomeData = await fetchAll(incomeQuery).catch(err => {
+          if (err.message?.includes('relation "income_reports" does not exist')) return [];
+          throw err;
+      });
+
       if (controller.signal.aborted) return;
 
-      setAllOrders(orders);
+      const orderMap = new Map();
+      (ordersData || []).forEach((o: any) => orderMap.set(o.order_id, o));
+
+      const missingOrderIds: string[] = [];
+      (incomeData || []).forEach((inc: any) => {
+         if (!orderMap.has(inc.order_id)) {
+             missingOrderIds.push(inc.order_id);
+         }
+      });
+
+      let additionalOrdersData: any[] = [];
+      if (missingOrderIds.length > 0) {
+          for (let i = 0; i < missingOrderIds.length; i += 500) {
+             const chunk = missingOrderIds.slice(i, i + 500);
+             let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', chunk);
+             if (store.id !== 'all') {
+                 chunkQuery = chunkQuery.eq('store_id', store.id);
+             }
+             const { data } = await chunkQuery;
+             if (data && data.length > 0) {
+                 additionalOrdersData = [...additionalOrdersData, ...data];
+             }
+          }
+      }
+
+      const combinedOrders = [...(ordersData || []), ...additionalOrdersData];
+
+      const mergedOrders = [...combinedOrders];
+      const combinedOrderMap = new Map();
+      mergedOrders.forEach((o, index) => combinedOrderMap.set(o.order_id, index));
+
+      (incomeData || []).forEach(inc => {
+        if (combinedOrderMap.has(inc.order_id)) {
+           const idx = combinedOrderMap.get(inc.order_id);
+           mergedOrders[idx] = { ...mergedOrders[idx], ...inc, is_from_income: true };
+        } else {
+           mergedOrders.push({ ...inc, is_from_income: true });
+        }
+      });
+
+      setAllOrders(mergedOrders);
       
       // Calculate Metrics
       // 1. Filter Settled Orders
-      const settledOrders = orders.filter(o => {
-        const s = (o.status || '').toLowerCase();
+      const settledOrders = mergedOrders.filter(o => {
+        const s = (o.status || '').trim().toLowerCase();
         return s === 'selesai' || s === 'pengembalian';
       });
 
@@ -156,6 +228,19 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         }, 0) || 0;
         return acc + orderHpp;
       }, 0);
+
+      const autoTopupIklan = settledOrders.reduce((acc, o) => {
+         let subAds = 0;
+         if (o.fee_details) {
+            if (o.fee_details.auto_topup_fee) subAds += Math.abs(o.fee_details.auto_topup_fee);
+            if (o.fee_details.seller_coin_cashback) subAds += Math.abs(o.fee_details.seller_coin_cashback);
+            if (o.fee_details.seller_cofund_coin_cashback) subAds += Math.abs(o.fee_details.seller_cofund_coin_cashback);
+         }
+         return acc + subAds;
+      }, 0);
+      
+      // Store auto_topup_fee sum to use later in adsTotal calculation
+      setAutoTopupTotal(autoTopupIklan);
 
       setNetRevenueSelesai(revenue);
       setTotalHPPSelesai(hpp);
@@ -691,7 +776,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     .filter(tx => tx.isManual)
     .reduce((acc, tx) => acc + tx.amount, 0);
   
-  const labaBersihRiil = netRevenueSelesai - adsTotal + totalManualExpenses - totalHPPSelesai;
+  const finalAdsTotal = adsTotal + autoTopupTotal;
+  const labaBersihRiil = netRevenueSelesai - finalAdsTotal + totalManualExpenses - totalHPPSelesai;
 
   const generatePDF = () => {
     const doc = new jsPDF();
@@ -705,7 +791,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
     const tableBody = [
       ['1. Total Dana Masuk (Penghasilan Pesanan)', `Rp ${netRevenueSelesai.toLocaleString()}`],
-      ['2. Total Potongan Saldo (Iklan/Koin)', `(Rp ${adsTotal.toLocaleString()})`],
+      ['2. Total Potongan Saldo (Iklan/Koin)', `(Rp ${finalAdsTotal.toLocaleString()})`],
       ['3. Total Penarikan Dana (Withdrawal)', `(Rp ${withdrawalsTotal.toLocaleString()})`],
       ['4. Total Penyesuaian Manual', `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`],
       ['5. Total HPP (Modal Produk)', `(Rp ${totalHPPSelesai.toLocaleString()})`],
@@ -755,8 +841,18 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           return acc + (o.order_items?.reduce((h: number, item: any) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0);
         }, 0);
         
+        const storeAutoTopupIklan = storeOrders.reduce((acc, o) => {
+           let subAds = 0;
+           if (o.fee_details) {
+              if (o.fee_details.auto_topup_fee) subAds += Math.abs(o.fee_details.auto_topup_fee);
+              if (o.fee_details.seller_coin_cashback) subAds += Math.abs(o.fee_details.seller_coin_cashback);
+              if (o.fee_details.seller_cofund_coin_cashback) subAds += Math.abs(o.fee_details.seller_cofund_coin_cashback);
+           }
+           return acc + subAds;
+        }, 0);
+        
         const storeTxs = manualTransactions.filter(tx => tx.storeId === s.id);
-        const storeAds = storeTxs.filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual' && !tx.isManual).reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
+        const storeAds = storeTxs.filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual' && !tx.isManual).reduce((acc, tx) => acc + Math.abs(tx.amount), 0) + storeAutoTopupIklan;
         const storeManual = storeTxs.filter(tx => tx.isManual).reduce((acc, tx) => acc + tx.amount, 0);
         
         const storeProfit = storeRevenue - storeAds + storeManual - storeHpp;
@@ -901,7 +997,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     </tr>
                     <tr>
                       <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">2. Total Potongan Saldo</td>
-                      <td className="px-6 py-4 text-right text-red-600 font-bold">-Rp {adsTotal.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right text-red-600 font-bold">-Rp {finalAdsTotal.toLocaleString()}</td>
                       <td className="px-6 py-4 text-right text-slate-400">Iklan/Koin (Upload)</td>
                     </tr>
                     <tr>
@@ -1140,13 +1236,13 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                 </div>
               )}
 
-              {adsTotal > 0 && (
+              {finalAdsTotal > 0 && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-6 rounded-2xl border border-green-100 dark:border-green-800 animate-in fade-in slide-in-from-bottom-4">
                   <h4 className="text-green-800 dark:text-green-400 font-bold mb-4">Hasil Scan File:</h4>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm">
                       <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">Total Biaya Iklan</p>
-                      <p className="text-2xl font-black text-red-600 mt-2">-Rp {adsTotal.toLocaleString()}</p>
+                      <p className="text-2xl font-black text-red-600 mt-2">-Rp {finalAdsTotal.toLocaleString()}</p>
                     </div>
                     <div className="bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm">
                       <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">Saldo Akhir (Escrow)</p>

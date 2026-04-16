@@ -6,6 +6,27 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS fee_details jsonb DEFAULT '{}'::json
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS release_date date DEFAULT NULL;
 ALTER TABLE stores ADD COLUMN IF NOT EXISTS last_import_at timestamptz DEFAULT NULL;
 
+-- TABEL INCOME REPORTS (KEUANGAN SEPARATED) --
+CREATE TABLE IF NOT EXISTS income_reports (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    order_id text NOT NULL,
+    order_date date,
+    release_date date,
+    net_revenue numeric DEFAULT 0,
+    service_fee numeric DEFAULT 0,
+    product_total numeric DEFAULT 0,
+    fee_details jsonb DEFAULT '{}'::jsonb,
+    refund_amount numeric DEFAULT 0,
+    status text DEFAULT '',
+    created_at timestamptz DEFAULT now(),
+    UNIQUE(store_id, order_id)
+);
+
+ALTER TABLE income_reports ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Enable all for authenticated users" ON income_reports;
+CREATE POLICY "Enable all for authenticated users" ON income_reports FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
 -- TABEL ADJUSTMENTS --
 CREATE TABLE IF NOT EXISTS adjustments (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,

@@ -283,10 +283,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
   const getSafeDate = (val: any): string | null => {
     if (!val) return null;
     try {
+      let isNumericDate = false;
       let d: Date;
       if (typeof val === 'number') {
         // Excel numeric date (e.g., 45678.123)
+        // This calculates the date in UTC time explicitly since Unix Epoch
         d = new Date((val - (25567 + 1)) * 86400 * 1000);
+        isNumericDate = true;
       } else {
         // For string inputs like '2025-12-01 00:05' or '31/12/2025 15:30'
         let strVal = String(val).trim();
@@ -307,12 +310,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       if (isNaN(d.getTime())) return null;
       
       // Option B: Store as WIB (Local Time) with explicit offset to avoid UTC shift
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const hours = String(d.getHours()).padStart(2, '0');
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-      const seconds = String(d.getSeconds()).padStart(2, '0');
+      // If the input was an Excel numeric date, it was mapped to UTC explicitly.
+      const year = isNumericDate ? d.getUTCFullYear() : d.getFullYear();
+      const month = String(isNumericDate ? d.getUTCMonth() + 1 : d.getMonth() + 1).padStart(2, '0');
+      const day = String(isNumericDate ? d.getUTCDate() : d.getDate()).padStart(2, '0');
+      const hours = String(isNumericDate ? d.getUTCHours() : d.getHours()).padStart(2, '0');
+      const minutes = String(isNumericDate ? d.getUTCMinutes() : d.getMinutes()).padStart(2, '0');
+      const seconds = String(isNumericDate ? d.getUTCSeconds() : d.getSeconds()).padStart(2, '0');
       
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}+07`;
     } catch (e) {
@@ -475,10 +479,14 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       const incomeHeaders = Object.keys(incomeData[0] || {});
       const incomeMapping: Mapping = {};
       Object.entries(INCOME_HEADER_ALIASES).forEach(([dbKey, aliases]) => {
-         const found = incomeHeaders.find(h => aliases.some(a => a.toLowerCase() === h.trim().toLowerCase()));
+         const found = incomeHeaders.find(h => {
+             const cleanH = String(h).trim().toLowerCase().replace(/\(idr\)/g, '').replace(/\(rp\)/g, '').trim();
+             return aliases.some(a => cleanH === a.toLowerCase() || cleanH.includes(a.toLowerCase()));
+         });
          if (found) incomeMapping[dbKey] = found;
       });
 
+      const incomeReportsToInsert: any[] = [];
       const incomeUpdates: { orderId: string, payload: any }[] = [];
 
       incomeData.forEach(row => {
@@ -508,7 +516,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          const returnToSenderShippingFee = Math.abs(parseNumberIndonesia(row[incomeMapping['return_to_sender_shipping_fee']] || row['Kembali ke Biaya Pengiriman Pengirim']));
          const saveShippingProgramFee = Math.abs(parseNumberIndonesia(row[incomeMapping['save_shipping_program_fee']] || row['Biaya Program Hemat Biaya Kirim']));
          const campaignFee = Math.abs(parseNumberIndonesia(row[incomeMapping['campaign_fee']] || row['Biaya Kampanye']));
-         const autoTopupFee = Math.abs(parseNumberIndonesia(row[incomeMapping['auto_topup_fee']] || row['Biaya Isi Saldo Otomatis (dari Penghasilan)']));
+         const autoTopupFee = Math.abs(parseNumberIndonesia(row[incomeMapping['auto_topup_fee']] || row['Biaya Isi Saldo Otomatis (dari Penghasilan)'] || row['Biaya Isi Saldo Otomatis']));
 
          const originalPrice = Math.abs(parseNumberIndonesia(row[incomeMapping['original_price']] || row['Harga Asli Produk']));
          const productDiscount = Math.abs(parseNumberIndonesia(row[incomeMapping['product_discount']] || row['Total Diskon Produk']));
@@ -552,107 +560,39 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          const orderDateRaw = row[incomeMapping['order_date']] || row['Waktu Pesanan Dibuat'];
          const orderDate = orderDateRaw ? getSafeDate(orderDateRaw) : null;
 
-         if (orderGroups[orderId]) {
-             // Update Order in memory (Do not accumulate to avoid doubling if duplicate rows exist)
-             const currentOrder = orderGroups[orderId].order;
-             currentOrder.net_revenue = netRevenue;
-             currentOrder.service_fee = totalMarketplaceFee;
+         let status = 'Selesai';
+         if (refundAmount > 0) status = 'Pengembalian';
+
+         // We will only target income_reports to completely decouple finance data
+         // Ensure we don't have multiple rows for the same order in the loop
+         const existingIndex = incomeReportsToInsert.findIndex(r => r.order_id === orderId);
+         
+         if (existingIndex >= 0) {
+             const existing = incomeReportsToInsert[existingIndex];
+             existing.net_revenue += netRevenue;
+             existing.service_fee += totalMarketplaceFee;
+             existing.product_total += (incomeGmv > 0 ? incomeGmv : 0);
+             existing.refund_amount += refundAmount;
+             if (refundAmount > 0) existing.status = 'Pengembalian';
              
-             // Use Income Report as source of truth for GMV if available
-             if (incomeGmv > 0) {
-                 if (!(currentOrder as any)._has_income_gmv) {
-                     currentOrder.product_total = 0;
-                     (currentOrder as any)._has_income_gmv = true;
-                 }
-                 currentOrder.product_total = incomeGmv; // Do not accumulate
-             }
-
-             // Overwrite Fee Details (Do not accumulate)
-             if (!currentOrder.fee_details) {
-                 currentOrder.fee_details = { ...feeDetails };
-             } else {
-                 currentOrder.fee_details.admin_fee = adminFee;
-                 currentOrder.fee_details.ams_commission = amsFee;
-                 currentOrder.fee_details.service_fee = serviceFee;
-                 currentOrder.fee_details.shipping_rebate = shippingRebate;
-                 currentOrder.fee_details.refund_amount = refundAmount;
-                 currentOrder.fee_details.shipping_forwarded = shippingForwarded;
-                 currentOrder.fee_details.return_shipping_fee = returnShippingFee;
-                 currentOrder.fee_details.premium_fee = premFee;
-                 currentOrder.fee_details.seller_voucher = sellerVoucher;
-                 currentOrder.fee_details.processing_fee = procFee;
-                 currentOrder.fee_details.transaction_fee = transactionFee;
-             }
-
-             currentOrder.admin_fee = 0;
-             if (releaseDate) {
-                 currentOrder.release_date = releaseDate;
-             }
-             if (orderDate && !currentOrder.order_date) {
-                 currentOrder.order_date = orderDate;
-             }
-             if (refundAmount > 0) {
-                 currentOrder.status = 'Pengembalian';
-             } else {
-                 currentOrder.status = 'Selesai';
+             // Accumulate fee details
+             for (const key in feeDetails) {
+                 existing.fee_details[key] = (existing.fee_details[key] || 0) + (feeDetails as any)[key];
              }
          } else {
-             // Order is not in current Orders file, but might be in DB
-             const existingUpdate = incomeUpdates.find(u => u.orderId === orderId);
-             if (existingUpdate) {
-                 const payload = existingUpdate.payload;
-                 payload.net_revenue = netRevenue;
-                 payload.service_fee = totalMarketplaceFee;
-                 
-                 if (incomeGmv > 0) {
-                     if (!payload._has_income_gmv) {
-                         payload.product_total = 0;
-                         payload._has_income_gmv = true;
-                     }
-                     payload.product_total = incomeGmv;
-                 }
-
-                 payload.fee_details.admin_fee = adminFee;
-                 payload.fee_details.ams_commission = amsFee;
-                 payload.fee_details.service_fee = serviceFee;
-                 payload.fee_details.shipping_rebate = shippingRebate;
-                 payload.fee_details.refund_amount = refundAmount;
-                 payload.fee_details.shipping_forwarded = shippingForwarded;
-                 payload.fee_details.return_shipping_fee = returnShippingFee;
-                 payload.fee_details.premium_fee = premFee;
-                 payload.fee_details.seller_voucher = sellerVoucher;
-                 payload.fee_details.processing_fee = procFee;
-                 payload.fee_details.transaction_fee = transactionFee;
-                 
-                 if (releaseDate) payload.release_date = releaseDate;
-                 if (orderDate && !payload.order_date) payload.order_date = orderDate;
-                 if (refundAmount > 0) {
-                     payload.status = 'Pengembalian';
-                 } else {
-                     payload.status = 'Selesai';
-                 }
-             } else {
-                 const updatePayload: any = {
-                     net_revenue: netRevenue,
-                     service_fee: totalMarketplaceFee,
-                     fee_details: { ...feeDetails },
-                     admin_fee: 0,
-                     total_payment: 0, // Safe defaults for new orders
-                     product_total: incomeGmv > 0 ? incomeGmv : 0,
-                     _has_income_gmv: incomeGmv > 0,
-                     shipping_estimated: 0,
-                     total_discount: 0,
-                     seller_voucher: 0
-                 };
-                 if (releaseDate) updatePayload.release_date = releaseDate;
-                 if (orderDate) updatePayload.order_date = orderDate;
-                 if (refundAmount > 0) {
-                     updatePayload.status = 'Pengembalian';
-                 } else {
-                     updatePayload.status = 'Selesai';
-                 }
-                 incomeUpdates.push({ orderId, payload: updatePayload });
-             }
+             const incomeRow = {
+                 store_id: store.id,
+                 order_id: orderId,
+                 order_date: orderDate,
+                 release_date: releaseDate,
+                 net_revenue: netRevenue,
+                 service_fee: totalMarketplaceFee,
+                 product_total: incomeGmv > 0 ? incomeGmv : 0,
+                 fee_details: feeDetails,
+                 refund_amount: refundAmount,
+                 status: status
+             };
+             incomeReportsToInsert.push(incomeRow);
          }
       });
 
@@ -692,27 +632,18 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         }
       }
 
-      // 5.5 UPDATE EXISTING ORDERS FROM INCOME DATA
-      if (incomeUpdates.length > 0) {
-          const orderIdsToFetch = incomeUpdates.map(u => u.orderId);
+      // 5.5 INSERT INTO INCOME REPORTS (NEW SEPARATED TABLE)
+      if (incomeReportsToInsert.length > 0) {
           const chunkSize = 500;
-          for (let i = 0; i < orderIdsToFetch.length; i += chunkSize) {
-              const chunk = orderIdsToFetch.slice(i, i + chunkSize);
-              const { data: existingOrders } = await supabase
-                  .from('orders')
-                  .select('*')
-                  .eq('store_id', store.id)
-                  .in('order_id', chunk);
+          for (let i = 0; i < incomeReportsToInsert.length; i += chunkSize) {
+              const chunk = incomeReportsToInsert.slice(i, i + chunkSize);
+              const { error: incomeError } = await supabase
+                  .from('income_reports')
+                  .upsert(chunk, { onConflict: 'store_id, order_id' });
                   
-              if (existingOrders && existingOrders.length > 0) {
-                  const upserts = existingOrders.map(eo => {
-                      const update = incomeUpdates.find(u => u.orderId === eo.order_id)?.payload;
-                      if (update && update._has_income_gmv !== undefined) {
-                          delete update._has_income_gmv;
-                      }
-                      return { ...eo, ...update };
-                  });
-                  await supabase.from('orders').upsert(upserts, { onConflict: 'store_id, order_id' });
+              if (incomeError) {
+                  console.error("Gagal menyimpan Laporan Keuangan", incomeError);
+                  throw new Error(`Data Laporan Penghasilan gagal disimpan. Pastikan Anda sudah menjalankan SQL Update terbaru. Detail: ${incomeError.message}`);
               }
           }
       }

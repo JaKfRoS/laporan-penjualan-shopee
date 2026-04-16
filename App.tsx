@@ -299,12 +299,19 @@ export default function App() {
         .from('adjustments')
         .delete()
         .eq('store_id', currentStore.id);
+
+      // Hapus data laporan keuangan
+      const { error: deleteIncome } = await supabase
+        .from('income_reports')
+        .delete()
+        .eq('store_id', currentStore.id);
         
       // Also clear mappings? Optional. Let's keep mappings for convenience, only clear transactions.
 
       if (deleteOrders) throw deleteOrders;
       if (deleteAds) throw deleteAds;
       if (deleteAdjustments) throw deleteAdjustments;
+      if (deleteIncome && !deleteIncome.message.includes('relation "income_reports" does not exist')) throw deleteIncome;
 
       toast.success("Data pesanan & iklan berhasil dikosongkan.", { id: loadingToast });
       setIsConfirmingClear(false);
