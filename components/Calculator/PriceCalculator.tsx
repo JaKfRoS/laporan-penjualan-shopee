@@ -36,11 +36,11 @@ const InputGroup: React.FC<{
   placeholder?: string;
 }> = ({ label, id, value, onChange, prefix, suffix, step, placeholder = "0" }) => {
   return (
-    <div className="space-y-2">
-      <label htmlFor={id} className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest ml-1">{label}</label>
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{label}</label>
       <div className="relative group">
         {prefix && (
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm group-focus-within:text-orange-500 transition-colors pointer-events-none">
+          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs group-focus-within:text-orange-500 transition-colors pointer-events-none">
             {prefix}
           </div>
         )}
@@ -50,14 +50,14 @@ const InputGroup: React.FC<{
           value={value}
           onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
           step={step}
-          onWheel={(e) => e.currentTarget.blur()} // PREVENT SCROLL CHANGE
-          className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-3.5 md:py-4 font-bold text-slate-900 dark:text-white outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all text-sm md:text-base ${
-            prefix ? 'pl-12' : 'pl-4'
-          } ${suffix ? 'pr-12' : 'pr-4'}`}
+          onWheel={(e) => e.currentTarget.blur()}
+          className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 font-bold text-slate-900 dark:text-white outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all text-sm ${
+            prefix ? 'pl-10' : 'pl-4'
+          } ${suffix ? 'pr-10' : 'pr-4'}`}
           placeholder={placeholder}
         />
         {suffix && (
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm pointer-events-none">
+          <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs pointer-events-none">
             {suffix}
           </div>
         )}
@@ -97,11 +97,11 @@ const ResultCard: React.FC<{
   subValue?: string;
 }> = ({ label, value, colorClass = "text-slate-900 dark:text-white", subValue }) => {
   return (
-    <div className="bg-slate-50 dark:bg-slate-800/50 p-5 md:p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center min-h-[100px] md:min-h-[120px]">
-      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 md:mb-2">{label}</span>
+    <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center min-h-[80px]">
+      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</span>
       <div>
-        <span className={`text-2xl md:text-3xl font-black tracking-tight ${colorClass}`}>{value}</span>
-        {subValue && <p className="text-[10px] text-slate-500 font-bold mt-1">{subValue}</p>}
+        <span className={`text-xl md:text-2xl font-black tracking-tight ${colorClass}`}>{value}</span>
+        {subValue && <p className="text-[9px] text-slate-500 font-bold mt-0.5">{subValue}</p>}
       </div>
     </div>
   );
@@ -265,60 +265,59 @@ export const PriceCalculator: React.FC<PriceCalculatorProps> = ({ store }) => {
   ];
 
   return (
-    <div className="space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-4">
+    <div className="space-y-4 md:space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-2">
       
-      {/* Header */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-12 text-center text-white relative overflow-hidden shadow-2xl">
-         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-64 bg-orange-500/20 blur-[120px] rounded-full pointer-events-none"></div>
-         <h2 className="text-2xl md:text-5xl font-black uppercase tracking-tighter italic relative z-10">KalkulAsik</h2>
-         <p className="text-orange-200/80 font-bold uppercase tracking-widest text-[10px] md:text-xs mt-3 relative z-10">
+      {/* Header - More Compact */}
+      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl md:rounded-[1.5rem] p-4 md:p-6 text-center text-white relative overflow-hidden shadow-2xl">
+         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-32 bg-orange-500/20 blur-[80px] rounded-full pointer-events-none"></div>
+         <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter italic relative z-10">KalkulAsik</h2>
+         <p className="text-orange-200/80 font-bold uppercase tracking-widest text-[9px] mt-1 relative z-10">
             HARGA AKURAT, JUALAN MAKIN MANTAP
          </p>
       </div>
 
-      <div className="grid gap-4 md:gap-6">
+      <div className="grid gap-4">
           
         {/* SECTION 1: OMZET */}
-        <section className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-10 border border-slate-200 dark:border-slate-800 shadow-sm">
-          <div className="flex items-center gap-3 md:gap-4 mb-6 md:mb-8">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-500/20">
-              <DollarSign className="w-5 h-5 md:w-6 md:h-6" />
+        <section className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-[1.5rem] p-4 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-500/20">
+              <DollarSign className="w-4 h-4" />
             </div>
-            <h2 className="text-lg md:text-xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Analisis Omzet</h2>
+            <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight uppercase">Analisis Omzet</h2>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-8">
-            <div className="md:col-span-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="md:col-span-1">
               <div className="relative">
-                <label className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest ml-1 mb-2 block">Cari Produk Master (Auto-Fill HPP)</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">Cari Produk</label>
                 <div className="relative group">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 group-focus-within:text-orange-500 transition-colors" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-orange-500 transition-colors" />
                   <input
                     type="text"
-                    placeholder="Ketik SKU atau Nama Produk..."
+                    placeholder="SKU / Nama..."
                     value={searchSku}
                     onChange={(e) => {
                       setSearchSku(e.target.value);
                       setShowSkuDropdown(true);
                     }}
                     onFocus={() => setShowSkuDropdown(true)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl py-4 pl-12 pr-4 font-bold text-slate-900 dark:text-white outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-10 pr-3 font-bold text-slate-900 dark:text-white outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all text-xs"
                   />
                   {showSkuDropdown && filteredProducts.length > 0 && (
-                    <div className="absolute z-50 left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                    <div className="absolute z-50 left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 max-h-[40vh] overflow-y-auto custom-scrollbar">
                       {filteredProducts.map((p) => (
                         <button
                           key={p.sku}
                           onClick={() => handleSelectProduct(p)}
-                          className="w-full text-left p-4 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-colors flex items-center justify-between gap-4"
+                          className="w-full text-left p-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-colors flex items-center justify-between gap-3"
                         >
                           <div className="flex-1 min-w-0">
-                            <p className="font-black text-slate-900 dark:text-white text-sm truncate">{p.sku}</p>
-                            <p className="text-[10px] md:text-xs text-slate-500 font-medium truncate">{p.product_name} {p.variation_name ? `(${p.variation_name})` : ''}</p>
+                            <p className="font-black text-slate-900 dark:text-white text-[11px] truncate">{p.sku}</p>
+                            <p className="text-[9px] text-slate-500 font-medium truncate">{p.product_name}</p>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="text-xs font-black text-emerald-500">{formatRupiah(p.cost_price)}</p>
-                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Fee: {formatRupiah(p.processing_fee || 0)}</p>
+                            <p className="text-[11px] font-black text-emerald-500">{formatRupiah(p.cost_price)}</p>
                           </div>
                         </button>
                       ))}
@@ -332,77 +331,66 @@ export const PriceCalculator: React.FC<PriceCalculatorProps> = ({ store }) => {
             <InputGroup label="Biaya Admin (%)" id="inputC" value={adminFee} onChange={setAdminFee} suffix="%" step="0.1" />
           </div>
 
-          <div className="mt-8 md:mt-12">
-            <div className="relative overflow-hidden rounded-[1.5rem] md:rounded-[2rem] bg-slate-900 text-white p-6 md:p-8 border border-slate-800">
-              <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl"></div>
-              <div className="relative flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div className="mt-4 md:mt-6">
+            <div className="relative overflow-hidden rounded-xl bg-slate-900 text-white p-4 md:p-5 border border-slate-800">
+              <div className="relative flex flex-row items-center justify-between gap-6">
                 <div>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2 md:mb-3">Estimasi Omzet Real (Net)</span>
-                  <span className="text-3xl md:text-5xl font-black text-emerald-400 tracking-tighter tabular-nums">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-1">Estimasi Omzet Real (Net)</span>
+                  <span className="text-2xl md:text-3xl font-black text-emerald-400 tracking-tighter tabular-nums">
                     {formatRupiah(results.D)}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-slate-400 bg-white/5 px-4 py-2 md:px-5 md:py-2.5 rounded-xl md:rounded-2xl border border-white/5 w-fit">
-                  <Info size={14} className="text-emerald-500" />
-                  Admin Fee: {formatRupiah(results.adminFeeAmount)}
+                <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-slate-400 bg-white/5 px-4 py-2 rounded-xl border border-white/5 h-fit">
+                  <Info size={12} className="text-emerald-500" />
+                  Fee: {formatRupiah(results.adminFeeAmount)}
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* SECTION 2: COSTS & MARGIN */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+        {/* SECTION 2 & 3 Combined in a grid for desktop */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           
-          {/* INPUT BIAYA */}
-          <section className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-full">
-            <div className="flex items-center gap-3 md:gap-4 mb-6 md:mb-8">
-              <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-200 dark:border-blue-500/20"><Package className="w-5 h-5 md:w-6 md:h-6" /></div>
-              <h2 className="text-base md:text-lg font-black text-slate-900 dark:text-white tracking-tight uppercase">Biaya & Beban</h2>
+          {/* COSTS */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-[1.5rem] p-4 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-200 dark:border-blue-500/20"><Package className="w-4 h-4" /></div>
+              <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight uppercase">Biaya</h2>
             </div>
             
-            <div className="space-y-5 md:space-y-6 flex-1">
+            <div className="space-y-4">
               <InputGroup label="HPP Produk" id="inputE" value={hpp} onChange={setHpp} prefix="Rp" />
-              <div className="grid grid-cols-2 gap-4">
-                <InputGroup label="Biaya Proses" id="inputF" value={processingCost} onChange={setProcessingCost} prefix="Rp" />
-                <InputGroup label="Overhead (%)" id="inputOverhead" value={overheadPercent} onChange={setOverheadPercent} suffix="%" step="0.1" />
+              <InputGroup label="Biaya Proses" id="inputF" value={processingCost} onChange={setProcessingCost} prefix="Rp" />
+              <InputGroup label="Overhead (%)" id="inputOverhead" value={overheadPercent} onChange={setOverheadPercent} suffix="%" step="0.1" />
+              
+              <div className="w-full py-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-center text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">
+                {results.priceRatioText}
               </div>
-            </div>
-
-            <div className="mt-6 md:mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
-                <div className="w-full py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 text-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-                  {results.priceRatioText}
-                </div>
             </div>
           </section>
 
-          {/* HASIL LABA KOTOR */}
-          <section className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-full">
-            <div className="flex items-center gap-3 md:gap-4 mb-6 md:mb-8">
-              <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-200 dark:border-indigo-500/20"><Activity className="w-5 h-5 md:w-6 md:h-6" /></div>
-              <h2 className="text-base md:text-lg font-black text-slate-900 dark:text-white tracking-tight uppercase">Laba Kotor</h2>
+          {/* MARGIN */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-[1.5rem] p-4 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-200 dark:border-indigo-500/20"><Activity className="w-4 h-4" /></div>
+              <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight uppercase">Margin</h2>
             </div>
             
-            <div className="flex flex-col gap-4 md:gap-6 flex-1">
-              <div className="bg-slate-50 dark:bg-slate-800 rounded-[1.5rem] md:rounded-[2rem] p-6 md:p-8 border border-slate-200 dark:border-slate-700 space-y-4">
-                <div className="flex justify-between items-center text-xs font-bold text-slate-500">
-                  <span>Omzet Real</span>
+            <div className="space-y-3">
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
+                  <span>Net Sales</span>
                   <span className="text-emerald-500 tabular-nums">{formatRupiah(results.D)}</span>
                 </div>
-                <div className="flex justify-between items-center text-xs font-bold text-slate-500">
-                  <span>HPP & Biaya Proses</span>
+                <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
+                  <span>HPP Total</span>
                   <span className="text-slate-400 tabular-nums">- {formatRupiah(results.G)}</span>
                 </div>
-                {results.overheadAmount > 0 && (
-                  <div className="flex justify-between items-center text-xs font-bold text-slate-500">
-                    <span>Overhead ({formatDecimal(Number(overheadPercent))}%)</span>
-                    <span className="text-pink-400 tabular-nums">- {formatRupiah(results.overheadAmount)}</span>
-                  </div>
-                )}
-                <div className="h-px bg-slate-200 dark:bg-slate-700 my-2"></div>
+                <div className="h-px bg-slate-200 dark:bg-slate-700 my-1"></div>
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-widest">Gross Margin</span>
-                  <span className={`text-xl md:text-2xl font-black tabular-nums ${results.H >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                  <span className="text-[9px] font-black text-slate-900 dark:text-white uppercase tracking-widest">Gross Margin</span>
+                  <span className={`text-lg font-black tabular-nums ${results.H >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                     {formatRupiah(results.H)}
                   </span>
                 </div>
@@ -412,14 +400,13 @@ export const PriceCalculator: React.FC<PriceCalculatorProps> = ({ store }) => {
                 label="Laba Kotor (%)" 
                 value={results.A > 0 ? formatDecimal(results.grossMarginPercent, 1) + "%" : "0%"}
                 colorClass={results.H >= 0 ? "text-emerald-500" : "text-red-500"}
-                subValue="Dari Harga Jual"
               />
             </div>
           </section>
         </div>
 
         {/* SECTION 3: ADS STRATEGY */}
-        <section className="bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-10 border border-slate-800 relative overflow-hidden shadow-2xl">
+        <section className="bg-slate-900 rounded-[1.5rem] md:rounded-[2rem] p-4 md:p-8 border border-slate-800 relative overflow-hidden shadow-2xl">
           <div className="flex items-center gap-3 md:gap-4 mb-8 md:mb-10 relative z-10">
             <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-orange-500/10 text-orange-500 flex items-center justify-center border border-orange-500/20"><TrendingUp className="w-5 h-5 md:w-6 md:h-6" /></div>
             <h2 className="text-lg md:text-xl font-black text-white tracking-tight uppercase">Iklan & ROAS</h2>
@@ -521,82 +508,69 @@ export const PriceCalculator: React.FC<PriceCalculatorProps> = ({ store }) => {
           </div>
         </section>
 
-        {/* SECTION 4: UNIFIED PRICE CANDLE */}
-        <section className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-12 border border-slate-200 dark:border-slate-800 shadow-xl relative overflow-hidden">
+        {/* SECTION 4: UNIFIED PRICE CANDLE - Compact */}
+        <section className="bg-white dark:bg-slate-900 rounded-2xl md:rounded-[1.5rem] p-4 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
           {results.A > 0 ? (
-            <div className="space-y-8 md:space-y-10">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Struktur Harga</h2>
-              </div>
-
-              <div className="relative group overflow-x-auto custom-scrollbar pb-2 md:pb-0">
-                <div className="h-12 md:h-16 w-full min-w-[500px] bg-slate-100 dark:bg-slate-800 rounded-2xl overflow-hidden flex shadow-inner border border-slate-200 dark:border-slate-700/50">
-                  {breakdownData.map((item, idx) => {
-                    const width = getPercentage(item.val);
-                    if (width <= 0) return null;
-                    return (
-                      <div 
-                        key={idx} 
-                        style={{ width: `${width}%` }}
-                        className={`${item.color} h-full transition-all duration-1000 ease-in-out border-r border-black/10 relative group/segment`}
-                        title={`${item.label}: ${formatRupiah(item.val)}`}
-                      >
-                         {width > 10 && (
-                            <div className="absolute inset-0 flex items-center justify-center text-[9px] md:text-[10px] font-black text-white/90 opacity-0 group-hover/segment:opacity-100 transition-opacity">
-                                {formatDecimal(width, 0)}%
-                            </div>
-                         )}
-                      </div>
-                    );
-                  })}
-                  {results.netProfitFinal < 0 && (
-                    <div className="absolute inset-y-0 right-0 bg-red-600/20 w-full animate-pulse pointer-events-none" />
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-y-4 md:gap-y-6 gap-x-2 md:gap-x-4">
-                {breakdownData.map((item, idx) => (
-                  <div key={idx} className="flex flex-col gap-1 md:gap-1.5 p-2 md:p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className={`w-2.5 h-2.5 md:w-3 md:h-3 rounded-full ${item.dotColor} flex-shrink-0 ring-2 ring-white dark:ring-slate-900`} />
-                      <span className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{item.label}</span>
+            <div className="space-y-6">
+              <div className="flex items-center justify-between h-8 md:h-10 w-full bg-slate-100 dark:bg-slate-800 rounded-xl overflow-hidden flex shadow-inner">
+                {breakdownData.map((item, idx) => {
+                  const width = getPercentage(item.val);
+                  if (width <= 0) return null;
+                  return (
+                    <div 
+                      key={idx} 
+                      style={{ width: `${width}%` }}
+                      className={`${item.color} h-full transition-all duration-1000 ease-in-out border-r border-black/5 flex items-center justify-center`}
+                    >
+                       {width > 12 && (
+                          <span className="text-[8px] font-black text-white/80">{formatDecimal(width, 0)}%</span>
+                       )}
                     </div>
-                    <span className="text-xs md:text-sm font-black text-slate-900 dark:text-white pl-4 md:pl-5">
-                      {formatRupiah(item.val)} <span className="text-slate-400 font-bold ml-1 text-[9px] md:text-[10px]">({formatDecimal(getPercentage(item.val), 1)}%)</span>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                {breakdownData.map((item, idx) => (
+                  <div key={idx} className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-2 h-2 rounded-full ${item.dotColor}`} />
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">{item.label}</span>
+                    </div>
+                    <span className="text-[11px] font-black text-slate-900 dark:text-white pl-3.5">
+                      {formatRupiah(item.val)}
                     </span>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-6 md:mt-8 pt-6 md:pt-8 border-t border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-center md:justify-between gap-6">
-                <div className="flex items-center gap-4 w-full md:w-auto">
-                  <div className={`p-4 rounded-2xl ${results.netProfitFinal >= 0 ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-500" : "bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-500"} border border-transparent dark:border-white/5`}>
-                    <Activity size={24} />
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl ${results.netProfitFinal >= 0 ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-500" : "bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-500"}`}>
+                    <Activity size={18} />
                   </div>
                   <div>
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Laba Bersih Final</h4>
-                    <p className={`text-3xl md:text-4xl font-black ${results.netProfitFinal >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                    <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Laba Bersih</h4>
+                    <p className={`text-xl md:text-2xl font-black ${results.netProfitFinal >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                       {formatRupiah(results.netProfitFinal)}
                     </p>
                   </div>
                 </div>
-                <div className="bg-slate-50 dark:bg-slate-800 px-8 py-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 flex flex-col items-center min-w-[180px] w-full md:w-auto">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2">Total Profitability</span>
-                  <span className={`text-3xl font-black ${results.netProfitFinal >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                <div className="bg-slate-50 dark:bg-slate-800 px-6 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center gap-3">
+                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Profitability:</span>
+                  <span className={`text-xl font-black ${results.netProfitFinal >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                     {formatDecimal(results.netProfitPercent, 1)}%
                   </span>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="py-24 md:py-32 flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 border-4 border-dashed border-slate-100 dark:border-slate-800 rounded-[3rem] bg-slate-50 dark:bg-slate-900/50 group">
-              <BarChart3 size={60} className="mb-4 md:mb-6 opacity-20 group-hover:opacity-40 transition-all duration-700" />
-              <p className="font-black text-[10px] md:text-xs tracking-[0.5em] uppercase opacity-40 group-hover:opacity-60 transition-opacity">Masukan Data</p>
+            <div className="py-12 flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-3xl group">
+              <BarChart3 size={40} className="mb-2 opacity-20" />
+              <p className="font-black text-[9px] tracking-[0.3em] uppercase opacity-40">Masukan Data Omzet</p>
             </div>
           )}
         </section>
-
       </div>
     </div>
   );

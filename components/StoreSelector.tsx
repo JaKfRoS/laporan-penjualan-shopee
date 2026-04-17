@@ -78,7 +78,7 @@ export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, currentSto
       </button>
       
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+        <div className="fixed md:absolute left-4 right-4 md:left-auto md:right-0 top-32 md:top-full md:mt-2 w-auto md:w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-top md:origin-top-right">
           
           {/* Header Dropdown */}
           <div className="p-4 border-b border-slate-50 dark:border-slate-800/50 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/30 backdrop-blur-sm">
