@@ -934,13 +934,15 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
-        <DateRangePicker 
-          start={dateRange.start}
-          end={dateRange.end}
-          onChange={setDateRange} 
-        />
-        <div className="flex gap-2 w-full xl:w-auto justify-end">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="w-full md:flex-1">
+          <DateRangePicker 
+            start={dateRange.start}
+            end={dateRange.end}
+            onChange={setDateRange} 
+          />
+        </div>
+        <div className="flex flex-wrap gap-2 w-full md:w-auto shrink-0 justify-end">
            <button 
              onClick={generatePDF}
              className="flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:opacity-90 transition-opacity shadow-lg text-xs uppercase w-full sm:w-auto"
@@ -980,8 +982,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         <div className="space-y-6">
           {activeTab === 'summary' && (
             <div className="space-y-6">
-              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <table className="w-full text-sm text-left">
+              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto">
+                <table className="w-full text-sm text-left min-w-[600px] mb-0">
                   <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
                     <tr>
                       <th className="px-6 py-4 font-medium">Komponen</th>
@@ -1026,7 +1028,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                 </table>
               </div>
 
-              <div className="flex items-center justify-between bg-yellow-50 dark:bg-yellow-900/20 p-6 rounded-xl border border-yellow-100 dark:border-yellow-800">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-yellow-50 dark:bg-yellow-900/20 p-6 rounded-xl border border-yellow-100 dark:border-yellow-800 gap-4">
                  <div className="flex items-center gap-4">
                     <div className="p-3 bg-yellow-100 dark:bg-yellow-900/40 rounded-full">
                        <Wallet className="w-6 h-6 text-yellow-600" />
@@ -1042,7 +1044,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
               </div>
 
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden mt-6">
-                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <h3 className="font-bold text-slate-900 dark:text-white">Rincian Transaksi Terakhir</h3>
                     <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">Kronologis</span>

@@ -413,20 +413,20 @@ export default function App() {
         toggleDarkMode={() => setIsDarkMode(!isDarkMode)} 
       />
       
-      {/* Main Content Area - Added pb-24 for mobile nav spacing */}
-      <main className="flex-1 overflow-auto custom-scrollbar pb-28 md:pb-0">
+      {/* Main Content Area - Added pb-28 for mobile and some padding for desktop */}
+      <main className="flex-1 overflow-auto custom-scrollbar pb-28 md:pb-12">
         <Layout>
-          <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 md:mb-10">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-black tracking-tighter uppercase flex items-center gap-3">
+          <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 md:mb-10">
+            <div className="min-w-0">
+              <h1 className="text-xl md:text-2xl xl:text-3xl font-black tracking-tighter uppercase flex items-center gap-3">
                 {currentStore?.id === 'all' ? (
                   <>
-                    <Layers className="w-6 h-6 md:w-8 md:h-8 text-purple-600" />
-                    Semua Toko
+                    <Layers className="w-5 h-5 md:w-7 md:h-7 text-purple-600 shrink-0" />
+                    <span className="truncate">Semua Toko</span>
                   </>
                 ) : (
                   activeTab === 'dashboard' ? (
-                     <span className="truncate max-w-[200px] md:max-w-none">Toko: {currentStore?.name}</span>
+                     <span className="truncate block max-w-[280px] sm:max-w-[400px] md:max-w-none">Toko: {currentStore?.name}</span>
                   ) : 
                   activeTab === 'ads' ? 'Ads & Marketing' : 
                   activeTab === 'calculator' ? 'Kalkulator Harga' :
@@ -437,11 +437,11 @@ export default function App() {
                 )}
               </h1>
               <div className="flex items-center gap-2 mt-1">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                <p className="text-slate-500 text-[10px] md:text-xs font-bold uppercase tracking-widest">Database Aktif</p>
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0"></span>
+                <p className="text-slate-500 text-[9px] md:text-xs font-black uppercase tracking-[0.2em]">Database Aktif</p>
               </div>
             </div>
-            <div className="flex items-center gap-3 self-end md:self-auto">
+            <div className="flex items-center gap-3 self-start lg:self-auto flex-wrap sm:flex-nowrap">
               <StoreSelector 
                 stores={stores} 
                 currentStore={currentStore} 

@@ -913,30 +913,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       
       <div>
         {/* Controls Header */}
-        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
-          <div className="w-full xl:w-auto flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <DateRangePicker 
-              start={filters.start}
-              end={filters.end}
-              onChange={(range) => setFilters(prev => ({ ...prev, ...range }))} 
-            />
-            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6">
+          <div className="w-full xl:flex-1 flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-4">
+            <div className="flex-1 min-w-[280px] sm:min-w-[340px]">
+              <DateRangePicker 
+                start={filters.start}
+                end={filters.end}
+                onChange={(range) => setFilters(prev => ({ ...prev, ...range }))} 
+              />
+            </div>
+            <div className="flex bg-slate-100/80 dark:bg-slate-800/80 p-1.5 rounded-2xl shrink-0 backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50 w-full sm:w-auto overflow-x-auto">
               <button
                 onClick={() => setFilters(prev => ({ ...prev, mode: 'order_date' }))}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${filters.mode === 'order_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                className={`flex-1 sm:flex-none px-5 py-2.5 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-none whitespace-nowrap ${filters.mode === 'order_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-md ring-1 ring-slate-900/5' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
               >
-                Filter Performa Sales
+                Performa Sales
               </button>
               <button
                 onClick={() => setFilters(prev => ({ ...prev, mode: 'release_date' }))}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${filters.mode === 'release_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                className={`flex-1 sm:flex-none px-5 py-2.5 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-none whitespace-nowrap ${filters.mode === 'release_date' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-md ring-1 ring-slate-900/5' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
               >
-                Filter Keuangan
+                Keuangan
               </button>
             </div>
           </div>
           
-          <div className="flex flex-col sm:flex-row gap-2 w-full xl:w-auto justify-end">
+          <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto shrink-0 justify-start xl:justify-end">
             <button 
               onClick={generateAIInsights}
               disabled={isGeneratingInsights}
@@ -980,7 +982,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         )}
 
         {filters.mode === 'order_date' ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4 mt-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 mt-10">
             <KPICard 
               title="Omset Pesanan (GMV)" 
               value={`Rp ${(metrics.totalOmzetPesanan || 0).toLocaleString()}`} 
@@ -1047,12 +1049,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         ) : (
           <div className="space-y-8 mt-6">
             {/* Grup 1 – Alur Keuangan (Primary Flow) */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="h-4 w-1 bg-orange-500 rounded-full"></div>
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Alur Keuangan (Cash Flow)</h3>
+            <div className="space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="h-5 w-1.5 bg-orange-500 rounded-full"></div>
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Alur Keuangan (Cash Flow)</h3>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
                 <KPICard 
                   title="Omzet Riil" 
                   value={`Rp ${(metrics.omzetRiil || 0).toLocaleString()}`} 
@@ -1096,12 +1098,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             </div>
 
             {/* Grup 2 – Metrik Pendukung */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="h-4 w-1 bg-slate-300 dark:bg-slate-700 rounded-full"></div>
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Metrik Pendukung</h3>
+            <div className="space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="h-5 w-1.5 bg-slate-400 dark:bg-slate-600 rounded-full"></div>
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Metrik Pendukung</h3>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
                 <KPICard 
                   title="% Net Profit" 
                   value={`${metrics.percentNetProfit.toFixed(1)}%`} 
@@ -1147,7 +1149,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         {/* Fee Breakdown Dashboard Section */}
         {filters.mode === 'release_date' && (
           <div className="mt-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="p-6 border-b border-slate-50 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+            <div className="p-6 border-b border-slate-50 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/30">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-xl">
                   <Percent className="w-5 h-5 text-red-600" />

@@ -92,17 +92,17 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
   const hasValues = localStartDate || localEndDate;
 
   return (
-    <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 shadow-sm w-full">
-      {/* Presets Row - Scrollable on mobile */}
-      <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar w-full xl:w-auto pb-1 xl:pb-0">
-        <Calendar className="w-5 h-5 text-slate-400 ml-2 mr-2 shrink-0 hidden md:block" />
+    <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 shadow-sm w-full">
+      {/* Presets Row - Scrollable on mobile, wraps on larger screens */}
+      <div className="flex items-center gap-1.5 overflow-x-auto lg:overflow-visible custom-scrollbar w-full sm:w-auto pb-1 sm:pb-0 shrink-0">
+        <Calendar className="w-4 h-4 text-slate-400 ml-1.5 mr-1 shrink-0 hidden sm:block" />
         {presets.map(p => (
           <button
             key={p.id}
             onClick={() => applyPreset(p.id)}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap transition-all shrink-0 ${
+            className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg whitespace-nowrap transition-all shrink-0 ${
               activePreset === p.id 
-                ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-500/20' 
+                ? 'bg-orange-600 text-white shadow-md shadow-orange-500/20' 
                 : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent'
             }`}
           >
@@ -111,30 +111,30 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
         ))}
       </div>
 
-      <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden xl:block"></div>
+      <div className="h-5 w-px bg-slate-200 dark:bg-slate-800 hidden lg:block shrink-0 mx-1"></div>
 
-      {/* Manual Inputs - Stack on very small screens, row on sm */}
-      <div className="flex flex-row items-center gap-2 w-full xl:w-auto">
-        <div className="relative group flex-1">
+      {/* Manual Inputs - Wraps to next line if needed */}
+      <div className="flex flex-1 items-center gap-2 min-w-[300px] w-full sm:w-auto">
+        <div className="relative group flex-1 sm:flex-none sm:w-36">
            <input 
              type="date" 
              value={localStartDate}
              onChange={(e) => handleManualChange('start', e.target.value)}
-             className={`w-full min-w-0 pl-3 pr-2 py-1.5 border rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-orange-500/20 transition-all cursor-pointer uppercase tracking-wider ${
+             className={`w-full min-w-0 px-3 py-1.5 border rounded-lg text-[10px] font-black outline-none focus:ring-2 focus:ring-orange-500/20 transition-all cursor-pointer uppercase tracking-tight ${
                hasUnappliedChanges 
                  ? 'bg-orange-50 border-orange-300 text-orange-900' 
                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
              }`}
            />
         </div>
-        <span className="text-slate-300 dark:text-slate-600 font-bold text-xs shrink-0">s/d</span>
-        <div className="relative group flex-1">
+        <span className="text-slate-300 dark:text-slate-600 font-bold text-[10px] shrink-0 uppercase tracking-tighter">s/d</span>
+        <div className="relative group flex-1 sm:flex-none sm:w-36">
            <input 
              type="date" 
              value={localEndDate}
              min={localStartDate}
              onChange={(e) => handleManualChange('end', e.target.value)}
-             className={`w-full min-w-0 pl-3 pr-2 py-1.5 border rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-orange-500/20 transition-all cursor-pointer uppercase tracking-wider ${
+             className={`w-full min-w-0 px-3 py-1.5 border rounded-lg text-[10px] font-black outline-none focus:ring-2 focus:ring-orange-500/20 transition-all cursor-pointer uppercase tracking-tight ${
                hasUnappliedChanges 
                  ? 'bg-orange-50 border-orange-300 text-orange-900' 
                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
@@ -147,10 +147,10 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ start, end, on
           {hasUnappliedChanges && (
             <button
               onClick={handleApply}
-              className="flex items-center gap-1 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg transition-all animate-in zoom-in duration-200 shadow-md shadow-orange-500/20"
+              className="flex items-center gap-1 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-[10px] font-bold rounded-lg transition-all animate-in zoom-in duration-200 shadow-md shadow-orange-500/20"
             >
               <CheckCircle2 className="w-3 h-3" />
-              <span className="hidden sm:inline">Apply</span>
+              <span>Apply</span>
             </button>
           )}
 

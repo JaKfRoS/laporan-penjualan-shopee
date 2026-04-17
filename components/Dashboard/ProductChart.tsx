@@ -87,9 +87,9 @@ export const ProductChart: React.FC<ProductChartProps> = ({ storeId, allStoreIds
                 type="category"
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }}
-                width={150}
-                tickFormatter={(value) => value.length > 25 ? value.substring(0, 25) + '...' : value}
+                tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }}
+                width={window.innerWidth < 640 ? 80 : 150}
+                tickFormatter={(value) => value.length > (window.innerWidth < 640 ? 12 : 25) ? value.substring(0, (window.innerWidth < 640 ? 12 : 25)) + '...' : value}
               />
               <Tooltip 
                 cursor={{ fill: '#f8fafc' }}
