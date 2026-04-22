@@ -705,9 +705,14 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           }
           
           const newCount = newTransactions.length;
-          const updatedCount = transactions.length - newCount;
+          const skippedCount = transactions.length - newCount;
           
-          toast.success(`Berhasil! ${newCount} data baru disimpan, ${updatedCount} data diperbarui.`, { id: toastId });
+          if (newCount > 0) {
+              toast.success(`Berhasil! ${newCount} data baru disimpan${skippedCount > 0 ? `, ${skippedCount} data lama dilewati` : ''}.`, { id: toastId });
+          } else if (skippedCount > 0) {
+              toast.success(`Semua data (${skippedCount}) sudah ada di sistem, tidak ada data baru yang ditambahkan.`, { id: toastId });
+          }
+          
           fetchManualTransactions();
       } catch (err: any) {
           console.error(err);
