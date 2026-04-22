@@ -682,34 +682,24 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const saveUploadedTransactions = async (transactions: any[]) => {
       const toastId = toast.loading('Menyimpan data ke database...');
       try {
-          // Manual Duplicate Prevention: Fetch existing order_ids for this store to double-check
-          // This acts as a safety net if the DB unique constraint is somehow missing or bypassed
-          const orderIds = transactions.map(t => t.order_id);
-          const { data: existing } = await supabase
-            .from('adjustments')
-            .select('order_id')
-            .eq('store_id', store.id)
-            .in('order_id', orderIds);
+          // Use upsert with ignoreDuplicates: true to let the database handle deduplication atomically
+          // The unique constraint is on (store_id, order_id, adjustment_date, amount)
+          const { error, data } = await supabase
+              .from('adjustments')
+              .upsert(transactions, { 
+                  onConflict: 'store_id,order_id,adjustment_date,amount',
+                  ignoreDuplicates: true 
+              })
+              .select('id'); // Requesting IDs back to count how many were actually inserted
           
-          const existingIds = new Set(existing?.map(e => e.order_id) || []);
+          if (error) throw error;
           
-          // Filter out transactions that already exist
-          const newTransactions = transactions.filter(t => !existingIds.has(t.order_id));
+          const insertedCount = data?.length || 0;
+          const skippedCount = transactions.length - insertedCount;
           
-          if (newTransactions.length > 0) {
-              const { error } = await supabase
-                  .from('adjustments')
-                  .insert(newTransactions);
-              
-              if (error) throw error;
-          }
-          
-          const newCount = newTransactions.length;
-          const skippedCount = transactions.length - newCount;
-          
-          if (newCount > 0) {
-              toast.success(`Berhasil! ${newCount} data baru disimpan${skippedCount > 0 ? `, ${skippedCount} data lama dilewati` : ''}.`, { id: toastId });
-          } else if (skippedCount > 0) {
+          if (insertedCount > 0) {
+              toast.success(`Berhasil! ${insertedCount} data baru disimpan${skippedCount > 0 ? `, ${skippedCount} data lama dilewati` : ''}.`, { id: toastId });
+          } else {
               toast.success(`Semua data (${skippedCount}) sudah ada di sistem, tidak ada data baru yang ditambahkan.`, { id: toastId });
           }
           
