@@ -283,7 +283,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     // G. Total Penyesuaian & Biaya Iklan
     let biayaIklan = 0;
     let penyesuaianLain = 0;
+    let adjustmentPlus = 0;
+    let adjustmentMinus = 0;
     let totalWithdrawals = 0;
+    const adjustmentDetails: any[] = [];
 
     adjustments.forEach(a => {
       const reason = (a.reason || '').toLowerCase();
@@ -300,11 +303,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
       if (isAds) {
         biayaIklan += Math.abs(amount);
-      } else if (isWithdrawal) {
+      }
+      
+      if (isWithdrawal) {
         totalWithdrawals += Math.abs(amount);
-      } else if (!isIncome && !reason.includes('[balance_snapshot]')) {
+      } else if (!isAds && !isIncome && !reason.includes('[balance_snapshot]')) {
         // Only include true adjustments (corrections, compensations, etc)
-        // Skip 'Income' because it's already counted in totalNetRevenue via income_reports table
+        if (amount > 0) adjustmentPlus += amount;
+        if (amount < 0) adjustmentMinus += amount;
+        
+        const descMatch = a.reason.match(/Desc: (.*)/);
+        const description = descMatch ? descMatch[1].split('|')[0].trim() : a.reason.replace('[AUTO_UPLOAD]', '').replace('[MANUAL_EXPENSE]', '').trim();
+
+        adjustmentDetails.push({
+          id: a.id,
+          date: a.adjustment_date,
+          description,
+          amount
+        });
         penyesuaianLain += amount;
       }
     });
@@ -317,9 +333,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       }
     });
 
-    // C. Dana Cair (Net Revenue Selesai + Pengembalian + Penyesuaian Lain)
+    // C. Dana Cair (Total Net Revenue dari Pesanan Selesai/Pengembalian)
     const totalNetRevenue = settledOrders.reduce((acc, o) => acc + Number(o.net_revenue || 0), 0);
-    const danaCair = totalNetRevenue + penyesuaianLain;
+    const danaCair = totalNetRevenue;
 
     // J. Fee Breakdown (Selesai + Pengembalian for comprehensive cash flow view)
     let feeBreakdown = {
@@ -404,8 +420,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       return acc + orderHpp;
     }, 0);
 
-    // E. Profit Riil = Dana Cair - HPP
-    const profitRiil = danaCair - hppSelesai;
+    // E. Profit Riil = Dana Cair - HPP + Penyesuaian
+    const profitRiil = danaCair - hppSelesai + penyesuaianLain;
 
     // F. Supporting Metrics
     const percentNetProfit = omzetRiil > 0 ? (profitRiil / omzetRiil) * 100 : 0;
@@ -447,7 +463,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       totalOmzetBersih,
       averageOrderValue,
       cancelledCount,
-      feeBreakdown
+      feeBreakdown,
+      adjustmentPlus,
+      adjustmentMinus,
+      adjustmentDetails
     };
   }, [filteredOrders, adjustments]);
 
@@ -517,6 +536,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           rows.push(["Potongan Marketplace", -metrics.potonganMarketplace, "Total komisi/biaya marketplace"]);
           rows.push(["Dana Cair", metrics.danaCair, "Total pendapatan bersih yang diterima"]);
           rows.push(["HPP", -metrics.hppSelesai, "Total modal pokok produk pesanan selesai"]);
+          rows.push(["Penyesuaian Shopee", metrics.adjustmentPlus + metrics.adjustmentMinus, "Total penyesuaian saldo (Kompensasi, Klaim, Bonus, dll)"]);
           rows.push(["Profit Riil", metrics.profitRiil, "Dana Cair - HPP"]);
           rows.push(["% Net Profit", `${metrics.percentNetProfit.toFixed(1)}%`, "Profit Riil / Omzet Riil"]);
           rows.push(["% Potongan Marketplace", `${metrics.percentPotonganOmzet.toFixed(1)}%`, "Potongan / Omzet Riil"]);
@@ -726,7 +746,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         ['Potongan Marketplace', `-Rp ${metrics.potonganMarketplace.toLocaleString()}`, 'Total komisi/biaya marketplace'],
         ['Dana Cair', `Rp ${metrics.danaCair.toLocaleString()}`, 'Total pendapatan bersih yang diterima'],
         ['HPP', `-Rp ${metrics.hppSelesai.toLocaleString()}`, 'Total modal pokok produk pesanan selesai'],
-        ['Profit Riil', `Rp ${metrics.profitRiil.toLocaleString()}`, 'Dana Cair - HPP'],
+        ['Penyesuaian Shopee', `${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`, 'Total penyesuaian saldo (Kompensasi, Klaim, Bonus, dll)'],
+        ['Profit Riil', `Rp ${metrics.profitRiil.toLocaleString()}`, 'Dana Cair - HPP + Penyesuaian'],
         ['% Net Profit', `${metrics.percentNetProfit.toFixed(1)}%`, 'Profit Riil / Omzet Riil'],
         ['% Potongan Marketplace', `${metrics.percentPotonganOmzet.toFixed(1)}%`, 'Potongan / Omzet Riil'],
         ['Selisih Ongkir', `-Rp ${metrics.shippingLeakage.toLocaleString()}`, 'Selisih ongkir pembeli vs aktual'],
@@ -860,8 +881,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         doc.text("HPP", 30, summaryYStart + (rowHeight * 3));
         doc.text(`-Rp ${metrics.hppSelesai.toLocaleString()}`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
 
-        doc.text("Profit Riil", 30, summaryYStart + (rowHeight * 4));
-        doc.text(`Rp ${metrics.profitRiil.toLocaleString()}`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
+        doc.text("Penyesuaian", 30, summaryYStart + (rowHeight * 4));
+        doc.text(`${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
+
+        doc.text("Profit Riil", 30, summaryYStart + (rowHeight * 5));
+        doc.text(`Rp ${metrics.profitRiil.toLocaleString()}`, 250, summaryYStart + (rowHeight * 5), { align: 'right' });
       }
 
       // Footer for the final page
@@ -1054,7 +1078,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 <div className="h-5 w-1.5 bg-orange-500 rounded-full"></div>
                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Alur Keuangan (Cash Flow)</h3>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-6">
                 <KPICard 
                   title="Omzet Riil" 
                   value={`Rp ${(metrics.omzetRiil || 0).toLocaleString()}`} 
@@ -1075,7 +1099,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   value={`Rp ${(metrics.danaCair || 0).toLocaleString()}`} 
                   trend="Net Revenue"
                   icon={<Wallet className="w-4 h-4 text-green-600" />}
-                  description="Total pendapatan bersih yang diterima."
+                  description="Total pendapatan bersih dari pesanan yang sudah dilepaskan Shopee."
                   isHighlight
                 />
                 <KPICard 
@@ -1087,11 +1111,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   description="Total modal pokok produk untuk pesanan selesai."
                 />
                 <KPICard 
+                  title="Penyesuaian" 
+                  value={`${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`} 
+                  trend={`+${metrics.adjustmentPlus.toLocaleString()} / -${Math.abs(metrics.adjustmentMinus).toLocaleString()}`}
+                  isNegative={metrics.adjustmentPlus + metrics.adjustmentMinus < 0}
+                  icon={<ArrowRightLeft className="w-4 h-4 text-purple-600" />}
+                  description="Total penyesuaian saldo (Kompensasi, Klaim, Bonus, dll)."
+                />
+                <KPICard 
                   title="Profit Riil" 
                   value={`Rp ${(metrics.profitRiil || 0).toLocaleString()}`} 
                   trend="Net Profit"
                   icon={<Wallet className="w-4 h-4 text-yellow-600" />}
-                  description="Dana Cair - HPP."
+                  description="Dana Cair - HPP + Penyesuaian."
                   isHighlight
                 />
               </div>
@@ -1142,6 +1174,53 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   isNegative
                 />
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Adjustments Breakdown Section */}
+        {filters.mode === 'release_date' && metrics.adjustmentDetails.length > 0 && (
+          <div className="mt-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden border-l-4 border-l-purple-500">
+            <div className="p-6 border-b border-slate-50 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-purple-50/30 dark:bg-purple-900/10">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/20 rounded-xl">
+                  <ArrowRightLeft className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">Rincian Penyesuaian Saldo</h3>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Dana Masuk/Keluar Non-Pesanan</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                 <div className="text-right">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Total Penyesuaian</p>
+                    <p className={`text-sm font-black ${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp {Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}
+                    </p>
+                 </div>
+              </div>
+            </div>
+            <div className="p-0 overflow-x-auto">
+               <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50/50 dark:bg-slate-800/50 text-slate-400">
+                     <tr>
+                        <th className="px-6 py-3 font-black uppercase text-[10px] tracking-wider">Tanggal</th>
+                        <th className="px-6 py-3 font-black uppercase text-[10px] tracking-wider">Keterangan</th>
+                        <th className="px-6 py-3 font-black uppercase text-[10px] tracking-wider text-right">Nominal</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                     {metrics.adjustmentDetails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((adj, idx) => (
+                        <tr key={adj.id || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                           <td className="px-6 py-3 font-medium text-slate-500 whitespace-nowrap">{format(new Date(adj.date), 'dd/MM/yyyy')}</td>
+                           <td className="px-6 py-3 font-bold text-slate-700 dark:text-slate-300">{adj.description}</td>
+                           <td className={`px-6 py-3 text-right font-black ${adj.amount < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                              {adj.amount < 0 ? '-' : '+'}Rp {Math.abs(adj.amount).toLocaleString()}
+                           </td>
+                        </tr>
+                     ))}
+                  </tbody>
+               </table>
             </div>
           </div>
         )}

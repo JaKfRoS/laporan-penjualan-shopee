@@ -38,6 +38,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const [adsTotal, setAdsTotal] = useState(0);
   const [autoTopupTotal, setAutoTopupTotal] = useState(0);
   const [withdrawalsTotal, setWithdrawalsTotal] = useState(0);
+  const [shopeeAdjustmentsTotal, setShopeeAdjustmentsTotal] = useState(0);
   const [escrowBalance, setEscrowBalance] = useState(0);
   const [manualTransactions, setManualTransactions] = useState<ManualTransaction[]>([]);
   const [allOrders, setAllOrders] = useState<Order[]>([]);
@@ -414,8 +415,13 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         .filter(tx => tx.category === 'Penarikan Dana' && !tx.isManual)
         .reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
       
+      const shopeeAdsAdjustments = parsed
+        .filter(tx => tx.category === 'Penyesuaian Saldo' && !tx.isManual)
+        .reduce((acc, tx) => acc + tx.amount, 0);
+      
       setAdsTotal(ads);
       setWithdrawalsTotal(withdrawals);
+      setShopeeAdjustmentsTotal(shopeeAdsAdjustments);
       setManualTransactions(parsed);
     } catch (err) {
       console.error("Error fetching transactions:", err);
@@ -777,7 +783,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     .reduce((acc, tx) => acc + tx.amount, 0);
   
   const finalAdsTotal = adsTotal + autoTopupTotal;
-  const labaBersihRiil = netRevenueSelesai - finalAdsTotal + totalManualExpenses - totalHPPSelesai;
+  const labaBersihRiil = netRevenueSelesai - finalAdsTotal + totalManualExpenses - totalHPPSelesai + shopeeAdjustmentsTotal;
 
   const generatePDF = () => {
     const doc = new jsPDF();
@@ -793,8 +799,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       ['1. Total Dana Masuk (Penghasilan Pesanan)', `Rp ${netRevenueSelesai.toLocaleString()}`],
       ['2. Total Potongan Saldo (Iklan/Koin)', `(Rp ${finalAdsTotal.toLocaleString()})`],
       ['3. Total Penarikan Dana (Withdrawal)', `(Rp ${withdrawalsTotal.toLocaleString()})`],
-      ['4. Total Penyesuaian Manual', `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`],
-      ['5. Total HPP (Modal Produk)', `(Rp ${totalHPPSelesai.toLocaleString()})`],
+      ['4. Total Penyesuaian dari Shopee', `${shopeeAdjustmentsTotal < 0 ? '-' : '+'}Rp ${Math.abs(shopeeAdjustmentsTotal).toLocaleString()}`],
+      ['5. Total Penyesuaian Manual', `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`],
+      ['6. Total HPP (Modal Produk)', `(Rp ${totalHPPSelesai.toLocaleString()})`],
       ['LABA BERSIH RIIL', `Rp ${labaBersihRiil.toLocaleString()}`],
     ];
 
@@ -808,7 +815,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         1: { halign: 'right', fontStyle: 'bold' }
       },
       didParseCell: function(data) {
-        if (data.row.index === 5) {
+        if (data.row.index === 6) {
             data.cell.styles.fillColor = [46, 204, 113];
             data.cell.styles.textColor = [255, 255, 255];
             data.cell.styles.fontStyle = 'bold';
@@ -854,14 +861,15 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         const storeTxs = manualTransactions.filter(tx => tx.storeId === s.id);
         const storeAds = storeTxs.filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual' && !tx.isManual).reduce((acc, tx) => acc + Math.abs(tx.amount), 0) + storeAutoTopupIklan;
         const storeManual = storeTxs.filter(tx => tx.isManual).reduce((acc, tx) => acc + tx.amount, 0);
+        const storeShopeeAdj = storeTxs.filter(tx => tx.category === 'Penyesuaian Saldo' && !tx.isManual).reduce((acc, tx) => acc + tx.amount, 0);
         
-        const storeProfit = storeRevenue - storeAds + storeManual - storeHpp;
+        const storeProfit = storeRevenue - storeAds + storeManual - storeHpp + storeShopeeAdj;
 
         return [
           s.name,
           `Rp ${storeRevenue.toLocaleString()}`,
           `Rp ${storeAds.toLocaleString()}`,
-          `${storeManual < 0 ? '-' : '+'}Rp ${Math.abs(storeManual).toLocaleString()}`,
+          `${(storeManual + storeShopeeAdj) < 0 ? '-' : '+'}Rp ${Math.abs(storeManual + storeShopeeAdj).toLocaleString()}`,
           `Rp ${storeHpp.toLocaleString()}`,
           `Rp ${storeProfit.toLocaleString()}`
         ];
@@ -869,7 +877,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       autoTable(doc, {
         startY: 35,
-        head: [['Toko', 'Revenue', 'Ads', 'Manual', 'HPP', 'Profit']],
+        head: [['Toko', 'Revenue', 'Ads', 'Adj/Manual', 'HPP', 'Profit']],
         body: storeBreakdown,
         theme: 'grid',
         headStyles: { fillColor: [52, 73, 94] },
@@ -1008,14 +1016,21 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                       <td className="px-6 py-4 text-right text-slate-400">Withdrawal (Upload)</td>
                     </tr>
                     <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">4. Total Penyesuaian Manual</td>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">4. Total Penyesuaian dari Shopee</td>
+                      <td className={`px-6 py-4 text-right font-bold ${shopeeAdjustmentsTotal < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {shopeeAdjustmentsTotal < 0 ? '-' : '+'}Rp {Math.abs(shopeeAdjustmentsTotal).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 text-right text-slate-400">Adjustment (Upload)</td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">5. Total Penyesuaian Manual</td>
                       <td className={`px-6 py-4 text-right font-bold ${totalManualExpenses < 0 ? 'text-red-600' : 'text-green-600'}`}>
                         {totalManualExpenses < 0 ? '-' : '+'}Rp {Math.abs(totalManualExpenses).toLocaleString()}
                       </td>
                       <td className="px-6 py-4 text-right text-slate-400">Manual (Biaya/Pemasukan)</td>
                     </tr>
                     <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">5. Total HPP</td>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">6. Total HPP</td>
                       <td className="px-6 py-4 text-right text-orange-600 font-bold">-Rp {totalHPPSelesai.toLocaleString()}</td>
                       <td className="px-6 py-4 text-right text-slate-400">Modal Produk</td>
                     </tr>
