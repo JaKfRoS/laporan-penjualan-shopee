@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabase';
 import { Store } from '../../types';
 import toast from 'react-hot-toast';
-import { Upload, Trash2, Megaphone, TrendingUp, TrendingDown, MousePointerClick, Eye, DollarSign, Percent, ArrowUpRight, ArrowDownRight, Package, ShoppingCart } from 'lucide-react';
+import { Upload, Trash2, Megaphone, TrendingUp, TrendingDown, MousePointerClick, Eye, DollarSign, Percent, ArrowUpRight, ArrowDownRight, Package, ShoppingCart, Pencil, Plus, X, Save, Layers } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import AdsProducts from './AdsProducts';
+import ConfirmModal from './ConfirmModal';
 
 interface AdsCenterProps {
   store: Store;
@@ -13,6 +14,7 @@ interface AdsCenterProps {
 interface AdRecord {
   id: string;
   periode: string;
+  report_date: string | null;
   impressions: number;
   clicks: number;
   conversions: number;
@@ -26,6 +28,22 @@ export default function AdsCenter({ store }: AdsCenterProps) {
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<'overall' | 'products'>('overall');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<AdRecord | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string | null }>({
+    isOpen: false,
+    id: null
+  });
+
+  const [newRecord, setNewRecord] = useState<Partial<AdRecord>>({
+    periode: '',
+    report_date: new Date().toISOString().split('T')[0],
+    impressions: 0,
+    clicks: 0,
+    conversions: 0,
+    amount_spent: 0,
+    gmv_generated: 0
+  });
 
   const [showSqlGuide, setShowSqlGuide] = useState(false);
 
@@ -37,10 +55,26 @@ export default function AdsCenter({ store }: AdsCenterProps) {
     setLoading(true);
     setShowSqlGuide(false);
     try {
-      const { data, error } = await supabase
+      const isMultiple = (store as any).is_multiple || store.id === 'all';
+      const targetStoreIds = (store as any).is_multiple 
+        ? (store as any).selected_ids 
+        : (store.id === 'all' ? [] : [store.id]);
+
+      let query = supabase
         .from('ads_performance')
-        .select('*')
-        .eq('store_id', store.id)
+        .select('*');
+      
+      if (store.id === 'all') {
+         // No extra filter, will be handled by Supabase RLS (already user_id filtered)
+         // But we should probably filter by user's stores if we have them.
+         // Actually, let's just check if we have multiple stores.
+      } else if (isMultiple) {
+         query = query.in('store_id', targetStoreIds);
+      } else {
+         query = query.eq('store_id', store.id);
+      }
+
+      const { data, error } = await query
         .order('report_date', { ascending: false, nullsFirst: false })
         .order('periode', { ascending: false });
 
@@ -50,7 +84,26 @@ export default function AdsCenter({ store }: AdsCenterProps) {
         }
         throw error;
       }
-      setRecords(data || []);
+
+      if (isMultiple) {
+        // Group by periode and sum
+        const groupedMap = new Map();
+        (data || []).forEach((curr: any) => {
+          if (!groupedMap.has(curr.periode)) {
+            groupedMap.set(curr.periode, { ...curr, id: `group-${curr.periode}` });
+          } else {
+            const existing = groupedMap.get(curr.periode);
+            existing.impressions = (existing.impressions || 0) + (curr.impressions || 0);
+            existing.clicks = (existing.clicks || 0) + (curr.clicks || 0);
+            existing.conversions = (existing.conversions || 0) + (curr.conversions || 0);
+            existing.amount_spent = (existing.amount_spent || 0) + (curr.amount_spent || 0);
+            existing.gmv_generated = (existing.gmv_generated || 0) + (curr.gmv_generated || 0);
+          }
+        });
+        setRecords(Array.from(groupedMap.values()));
+      } else {
+        setRecords(data || []);
+      }
     } catch (err: any) {
       console.error(err);
       toast.error("Gagal memuat data iklan: " + err.message);
@@ -344,8 +397,6 @@ export default function AdsCenter({ store }: AdsCenterProps) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Hapus data iklan ini?")) return;
-    
     try {
       const { error } = await supabase.from('ads_performance').delete().eq('id', id);
       if (error) throw error;
@@ -355,6 +406,72 @@ export default function AdsCenter({ store }: AdsCenterProps) {
       toast.error("Gagal menghapus: " + err.message);
     }
   };
+
+  const handleUpdate = async () => {
+    if (!editingRecord) return;
+    
+    try {
+      const { error } = await supabase
+        .from('ads_performance')
+        .update({
+          periode: editingRecord.periode,
+          report_date: editingRecord.report_date,
+          impressions: editingRecord.impressions,
+          clicks: editingRecord.clicks,
+          conversions: editingRecord.conversions,
+          amount_spent: editingRecord.amount_spent,
+          gmv_generated: editingRecord.gmv_generated
+        })
+        .eq('id', editingRecord.id);
+
+      if (error) throw error;
+      toast.success("Data berhasil diperbarui");
+      setEditingRecord(null);
+      fetchRecords();
+    } catch (err: any) {
+      toast.error("Gagal memperbarui: " + err.message);
+    }
+  };
+
+  const handleAddManual = async () => {
+    if (!newRecord.periode) {
+      toast.error("Mohon isi periode iklan");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('ads_performance')
+        .insert({
+          store_id: store.id,
+          periode: newRecord.periode,
+          report_date: newRecord.report_date,
+          impressions: newRecord.impressions || 0,
+          clicks: newRecord.clicks || 0,
+          conversions: newRecord.conversions || 0,
+          amount_spent: newRecord.amount_spent || 0,
+          gmv_generated: newRecord.gmv_generated || 0
+        });
+
+      if (error) throw error;
+      toast.success("Data berhasil ditambahkan");
+      setShowAddModal(false);
+      setNewRecord({
+        periode: '',
+        report_date: new Date().toISOString().split('T')[0],
+        impressions: 0,
+        clicks: 0,
+        conversions: 0,
+        amount_spent: 0,
+        gmv_generated: 0
+      });
+      fetchRecords();
+    } catch (err: any) {
+      toast.error("Gagal menambahkan: " + err.message);
+    }
+  };
+
+  const isMultiple = (store as any).is_multiple || store.id === 'all';
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -368,40 +485,59 @@ export default function AdsCenter({ store }: AdsCenterProps) {
         </div>
         
         <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
-          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full md:w-auto">
-            <button
-              onClick={() => setActiveTab('overall')}
-              className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                activeTab === 'overall' 
-                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' 
-                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-              }`}
-            >
-              Keseluruhan
-            </button>
-            <button
-              onClick={() => setActiveTab('products')}
-              className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
-                activeTab === 'products' 
-                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' 
-                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-              }`}
-            >
-              <Package className="w-4 h-4" /> Performa Produk
-            </button>
-          </div>
+          {!isMultiple ? (
+            <>
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full md:w-auto">
+                <button
+                  onClick={() => setActiveTab('overall')}
+                  className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
+                    activeTab === 'overall' 
+                      ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' 
+                      : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Keseluruhan
+                </button>
+                <button
+                  onClick={() => setActiveTab('products')}
+                  className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
+                    activeTab === 'products' 
+                      ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' 
+                      : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                  }`}
+                >
+                  <Package className="w-4 h-4" /> Performa Produk
+                </button>
+              </div>
 
-          <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 w-full md:w-auto">
-            <Upload className="w-5 h-5" />
-            {isUploading ? 'Memproses...' : 'Upload Laporan Iklan'}
-            <input 
-              type="file" 
-              accept=".csv, .xlsx, .xls" 
-              className="hidden" 
-              onChange={handleFileUpload}
-              disabled={isUploading}
-            />
-          </label>
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <button 
+                  onClick={() => setShowAddModal(true)}
+                  className="flex-1 md:flex-none bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-4 py-2.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-5 h-5" />
+                  Input Manual
+                </button>
+
+                <label className="flex-1 md:flex-none cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20">
+                  <Upload className="w-5 h-5" />
+                  {isUploading ? 'Memproses...' : 'Upload Report'}
+                  <input 
+                    type="file" 
+                    accept=".csv, .xlsx, .xls" 
+                    className="hidden" 
+                    onChange={handleFileUpload}
+                    disabled={isUploading}
+                  />
+                </label>
+              </div>
+            </>
+          ) : (
+            <div className="px-4 py-2 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-xl border border-blue-100 dark:border-blue-500/20 flex items-center gap-2">
+              <Layers className="w-4 h-4" />
+              <span>Mode Agregasi {store.id === 'all' ? 'Semua' : 'Multiple'} Toko</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -648,13 +784,22 @@ NOTIFY pgrst, 'reload schema';`);
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Periode Mingguan</p>
                     <h3 className="text-lg font-black">{record.periode}</h3>
                   </div>
-                  <button 
-                    onClick={() => handleDelete(record.id)}
-                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
-                    title="Hapus data"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => setEditingRecord(record)}
+                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-colors"
+                      title="Edit data"
+                    >
+                      <Pencil className="w-5 h-5" />
+                    </button>
+                    <button 
+                      onClick={() => setConfirmDelete({ isOpen: true, id: record.id })}
+                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
+                      title="Hapus data"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="p-4 md:p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 md:gap-6">
@@ -737,6 +882,201 @@ NOTIFY pgrst, 'reload schema';`);
           })}
         </div>
       )}
+
+      {/* Modal Add Manual */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
+            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900 dark:text-white">Input Performa Iklan</h3>
+              <button onClick={() => setShowAddModal(false)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Periode (cth: 2024-01-01 s/d 2024-01-07)</label>
+                <input 
+                  type="text"
+                  placeholder="2024-03-01 s/d 2024-03-07"
+                  value={newRecord.periode}
+                  onChange={e => setNewRecord({...newRecord, periode: e.target.value})}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Dilihat</label>
+                  <input 
+                    type="number"
+                    value={newRecord.impressions}
+                    onChange={e => setNewRecord({...newRecord, impressions: Number(e.target.value)})}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Klik</label>
+                  <input 
+                    type="number"
+                    value={newRecord.clicks}
+                    onChange={e => setNewRecord({...newRecord, clicks: Number(e.target.value)})}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Pesanan</label>
+                  <input 
+                    type="number"
+                    value={newRecord.conversions}
+                    onChange={e => setNewRecord({...newRecord, conversions: Number(e.target.value)})}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Biaya Iklan (Rp)</label>
+                  <input 
+                    type="number"
+                    value={newRecord.amount_spent}
+                    onChange={e => setNewRecord({...newRecord, amount_spent: Number(e.target.value)})}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Omzet Iklan (Rp)</label>
+                <input 
+                  type="number"
+                  value={newRecord.gmv_generated}
+                  onChange={e => setNewRecord({...newRecord, gmv_generated: Number(e.target.value)})}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-black text-blue-600"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 flex gap-3">
+              <button 
+                onClick={() => setShowAddModal(false)}
+                className="flex-1 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={handleAddManual}
+                className="flex-1 py-3 bg-blue-600 text-white rounded-xl text-sm font-black shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-all"
+              >
+                Simpan Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Edit Record */}
+      {editingRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
+            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900 dark:text-white">Edit Performa Iklan</h3>
+              <button onClick={() => setEditingRecord(null)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Periode</label>
+                <input 
+                  type="text"
+                  value={editingRecord.periode}
+                  onChange={e => setEditingRecord({...editingRecord, periode: e.target.value})}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Dilihat</label>
+                  <input 
+                    type="number"
+                    value={editingRecord.impressions}
+                    onChange={e => setEditingRecord({...editingRecord, impressions: Number(e.target.value)})}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Klik</label>
+                  <input 
+                    type="number"
+                    value={editingRecord.clicks}
+                    onChange={e => setEditingRecord({...editingRecord, clicks: Number(e.target.value)})}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Pesanan</label>
+                  <input 
+                    type="number"
+                    value={editingRecord.conversions}
+                    onChange={e => setEditingRecord({...editingRecord, conversions: Number(e.target.value)})}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Biaya Iklan (Rp)</label>
+                  <input 
+                    type="number"
+                    value={editingRecord.amount_spent}
+                    onChange={e => setEditingRecord({...editingRecord, amount_spent: Number(e.target.value)})}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Omzet Iklan (Rp)</label>
+                <input 
+                  type="number"
+                  value={editingRecord.gmv_generated}
+                  onChange={e => setEditingRecord({...editingRecord, gmv_generated: Number(e.target.value)})}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-black text-blue-600"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 flex gap-3">
+              <button 
+                onClick={() => setEditingRecord(null)}
+                className="flex-1 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={handleUpdate}
+                className="flex-1 py-3 bg-blue-600 text-white rounded-xl text-sm font-black shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-all"
+              >
+                Simpan Perubahan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmModal 
+        isOpen={confirmDelete.isOpen}
+        onClose={() => setConfirmDelete({ isOpen: false, id: null })}
+        onConfirm={() => confirmDelete.id && handleDelete(confirmDelete.id)}
+        title="Hapus Data Iklan?"
+        message="Data performa iklan ini akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan."
+      />
     </div>
   );
 }

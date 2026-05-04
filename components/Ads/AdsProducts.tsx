@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
 import { Store } from '../../types';
 import toast from 'react-hot-toast';
-import { ChevronLeft, Save, Edit2, TrendingUp, TrendingDown, Eye, MousePointerClick, Percent, DollarSign, Package, Calculator, ShoppingCart, Calendar } from 'lucide-react';
+import { ChevronLeft, Save, Edit2, TrendingUp, TrendingDown, Eye, MousePointerClick, Percent, DollarSign, Package, Calculator, ShoppingCart, Calendar, Trash2, Pencil, X } from 'lucide-react';
+import ConfirmModal from './ConfirmModal';
 
 interface AdsProductsProps {
   store: Store;
@@ -37,6 +38,17 @@ export default function AdsProducts({ store }: AdsProductsProps) {
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<AdsProduct | null>(null);
   const [editingProduct, setEditingProduct] = useState<AdsProduct | null>(null);
+  const [editingPerf, setEditingPerf] = useState<AdsProductPerformance | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    type: 'product' | 'performance' | null;
+    id: string | null;
+    name?: string;
+  }>({
+    isOpen: false,
+    type: null,
+    id: null
+  });
 
   useEffect(() => {
     fetchData();
@@ -112,6 +124,57 @@ export default function AdsProducts({ store }: AdsProductsProps) {
     } catch (err: any) {
       console.error(err);
       toast.error("Gagal menyimpan: " + err.message);
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    try {
+      const { error } = await supabase.from('ads_products').delete().eq('id', id);
+      if (error) throw error;
+      toast.success("Produk berhasil dihapus");
+      setProducts(products.filter(p => p.id !== id));
+      setAllPerformances(allPerformances.filter(p => p.ads_product_id !== id));
+      if (selectedProduct?.id === id) setSelectedProduct(null);
+    } catch (err: any) {
+      toast.error("Gagal menghapus: " + err.message);
+    }
+  };
+
+  const handleDeletePerformance = async (id: string) => {
+    try {
+      const { error } = await supabase.from('ads_product_performance').delete().eq('id', id);
+      if (error) throw error;
+      toast.success("Data performa dihapus");
+      setAllPerformances(allPerformances.filter(p => p.id !== id));
+    } catch (err: any) {
+      toast.error("Gagal menghapus: " + err.message);
+    }
+  };
+
+  const handleUpdatePerformance = async () => {
+    if (!editingPerf) return;
+    
+    try {
+      const { error } = await supabase
+        .from('ads_product_performance')
+        .update({
+          periode: editingPerf.periode,
+          report_date: editingPerf.report_date,
+          impressions: editingPerf.impressions,
+          clicks: editingPerf.clicks,
+          conversions: editingPerf.conversions,
+          amount_spent: editingPerf.amount_spent,
+          gmv_generated: editingPerf.gmv_generated
+        })
+        .eq('id', editingPerf.id);
+
+      if (error) throw error;
+      toast.success("Performa diperbarui");
+      
+      setAllPerformances(allPerformances.map(p => p.id === editingPerf.id ? editingPerf : p));
+      setEditingPerf(null);
+    } catch (err: any) {
+      toast.error("Gagal memperbarui: " + err.message);
     }
   };
 
@@ -358,9 +421,27 @@ export default function AdsProducts({ store }: AdsProductsProps) {
 
               return (
                 <div key={record.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 overflow-hidden shadow-sm">
-                  <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Periode</p>
-                    <h3 className="text-base font-black">{record.periode}</h3>
+                  <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 flex justify-between items-center">
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Periode</p>
+                      <h3 className="text-base font-black">{record.periode}</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                       <button 
+                        onClick={() => setEditingPerf(record)}
+                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-colors"
+                        title="Edit data"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button 
+                        onClick={() => setConfirmModal({ isOpen: true, type: 'performance', id: record.id })}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
+                        title="Hapus data"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                   
                   <div className="p-4 md:p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 md:gap-6">
@@ -444,6 +525,99 @@ export default function AdsProducts({ store }: AdsProductsProps) {
             })}
           </div>
         )}
+
+        {/* Modal Edit Performance */}
+        {editingPerf && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-slate-900/60 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
+              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <h3 className="font-bold text-slate-900 dark:text-white">Edit Performa Produk</h3>
+                <button onClick={() => setEditingPerf(null)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Periode</label>
+                  <input 
+                    type="text"
+                    value={editingPerf.periode}
+                    onChange={e => setEditingPerf({...editingPerf, periode: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Dilihat</label>
+                    <input 
+                      type="number"
+                      value={editingPerf.impressions}
+                      onChange={e => setEditingPerf({...editingPerf, impressions: Number(e.target.value)})}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Klik</label>
+                    <input 
+                      type="number"
+                      value={editingPerf.clicks}
+                      onChange={e => setEditingPerf({...editingPerf, clicks: Number(e.target.value)})}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Pesanan</label>
+                    <input 
+                      type="number"
+                      value={editingPerf.conversions}
+                      onChange={e => setEditingPerf({...editingPerf, conversions: Number(e.target.value)})}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Biaya Iklan (Rp)</label>
+                    <input 
+                      type="number"
+                      value={editingPerf.amount_spent}
+                      onChange={e => setEditingPerf({...editingPerf, amount_spent: Number(e.target.value)})}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Omzet Iklan (Rp)</label>
+                  <input 
+                    type="number"
+                    value={editingPerf.gmv_generated}
+                    onChange={e => setEditingPerf({...editingPerf, gmv_generated: Number(e.target.value)})}
+                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-black text-blue-600"
+                  />
+                </div>
+              </div>
+
+              <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 flex gap-3">
+                <button 
+                  onClick={() => setEditingPerf(null)}
+                  className="flex-1 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                >
+                  Batal
+                </button>
+                <button 
+                  onClick={handleUpdatePerformance}
+                  className="flex-1 py-3 bg-blue-600 text-white rounded-xl text-sm font-black shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-all"
+                >
+                  Simpan Perubahan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -473,9 +647,25 @@ export default function AdsProducts({ store }: AdsProductsProps) {
                     <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-slate-800 dark:text-slate-200 truncate" title={product.product_name}>
-                      {product.product_name}
-                    </h3>
+                    <div className="flex justify-between items-start">
+                      <h3 className="font-bold text-slate-800 dark:text-slate-200 truncate" title={product.product_name}>
+                        {product.product_name}
+                      </h3>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmModal({ 
+                            isOpen: true, 
+                            type: 'product', 
+                            id: product.id, 
+                            name: product.product_name 
+                          });
+                        }}
+                        className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2">
                       {isConfigured ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 rounded text-[10px] font-bold">
@@ -526,6 +716,22 @@ export default function AdsProducts({ store }: AdsProductsProps) {
           })}
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={() => {
+          if (confirmModal.type === 'product' && confirmModal.id) {
+            handleDeleteProduct(confirmModal.id);
+          } else if (confirmModal.type === 'performance' && confirmModal.id) {
+            handleDeletePerformance(confirmModal.id);
+          }
+        }}
+        title={confirmModal.type === 'product' ? "Hapus Produk?" : "Hapus Data Performa?"}
+        message={confirmModal.type === 'product' 
+          ? `Produk "${confirmModal.name}" dan semua riwayat performanya akan dihapus permanen.` 
+          : "Data performa produk untuk periode ini akan dihapus permanen."}
+      />
     </div>
   );
 }

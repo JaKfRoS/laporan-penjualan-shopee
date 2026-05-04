@@ -1,20 +1,47 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Store as StoreIcon, ChevronDown, Plus, Check, X, Layers } from 'lucide-react';
 import { Store } from '../types';
 
 interface StoreSelectorProps {
   stores: Store[];
-  currentStore: Store | null;
-  onSelect: (store: Store) => void;
+  selectedIds: string[];
+  onSelect: (ids: string[]) => void;
   onAddStore: (name: string) => void;
 }
 
-export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, currentStore, onSelect, onAddStore }) => {
+export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, selectedIds, onSelect, onAddStore }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [newStoreName, setNewStoreName] = useState('');
+  const [tempSelectedIds, setTempSelectedIds] = useState<string[]>(selectedIds);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Sync temp selection when dropdown opens
+  useEffect(() => {
+    if (isOpen) {
+      setTempSelectedIds(selectedIds);
+    }
+  }, [isOpen, selectedIds]);
+
+  const isAllSelected = tempSelectedIds.length === stores.length && stores.length > 0;
+  
+  const currentStoreName = useMemo(() => {
+    if (selectedIds.length === 0) return 'Pilih Toko';
+    if (selectedIds.length === stores.length && stores.length > 0) return 'Semua Toko';
+    
+    const selectedStores = stores.filter(s => selectedIds.includes(s.id));
+    
+    if (selectedIds.length === 1) {
+      return selectedStores[0]?.name || 'Toko Terpilih';
+    }
+    
+    if (selectedIds.length <= 3) {
+      return selectedStores.map(s => s.name).join(', ');
+    }
+    
+    return `${selectedIds.length} Toko Terpilih`;
+  }, [selectedIds, stores]);
 
   // Menutup dropdown saat klik di luar area komponen
   useEffect(() => {
@@ -43,20 +70,26 @@ export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, currentSto
     }
   };
 
-  const handleSelect = (store: Store) => {
-    onSelect(store);
-    setIsOpen(false);
+  const toggleStore = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    
+    if (tempSelectedIds.includes(id)) {
+      setTempSelectedIds(tempSelectedIds.filter(sid => sid !== id));
+    } else {
+      setTempSelectedIds([...tempSelectedIds, id]);
+    }
   };
 
   const handleSelectAll = () => {
-    // Membuat dummy store object untuk 'Semua Toko'
-    const allStore: Store = {
-      id: 'all',
-      name: 'Semua Toko',
-      user_id: 'all',
-      created_at: new Date().toISOString()
-    };
-    onSelect(allStore);
+    if (isAllSelected) {
+      setTempSelectedIds([]);
+    } else {
+      setTempSelectedIds(stores.map(s => s.id));
+    }
+  };
+
+  const handleConfirm = () => {
+    onSelect(tempSelectedIds);
     setIsOpen(false);
   };
 
@@ -71,9 +104,9 @@ export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, currentSto
         }`}
       >
         <div className={`p-1 rounded-full ${isOpen ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'}`}>
-           {currentStore?.id === 'all' ? <Layers className="w-3.5 h-3.5" /> : <StoreIcon className="w-3.5 h-3.5" />}
+           {isAllSelected ? <Layers className="w-3.5 h-3.5" /> : <StoreIcon className="w-3.5 h-3.5" />}
         </div>
-        <span className="max-w-[120px] truncate">{currentStore?.name || 'Pilih Toko'}</span>
+        <span className="max-w-[120px] truncate">{currentStoreName}</span>
         <ChevronDown className={`w-4 h-4 text-slate-400 ml-1 transition-transform duration-200 ${isOpen ? 'rotate-180 text-orange-500' : ''}`} />
       </button>
       
@@ -85,21 +118,23 @@ export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, currentSto
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
               Daftar Toko ({stores.length})
             </span>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsAdding(!isAdding);
-                if (!isAdding) setTimeout(() => document.getElementById('new-store-input')?.focus(), 100);
-              }}
-              className={`p-1.5 rounded-lg transition-all ${
-                isAdding 
-                  ? 'bg-red-50 text-red-600 hover:bg-red-100' 
-                  : 'bg-white shadow-sm border border-slate-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200'
-              }`}
-              title={isAdding ? "Batal Tambah" : "Tambah Toko Baru"}
-            >
-              {isAdding ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsAdding(!isAdding);
+                  if (!isAdding) setTimeout(() => document.getElementById('new-store-input')?.focus(), 100);
+                }}
+                className={`p-1.5 rounded-lg transition-all ${
+                  isAdding 
+                    ? 'bg-red-50 text-red-600 hover:bg-red-100' 
+                    : 'bg-white shadow-sm border border-slate-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200'
+                }`}
+                title={isAdding ? "Batal Tambah" : "Tambah Toko Baru"}
+              >
+                {isAdding ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+              </button>
+            </div>
           </div>
 
           {/* Form Tambah Toko */}
@@ -132,53 +167,60 @@ export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, currentSto
               <button
                 onClick={handleSelectAll}
                 className={`w-full text-left px-3 py-3 mb-1 rounded-xl text-sm transition-all flex items-center justify-between group relative overflow-hidden ${
-                  currentStore?.id === 'all'
+                  isAllSelected
                   ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 font-bold border border-purple-100 dark:border-purple-500/20' 
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent'
                 }`}
               >
                 <div className="flex items-center gap-3 z-10 relative">
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black uppercase ${
-                    currentStore?.id === 'all' ? 'bg-purple-200 text-purple-700' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:shadow-sm'
+                    isAllSelected ? 'bg-purple-200 text-purple-700' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:shadow-sm'
                   }`}>
                     <Layers className="w-4 h-4" />
                   </div>
-                  <span className="truncate max-w-[160px]">Semua Toko</span>
+                  <span className="truncate max-w-[160px]">Pilih Semua Toko</span>
                 </div>
-                {currentStore?.id === 'all' && (
-                  <div className="bg-purple-100 dark:bg-purple-500/20 p-1 rounded-full">
-                    <Check className="w-3 h-3 text-purple-600" />
-                  </div>
-                )}
+                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${
+                  isAllSelected 
+                    ? 'bg-purple-600 border-purple-600 text-white' 
+                    : 'border-slate-300 bg-white'
+                }`}>
+                  {isAllSelected && <Check className="w-3.5 h-3.5 stroke-[3px]" />}
+                </div>
               </button>
             )}
 
             {stores.length > 0 ? (
-              stores.map((store) => (
-                <button
-                  key={store.id}
-                  onClick={() => handleSelect(store)}
-                  className={`w-full text-left px-3 py-3 mb-1 rounded-xl text-sm transition-all flex items-center justify-between group relative overflow-hidden ${
-                    currentStore?.id === store.id 
-                    ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400 font-bold border border-orange-100 dark:border-orange-500/20' 
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 z-10 relative">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black uppercase ${
-                      currentStore?.id === store.id ? 'bg-orange-200 text-orange-700' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:shadow-sm'
+              stores.map((store) => {
+                const isSelected = tempSelectedIds.includes(store.id);
+                return (
+                  <button
+                    key={store.id}
+                    onClick={() => toggleStore(store.id)}
+                    className={`w-full text-left px-3 py-3 mb-1 rounded-xl text-sm transition-all flex items-center justify-between group relative overflow-hidden ${
+                      isSelected 
+                      ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400 font-bold border border-orange-100 dark:border-orange-500/20' 
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 z-10 relative">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black uppercase ${
+                        isSelected ? 'bg-orange-200 text-orange-700' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:shadow-sm'
+                      }`}>
+                        {store.name.substring(0, 2)}
+                      </div>
+                      <span className="truncate max-w-[160px]">{store.name}</span>
+                    </div>
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${
+                      isSelected 
+                        ? 'bg-orange-600 border-orange-600 text-white' 
+                        : 'border-slate-300 bg-white'
                     }`}>
-                      {store.name.substring(0, 2)}
+                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[3px]" />}
                     </div>
-                    <span className="truncate max-w-[160px]">{store.name}</span>
-                  </div>
-                  {currentStore?.id === store.id && (
-                    <div className="bg-orange-100 dark:bg-orange-500/20 p-1 rounded-full">
-                      <Check className="w-3 h-3 text-orange-600" />
-                    </div>
-                  )}
-                </button>
-              ))
+                  </button>
+                );
+              })
             ) : (
               <div className="py-8 text-center flex flex-col items-center gap-2 text-slate-400">
                 <StoreIcon className="w-8 h-8 opacity-20" />
@@ -187,9 +229,17 @@ export const StoreSelector: React.FC<StoreSelectorProps> = ({ stores, currentSto
             )}
           </div>
           
-          {/* Footer Info */}
-          <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400 text-center font-medium">
-            Kelola toko Anda di sini
+          {/* Footer with Confirm Button */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
+            <button
+              onClick={handleConfirm}
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-2.5 rounded-xl transition-all shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2 text-sm"
+            >
+              Tampilkan {tempSelectedIds.length > 0 && `(${tempSelectedIds.length})`}
+            </button>
+            <div className="text-[10px] text-slate-400 text-center font-medium">
+              Pilih toko lalu klik Tampilkan
+            </div>
           </div>
         </div>
       )}

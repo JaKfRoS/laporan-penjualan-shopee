@@ -112,6 +112,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         .select('*')
         .order('adjustment_date', { ascending: false });
 
+      const isMultiple = (store as any).is_multiple;
+      const targetStoreIds = isMultiple ? (store as any).selected_ids : [storeId];
+
       if (storeId === 'all') {
         if (allStores && allStores.length > 0) {
            const storeIds = allStores.map(s => s.id);
@@ -123,6 +126,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
            setLoading(false);
            return;
         }
+      } else if (isMultiple) {
+        query = query.in('store_id', targetStoreIds);
+        adjQuery = adjQuery.in('store_id', targetStoreIds);
       } else {
         query = query.eq('store_id', storeId);
         adjQuery = adjQuery.eq('store_id', storeId);
@@ -156,6 +162,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
            const storeIds = allStores.map(s => s.id);
            incomeQuery = incomeQuery.in('store_id', storeIds);
         }
+      } else if (isMultiple) {
+        incomeQuery = incomeQuery.in('store_id', targetStoreIds);
       } else {
         incomeQuery = incomeQuery.eq('store_id', storeId);
       }
@@ -203,7 +211,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           for (let i = 0; i < missingOrderIds.length; i += 500) {
              const chunk = missingOrderIds.slice(i, i + 500);
              let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', chunk);
-             if (storeId !== 'all') {
+             if (storeId === 'all') {
+                 // No extra filter
+             } else if (isMultiple) {
+                 chunkQuery = chunkQuery.in('store_id', targetStoreIds);
+             } else {
                  chunkQuery = chunkQuery.eq('store_id', storeId);
              }
              const { data } = await chunkQuery;

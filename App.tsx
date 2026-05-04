@@ -33,6 +33,7 @@ export default function App() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
   const [refreshKey, setRefreshKey] = useState(Date.now()); 
+  const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -127,6 +128,41 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const handleSelectStores = (ids: string[]) => {
+    setSelectedStoreIds(ids);
+    
+    if (ids.length === 0) {
+      setCurrentStore(null);
+      localStorage.removeItem('lastSelectedStoreId');
+      localStorage.removeItem('selectedStoreIds');
+    } else if (ids.length === 1) {
+      const store = stores.find(s => s.id === ids[0]);
+      if (store) {
+        setCurrentStore(store);
+        localStorage.setItem('lastSelectedStoreId', store.id);
+        localStorage.removeItem('selectedStoreIds');
+      }
+    } else if (ids.length === stores.length && stores.length > 0) {
+      const allStore: Store = { id: 'all', name: 'Semua Toko', user_id: 'all', created_at: '' };
+      setCurrentStore(allStore);
+      localStorage.setItem('lastSelectedStoreId', 'all');
+      localStorage.setItem('selectedStoreIds', JSON.stringify(ids));
+    } else {
+      const customStore: Store = { 
+        id: 'multiple' as any, 
+        name: `${ids.length} Toko Terpilih`, 
+        user_id: 'multiple', 
+        created_at: '',
+        // @ts-ignore
+        selected_ids: ids,
+        is_multiple: true
+      };
+      setCurrentStore(customStore);
+      localStorage.setItem('lastSelectedStoreId', 'multiple');
+      localStorage.setItem('selectedStoreIds', JSON.stringify(ids));
+    }
+  };
+
   const fetchStores = async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -140,14 +176,28 @@ export default function App() {
       if (data && data.length > 0) {
         setStores(data);
         
-        // Check for saved store in localStorage
+        // Check for saved selection
         const savedStoreId = localStorage.getItem('lastSelectedStoreId');
-        const savedStore = data.find(s => s.id === savedStoreId);
-
-        if (savedStore) {
-             setCurrentStore(savedStore);
-        } else if (!currentStore || (currentStore.id !== 'all' && !data.find(s => s.id === currentStore.id))) {
-          setCurrentStore(data[0]);
+        const savedBatchIds = localStorage.getItem('selectedStoreIds');
+        
+        if (savedStoreId === 'all') {
+          handleSelectStores(data.map(s => s.id));
+        } else if (savedStoreId === 'multiple' && savedBatchIds) {
+          try {
+            const ids = JSON.parse(savedBatchIds);
+            handleSelectStores(ids);
+          } catch {
+            handleSelectStores([data[0].id]);
+          }
+        } else if (savedStoreId) {
+          const savedStore = data.find(s => s.id === savedStoreId);
+          if (savedStore) {
+            handleSelectStores([savedStore.id]);
+          } else {
+            handleSelectStores([data[0].id]);
+          }
+        } else {
+          handleSelectStores([data[0].id]);
         }
       } else {
         await createDefaultStore(userId);
@@ -159,12 +209,10 @@ export default function App() {
     }
   };
 
-  // Persist selected store
+  // Persist selected store - handled in handleSelectStores
   useEffect(() => {
-    if (currentStore?.id) {
-      localStorage.setItem('lastSelectedStoreId', currentStore.id);
-    }
-  }, [currentStore]);
+    // Moved to handleSelectStores
+  }, []);
 
   const createDefaultStore = async (userId: string) => {
     const { data: newStore, error } = await supabase
@@ -189,7 +237,7 @@ export default function App() {
       
       if (error) throw error;
       setStores([...stores, data]);
-      setCurrentStore(data);
+      handleSelectStores([...selectedStoreIds, data.id]);
       toast.success(`Toko "${name}" berhasil dibuat!`);
     } catch (err: any) {
       if (!(await handleSupabaseError(err))) {
@@ -426,7 +474,13 @@ export default function App() {
                   </>
                 ) : (
                   activeTab === 'dashboard' ? (
-                     <span className="truncate block max-w-[280px] sm:max-w-[400px] md:max-w-none">Toko: {currentStore?.name}</span>
+                     <span className="truncate block max-w-[280px] sm:max-w-[400px] md:max-w-none">
+                       {currentStore?.is_multiple ? (
+                         stores.filter(s => (currentStore as any).selected_ids.includes(s.id)).map(s => s.name).join(', ')
+                       ) : (
+                         `Toko: ${currentStore?.name}`
+                       )}
+                     </span>
                   ) : 
                   activeTab === 'ads' ? 'Ads & Marketing' : 
                   activeTab === 'calculator' ? 'Kalkulator Harga' :
@@ -436,16 +490,12 @@ export default function App() {
                   'Pengaturan'
                 )}
               </h1>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0"></span>
-                <p className="text-slate-500 text-[9px] md:text-xs font-black uppercase tracking-[0.2em]">Database Aktif</p>
-              </div>
             </div>
             <div className="flex items-center gap-3 self-start lg:self-auto flex-wrap sm:flex-nowrap">
               <StoreSelector 
                 stores={stores} 
-                currentStore={currentStore} 
-                onSelect={setCurrentStore}
+                selectedIds={selectedStoreIds} 
+                onSelect={handleSelectStores}
                 onAddStore={handleAddStore}
               />
               <button 
@@ -482,35 +532,45 @@ export default function App() {
           )}
 
           {activeTab === 'calculator' && currentStore && (
-             <PriceCalculator store={currentStore} />
+            (currentStore.id === 'all' || (currentStore as any).is_multiple) ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                 <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                    <Calculator className="w-10 h-10 text-slate-400" />
+                 </div>
+                 <h2 className="text-xl font-bold mb-2">Pilih Satu Toko Saja</h2>
+                 <p className="text-slate-500 max-w-md text-sm">Kalkulator biaya hanya berlaku untuk satu toko spesifik karena perbedaan skema biaya antar toko.</p>
+              </div>
+            ) : (
+              <PriceCalculator store={currentStore} />
+            )
           )}
 
           {activeTab === 'products' && currentStore && (
-             <ProductManager store={currentStore} />
+            (currentStore.id === 'all' || (currentStore as any).is_multiple) ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                 <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                    <PackageSearch className="w-10 h-10 text-slate-400" />
+                 </div>
+                 <h2 className="text-xl font-bold mb-2">Pilih Satu Toko Saja</h2>
+                 <p className="text-slate-500 max-w-md text-sm">Manajemen produk hanya dapat dilakukan untuk satu toko dalam satu waktu.</p>
+              </div>
+            ) : (
+              <ProductManager store={currentStore} />
+            )
           )}
 
           {activeTab === 'ads' && currentStore && (
-            currentStore.id === 'all' ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                 <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                    <Layers className="w-10 h-10 text-slate-400" />
-                 </div>
-                 <h2 className="text-xl font-bold mb-2">Pilih Toko Spesifik</h2>
-                 <p className="text-slate-500 max-w-md text-sm">Anda tidak dapat melihat data iklan untuk "Semua Toko" sekaligus. Silakan pilih toko spesifik melalui menu di pojok kanan atas.</p>
-              </div>
-            ) : (
-              <AdsCenter store={currentStore} />
-            )
+            <AdsCenter store={currentStore} />
           )}
           
           {activeTab === 'import' && currentStore && (
-            currentStore.id === 'all' ? (
+            (currentStore.id === 'all' || (currentStore as any).is_multiple) ? (
               <div className="flex flex-col items-center justify-center py-20 text-center px-4">
                  <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
                     <Layers className="w-10 h-10 text-slate-400" />
                  </div>
-                 <h2 className="text-xl font-bold mb-2">Pilih Toko Spesifik</h2>
-                 <p className="text-slate-500 max-w-md text-sm">Anda tidak dapat mengimpor data ke "Semua Toko" sekaligus. Silakan pilih toko spesifik melalui menu di pojok kanan atas.</p>
+                 <h2 className="text-xl font-bold mb-2">Pilih Satu Toko Saja</h2>
+                 <p className="text-slate-500 max-w-md text-sm">Anda tidak dapat mengimpor data ke banyak toko sekaligus. Silakan pilih satu toko spesifik melalui menu di pojok kanan atas.</p>
               </div>
             ) : (
               <ImportWizard 
@@ -518,8 +578,6 @@ export default function App() {
                 store={currentStore} 
                 onComplete={() => {
                   setRefreshKey(Date.now());
-                  // Optionally redirect to dashboard or products page
-                  // setActiveTab('dashboard'); 
                 }} 
               />
             )

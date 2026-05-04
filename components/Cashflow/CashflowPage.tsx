@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabase';
 import { Store, Order } from '../../types';
 import { DateRangePicker } from '../Dashboard/DateRangePicker';
-import { Loader2, FileText, Wallet, Upload, Plus, Trash2, Save, CheckCircle2, AlertCircle, ArrowDownUp } from 'lucide-react';
+import { Loader2, FileText, Wallet, Upload, Plus, Trash2, Save, CheckCircle2, AlertCircle, ArrowDownUp, Pencil, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -47,6 +47,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   
+  // Edit State
+  const [editingTx, setEditingTx] = useState<ManualTransaction | null>(null);
+  
   // Form State
   const [txType, setTxType] = useState<'income' | 'expense'>('expense');
   const [newTx, setNewTx] = useState<ManualTransaction>({
@@ -73,6 +76,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     if (abortControllerRef.current) abortControllerRef.current.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
+
+    const isMultiple = (store as any).is_multiple;
+    const targetStoreIds = isMultiple ? (store as any).selected_ids : [store.id];
 
     setLoading(true);
 
@@ -113,6 +119,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
            setLoading(false);
            return;
         }
+      } else if (isMultiple) {
+        query = query.in('store_id', targetStoreIds);
       } else {
         query = query.eq('store_id', store.id);
       }
@@ -143,6 +151,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
            const storeIds = allStores.map(s => s.id);
            incomeQuery = incomeQuery.in('store_id', storeIds);
         }
+      } else if (isMultiple) {
+        incomeQuery = incomeQuery.in('store_id', targetStoreIds);
       } else {
         incomeQuery = incomeQuery.eq('store_id', store.id);
       }
@@ -182,7 +192,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           for (let i = 0; i < missingOrderIds.length; i += 500) {
              const chunk = missingOrderIds.slice(i, i + 500);
              let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', chunk);
-             if (store.id !== 'all') {
+             if (store.id === 'all') {
+                 // No extra filter
+             } else if (isMultiple) {
+                 chunkQuery = chunkQuery.in('store_id', targetStoreIds);
+             } else {
                  chunkQuery = chunkQuery.eq('store_id', store.id);
              }
              const { data } = await chunkQuery;
@@ -258,6 +272,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   };
 
   const fetchManualTransactions = async () => {
+    const isMultiple = (store as any).is_multiple;
+    const targetStoreIds = isMultiple ? (store as any).selected_ids : [store.id];
+
     try {
       // Helper function to fetch all data using pagination
       const fetchAll = async (baseQuery: any) => {
@@ -288,7 +305,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       // Fetch latest balance snapshot separately (without date filter)
       let latestBalData = null;
-      if (store.id !== 'all') {
+      if (store.id === 'all' && allStores) {
+        // Handled below
+      } else if (isMultiple) {
+        // Handled below for multiple
+      } else if (store.id !== 'all') {
         const { data } = await supabase
           .from('adjustments')
           .select('amount, adjustment_date, reason')
@@ -305,14 +326,16 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         if (balMatch) {
           setEscrowBalance(parseFloat(balMatch[1]));
         }
-      } else if (store.id === 'all' && allStores) {
-        // For 'all stores', we might want to sum the latest balance of each store
+      } else if ((store.id === 'all' || (store as any).is_multiple) && allStores) {
+        // For 'all stores' or multiple stores, sum the latest balance of each selected store
         let totalEscrow = 0;
-        for (const s of allStores) {
+        const idsToGet = (store as any).is_multiple ? (store as any).selected_ids : allStores.map(s => s.id);
+        
+        for (const sid of idsToGet) {
           const { data: sBalData } = await supabase
             .from('adjustments')
             .select('reason')
-            .eq('store_id', s.id)
+            .eq('store_id', sid)
             .ilike('reason', '%[BALANCE_SNAPSHOT]%')
             .order('adjustment_date', { ascending: false })
             .order('created_at', { ascending: false })
@@ -330,6 +353,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       if (store.id === 'all' && allStores) {
         query = query.in('store_id', allStores.map(s => s.id));
+      } else if (isMultiple) {
+        query = query.in('store_id', targetStoreIds);
       } else {
         query = query.eq('store_id', store.id);
       }
@@ -739,6 +764,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   };
 
   const deleteTransaction = async (id: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus transaksi ini?')) return;
     try {
       const { error } = await supabase.from('adjustments').delete().eq('id', id);
       if (error) throw error;
@@ -749,24 +775,64 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     }
   };
 
-  const deleteUploadedData = async () => {
-    if (store.id === 'all') return;
+  const handleUpdateTransaction = async () => {
+    if (!editingTx || !editingTx.id) return;
     
-    if (!confirm('Apakah Anda yakin ingin menghapus semua data biaya iklan hasil upload untuk toko ini?')) {
+    if (!editingTx.amount || !editingTx.description) {
+      toast.error("Mohon lengkapi data transaksi");
       return;
     }
 
-    const toastId = toast.loading('Menghapus data...');
     try {
       const { error } = await supabase
+        .from('adjustments')
+        .update({
+          adjustment_date: editingTx.date,
+          amount: editingTx.amount,
+          reason: editingTx.fullReason?.includes('[MANUAL_EXPENSE]') 
+            ? `[MANUAL_EXPENSE] Category: ${editingTx.category} | Desc: ${editingTx.description}`
+            : editingTx.fullReason?.replace(/Desc: [^|]+/, `Desc: ${editingTx.description}`) || editingTx.description
+        })
+        .eq('id', editingTx.id);
+
+      if (error) throw error;
+
+      toast.success("Transaksi berhasil diperbarui");
+      setEditingTx(null);
+      fetchManualTransactions();
+    } catch (err: any) {
+      toast.error("Gagal memperbarui: " + err.message);
+    }
+  };
+
+  const deleteUploadedDataByGroup = async (groupType: 'Ads' | 'Adjustment' | 'All') => {
+    if (store.id === 'all') return;
+    
+    let message = 'Apakah Anda yakin ingin menghapus semua data hasil upload untuk toko ini?';
+    if (groupType === 'Ads') message = 'Apakah Anda yakin ingin menghapus semua data biaya IKLAN (upload) untuk toko ini?';
+    if (groupType === 'Adjustment') message = 'Apakah Anda yakin ingin menghapus semua data PENYESUAIAN/LAINNYA (upload) untuk toko ini?';
+
+    if (!confirm(message)) return;
+
+    const toastId = toast.loading('Menghapus data...');
+    try {
+      let query = supabase
         .from('adjustments')
         .delete()
         .eq('store_id', store.id)
         .ilike('reason', '%[AUTO_UPLOAD]%');
+      
+      if (groupType === 'Ads') {
+        query = query.ilike('reason', '%Type: Ads%');
+      } else if (groupType === 'Adjustment') {
+        query = query.not('reason', 'ilike', '%Type: Ads%');
+      }
+
+      const { error } = await query;
 
       if (error) throw error;
 
-      toast.success("Data upload berhasil dihapus", { id: toastId });
+      toast.success("Data berhasil dihapus", { id: toastId });
       fetchManualTransactions();
     } catch (err: any) {
       toast.error("Gagal menghapus data: " + err.message, { id: toastId });
@@ -1075,6 +1141,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                         <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Kategori</th>
                         <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Deskripsi</th>
                         <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-right">Nominal</th>
+                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-center">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -1123,11 +1190,29 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                           <td className={`px-6 py-4 text-right font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
                             {tx.amount < 0 ? '-' : '+'}Rp {Math.abs(tx.amount).toLocaleString()}
                           </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-center gap-2">
+                              <button 
+                                onClick={() => setEditingTx(tx)}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button 
+                                onClick={() => tx.id && deleteTransaction(tx.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                title="Hapus"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                       {manualTransactions.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic">
+                          <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
                             Belum ada data transaksi untuk ditampilkan
                           </td>
                         </tr>
@@ -1270,15 +1355,32 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
               {store.id !== 'all' && (
                 <div className="mt-12 p-6 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700">
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-2">Manajemen Data</h4>
-                  <p className="text-xs text-slate-500 mb-4">Hapus semua data biaya iklan hasil upload untuk toko ini jika terjadi kesalahan input.</p>
-                  <button 
-                    onClick={deleteUploadedData}
-                    className="flex items-center justify-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors text-xs font-bold mx-auto"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Hapus Semua Data Upload Toko Ini
-                  </button>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-2">Manajemen Data Upload</h4>
+                  <p className="text-xs text-slate-500 mb-6 text-center">Hapus data hasil upload untuk toko ini jika terjadi kesalahan input.</p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto">
+                    <button 
+                      onClick={() => deleteUploadedDataByGroup('Ads')}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 text-red-600 dark:text-red-400 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-xs font-bold shadow-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Hapus Hanya Data Iklan
+                    </button>
+                    <button 
+                      onClick={() => deleteUploadedDataByGroup('Adjustment')}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-xs font-bold shadow-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Hapus Selain Iklan
+                    </button>
+                    <button 
+                      onClick={() => deleteUploadedDataByGroup('All')}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors text-xs font-bold shadow-sm sm:col-span-2 mt-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Hapus Semua Data Upload (Total)
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1522,6 +1624,73 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
               )}
             </div>
           )}
+        </div>
+      )}
+      {/* Modal Edit Transaksi */}
+      {editingTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
+            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900 dark:text-white">Edit Transaksi</h3>
+              <button onClick={() => setEditingTx(null)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl mb-4">
+                <div className="flex-1 text-center py-2 text-[10px] font-black uppercase text-slate-500">
+                  {editingTx.category}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tanggal</label>
+                <input 
+                  type="date"
+                  value={editingTx.date}
+                  onChange={e => setEditingTx({...editingTx, date: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Deskripsi</label>
+                <input 
+                  type="text"
+                  value={editingTx.description}
+                  onChange={e => setEditingTx({...editingTx, description: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nominal (Rp)</label>
+                <input 
+                  type="number"
+                  value={editingTx.amount}
+                  onChange={e => setEditingTx({...editingTx, amount: Number(e.target.value)})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all font-bold text-blue-600"
+                />
+                <p className="text-[10px] text-slate-400 mt-1 italic">Gunakan tanda minus (-) untuk pengeluaran/biaya.</p>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 flex gap-3">
+              <button 
+                onClick={() => setEditingTx(null)}
+                className="flex-1 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={handleUpdateTransaction}
+                className="flex-1 py-3 bg-blue-600 text-white rounded-xl text-sm font-black shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-all"
+              >
+                Simpan Perubahan
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
