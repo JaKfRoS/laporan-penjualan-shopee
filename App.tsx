@@ -128,7 +128,8 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const handleSelectStores = (ids: string[]) => {
+  const handleSelectStores = (ids: string[], storesList?: Store[]) => {
+    const listToUse = storesList || stores;
     setSelectedStoreIds(ids);
     
     if (ids.length === 0) {
@@ -136,13 +137,13 @@ export default function App() {
       localStorage.removeItem('lastSelectedStoreId');
       localStorage.removeItem('selectedStoreIds');
     } else if (ids.length === 1) {
-      const store = stores.find(s => s.id === ids[0]);
+      const store = listToUse.find(s => s.id === ids[0]);
       if (store) {
         setCurrentStore(store);
         localStorage.setItem('lastSelectedStoreId', store.id);
         localStorage.removeItem('selectedStoreIds');
       }
-    } else if (ids.length === stores.length && stores.length > 0) {
+    } else if (ids.length === listToUse.length && listToUse.length > 0) {
       const allStore: Store = { id: 'all', name: 'Semua Toko', user_id: 'all', created_at: '' };
       setCurrentStore(allStore);
       localStorage.setItem('lastSelectedStoreId', 'all');
@@ -181,23 +182,24 @@ export default function App() {
         const savedBatchIds = localStorage.getItem('selectedStoreIds');
         
         if (savedStoreId === 'all') {
-          handleSelectStores(data.map(s => s.id));
+          handleSelectStores(data.map(s => s.id), data);
         } else if (savedStoreId === 'multiple' && savedBatchIds) {
           try {
             const ids = JSON.parse(savedBatchIds);
-            handleSelectStores(ids);
+            handleSelectStores(ids, data);
           } catch {
-            handleSelectStores([data[0].id]);
+            handleSelectStores([data[0].id], data);
           }
         } else if (savedStoreId) {
           const savedStore = data.find(s => s.id === savedStoreId);
           if (savedStore) {
-            handleSelectStores([savedStore.id]);
+            handleSelectStores([savedStore.id], data);
           } else {
-            handleSelectStores([data[0].id]);
+            handleSelectStores([data[0].id], data);
           }
         } else {
-          handleSelectStores([data[0].id]);
+          // Default to all stores on login
+          handleSelectStores(data.map(s => s.id), data);
         }
       } else {
         await createDefaultStore(userId);
@@ -223,7 +225,7 @@ export default function App() {
 
     if (error) throw error;
     setStores([newStore]);
-    setCurrentStore(newStore);
+    handleSelectStores([newStore.id], [newStore]);
   };
 
   const handleAddStore = async (name: string) => {
@@ -236,8 +238,9 @@ export default function App() {
         .single();
       
       if (error) throw error;
-      setStores([...stores, data]);
-      handleSelectStores([...selectedStoreIds, data.id]);
+      const updated = [...stores, data];
+      setStores(updated);
+      handleSelectStores([...selectedStoreIds, data.id], updated);
       toast.success(`Toko "${name}" berhasil dibuat!`);
     } catch (err: any) {
       if (!(await handleSupabaseError(err))) {
@@ -286,13 +289,17 @@ export default function App() {
       const updatedStores = stores.filter(s => s.id !== id);
       setStores(updatedStores);
 
-      // Logika switch toko jika yang dihapus adalah toko aktif
-      if (currentStore?.id === id) {
+      // Update current selection
+      if (currentStore?.id === 'all' || currentStore?.id === ('multiple' as any)) {
+        // If we were viewing all or multiple, update the set to exclude the deleted one
+        const updatedIds = selectedStoreIds.filter(sid => sid !== id);
+        handleSelectStores(updatedIds, updatedStores);
+      } else if (currentStore?.id === id) {
+        // If we were viewing the specific store that was deleted
         if (updatedStores.length > 0) {
-          setCurrentStore(updatedStores[0]);
-        } else {
-          // Jika tidak ada toko tersisa, buat toko default
-          if (session?.user?.id) await createDefaultStore(session.user.id);
+          handleSelectStores([updatedStores[0].id], updatedStores);
+        } else if (session?.user?.id) {
+          await createDefaultStore(session.user.id);
         }
       }
 
@@ -476,9 +483,9 @@ export default function App() {
                   activeTab === 'dashboard' ? (
                      <span className="truncate block max-w-[280px] sm:max-w-[400px] md:max-w-none">
                        {currentStore?.is_multiple ? (
-                         stores.filter(s => (currentStore as any).selected_ids.includes(s.id)).map(s => s.name).join(', ')
+                         stores.filter(s => (currentStore as any).selected_ids?.includes(s.id)).map(s => s.name).join(', ') || 'Memuat toko...'
                        ) : (
-                         `Toko: ${currentStore?.name}`
+                         `Toko: ${currentStore?.name || '...'}`
                        )}
                      </span>
                   ) : 

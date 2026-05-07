@@ -1429,7 +1429,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         <div className="mt-6">
           <ProductChart 
             storeId={store.id} 
-            allStoreIds={store.id === 'all' ? allStores?.map(s => s.id) : undefined} 
+            allStoreIds={store.id === 'all' ? allStores?.map(s => s.id) : (store as any).selected_ids} 
+            orders={filteredOrders}
+            startDate={filters.start}
+            endDate={filters.end}
           />
         </div>
 
