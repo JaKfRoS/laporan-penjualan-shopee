@@ -391,7 +391,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
            const typeVal = typeMatch ? typeMatch[1].trim() : '';
            
            if (typeVal === 'Income') category = 'Penghasilan dari Pesanan';
-           else if (typeVal === 'Ads') category = 'Isi Ulang Saldo Iklan/Koin Penjual';
+           else if (typeVal === 'Ads' || reason.toLowerCase().includes('iklan') || reason.toLowerCase().includes('ads') || reason.toLowerCase().includes('koin penjual')) category = 'Isi Ulang Saldo Iklan/Koin Penjual';
            else if (typeVal === 'Withdrawal') category = 'Penarikan Dana';
            else if (typeVal === 'Adjustment') category = 'Penyesuaian Saldo';
            else category = 'Transaksi Shopee Otomatis';
@@ -576,7 +576,9 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                 // No. Pesanan / Order ID
                 if (c.includes('pesanan') || c.includes('order no') || c === 'order id') orderIdColIdx = idx;
                 // No. Transaksi / Transaction ID
-                if (c.includes('transaksi') || c.includes('transaction') || c === 'id') transactionIdColIdx = idx;
+                if (((c.includes('transaksi') || c.includes('transaction')) && !c.includes('tipe') && !c.includes('jenis') && !c.includes('tanggal')) || c === 'id') {
+                    transactionIdColIdx = idx;
+                }
                 // Status
                 if (c === 'status') statusColIdx = idx;
                 // Jenis Transaksi / Transaction Type
@@ -625,8 +627,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
              latestDate = formattedDate;
           }
 
-          const isAds = (desc.includes('iklan') || desc.includes('ads') || desc.includes('koin penjual')) && 
-                        !desc.includes('admin') && !desc.includes('layanan');
+          const isAds = (
+            desc.includes('iklan') || 
+            desc.includes('ads') || 
+            desc.includes('koin penjual')
+          );
           
           const isWithdrawal = desc.includes('penarikan') || desc.includes('withdrawal');
           const isIncome = desc.includes('penghasilan') || desc.includes('income') || desc.includes('pesanan') || desc.includes('order');
@@ -644,12 +649,33 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
               const originalDesc = String(row[descColIdx]);
               const stableRef = transactionNo !== '-' ? transactionNo : (orderNo !== '-' ? orderNo : '-');
               
-              // Improved uniqueId: Combine store, date, type, amount, and reference to ensure uniqueness 
-              // even if multiple rows have the same No. Pesanan (e.g., income vs shipping fee)
+              // Extract additional details from timestamps / final balances if available to prevent duplicates across re-uploads
+              let timePart = '';
+              if (dateStr instanceof Date) {
+                  const hh = String(dateStr.getHours()).padStart(2, '0');
+                  const mm = String(dateStr.getMinutes()).padStart(2, '0');
+                  const ss = String(dateStr.getSeconds()).padStart(2, '0');
+                  timePart = `${hh}${mm}${ss}`;
+              } else {
+                  const dStr = String(dateStr);
+                  if (dStr.includes(' ') && dStr.match(/\d{2}:\d{2}:\d{2}/)) {
+                      const match = dStr.match(/(\d{2}):(\d{2}):(\d{2})/);
+                      if (match) timePart = `${match[1]}${match[2]}${match[3]}`;
+                  } else if (dStr.includes('T')) {
+                      const tPart = dStr.split('T')[1];
+                      const match = tPart.match(/(\d{2}):(\d{2}):(\d{2})/);
+                      if (match) timePart = `${match[1]}${match[2]}${match[3]}`;
+                  }
+              }
+              const endBalVal = balanceColIdx !== -1 ? String(row[balanceColIdx]).replace(/[^\d-]/g, '') : '';
+              const suffix = timePart || endBalVal || String(i);
+
+              // Improved uniqueId: Combine store, date, type, amount, reference, and suffix to ensure uniqueness 
+              // even if multiple rows have the same No. Pesanan (e.g., income vs shipping fee) or occur on the same day
               const normalizedDesc = originalDesc.toLowerCase().replace(/\s+/g, '').substring(0, 30);
               const uniqueId = stableRef !== '-' 
-                ? `TRX-${store.id}-${formattedDate}-${type}-${Math.abs(amount)}-${stableRef}`
-                : `TRX-${store.id}-${formattedDate}-${type}-${Math.abs(amount)}-${normalizedDesc}-${i}`;
+                ? `TRX-${store.id}-${formattedDate}-${type}-${Math.abs(amount)}-${stableRef}-${suffix}`
+                : `TRX-${store.id}-${formattedDate}-${type}-${Math.abs(amount)}-${normalizedDesc}-${suffix}`;
 
               transactionsToSave.push({
                   store_id: store.id,

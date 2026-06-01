@@ -306,8 +306,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       
       const isAds = reason.includes('type: ads') || 
                     reason.includes('category: isi ulang saldo iklan') ||
-                    (reason.includes('iklan') && !reason.includes('penghasilan')) || 
-                    reason.includes('shopee ads') ||
+                    reason.includes('iklan') || 
+                    reason.includes('ads') || 
                     reason.includes('koin penjual');
       
       const isWithdrawal = reason.includes('type: withdrawal') || reason.includes('penarikan dana');
