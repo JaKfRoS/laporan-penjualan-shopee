@@ -390,11 +390,26 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
            const typeMatch = reason.match(/Type: ([^|]+)/);
            const typeVal = typeMatch ? typeMatch[1].trim() : '';
            
-           if (typeVal === 'Income') category = 'Penghasilan dari Pesanan';
-           else if (typeVal === 'Ads' || reason.toLowerCase().includes('iklan') || reason.toLowerCase().includes('ads') || reason.toLowerCase().includes('koin penjual')) category = 'Isi Ulang Saldo Iklan/Koin Penjual';
-           else if (typeVal === 'Withdrawal') category = 'Penarikan Dana';
-           else if (typeVal === 'Adjustment') category = 'Penyesuaian Saldo';
-           else category = 'Transaksi Shopee Otomatis';
+           const reasonLower = reason.toLowerCase();
+            const isAdsText = reasonLower.includes('iklan') || reasonLower.includes('ads') || reasonLower.includes('koin penjual');
+            const isAdjustmentText = reasonLower.includes('penyesuaian') || 
+                                     reasonLower.includes('adjustment') || 
+                                     reasonLower.includes('kompensasi') || 
+                                     reasonLower.includes('reimbursement') ||
+                                     reasonLower.includes('ganti rugi') ||
+                                     reasonLower.includes('klaim') ||
+                                     reasonLower.includes('claim') ||
+                                     reasonLower.includes('selisih') ||
+                                     reasonLower.includes('perbedaan') ||
+                                     reasonLower.includes('perbaikan') ||
+                                     reasonLower.includes('pengembalian biaya');
+
+            if (typeVal === 'Ads' || isAdsText) category = 'Isi Ulang Saldo Iklan/Koin Penjual';
+            else if (typeVal === 'Adjustment' || isAdjustmentText) category = 'Penyesuaian Saldo';
+            else if (typeVal === 'Withdrawal') category = 'Penarikan Dana';
+            else if (typeVal === 'Income') category = 'Penghasilan dari Pesanan';
+            else category = 'Transaksi Shopee Otomatis';
+
 
            const fullDesc = descMatch ? descMatch[1].trim() : reason.replace('[AUTO_UPLOAD]', '').trim();
            description = fullDesc.split('|')[0].trim();
@@ -634,14 +649,34 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           );
           
           const isWithdrawal = desc.includes('penarikan') || desc.includes('withdrawal');
+          const isAdjustment = (
+            desc.includes('penyesuaian') || 
+            desc.includes('adjustment') || 
+            desc.includes('kompensasi') || 
+            desc.includes('reimbursement') ||
+            desc.includes('ganti rugi') ||
+            desc.includes('klaim') ||
+            desc.includes('claim') ||
+            desc.includes('selisih') ||
+            desc.includes('perbedaan') ||
+            desc.includes('perbaikan') ||
+            desc.includes('pengembalian biaya') ||
+            transType.toLowerCase().includes('penyesuaian') ||
+            transType.toLowerCase().includes('adjustment') ||
+            transType.toLowerCase().includes('kompensasi') ||
+            transType.toLowerCase().includes('reimbursement') ||
+            transType.toLowerCase().includes('ganti rugi') ||
+            transType.toLowerCase().includes('klaim') ||
+            transType.toLowerCase().includes('claim') ||
+            transType.toLowerCase().includes('perbaikan')
+          );
           const isIncome = desc.includes('penghasilan') || desc.includes('income') || desc.includes('pesanan') || desc.includes('order');
-          const isAdjustment = desc.includes('penyesuaian') || desc.includes('adjustment') || desc.includes('kompensasi') || desc.includes('reimbursement');
 
           let type = 'Other';
           if (isAds) type = 'Ads';
           else if (isWithdrawal) type = 'Withdrawal';
-          else if (isIncome) type = 'Income';
           else if (isAdjustment) type = 'Adjustment';
+          else if (isIncome) type = 'Income';
 
           if (amount !== 0) {
               if (isAds) totalAds += Math.abs(amount);

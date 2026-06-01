@@ -150,7 +150,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         const nextDay = `${ny}-${nm}-${nd}`;
         
         query = query.lt(mode, `${nextDay} 00:00:00+07`);
-        adjQuery = adjQuery.lt('adjustment_date', `${nextDay} 00:00:00+07`);
+        adjQuery = adjQuery.lte('adjustment_date', end);
       }
 
       let incomeQuery = supabase
@@ -311,7 +311,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                     reason.includes('koin penjual');
       
       const isWithdrawal = reason.includes('type: withdrawal') || reason.includes('penarikan dana');
-      const isIncome = reason.includes('type: income') || reason.includes('penghasilan dari pesanan');
+      const isAdjustment = reason.includes('type: adjustment') ||
+                           reason.includes('penyesuaian') ||
+                           reason.includes('adjustment') ||
+                           reason.includes('kompensasi') ||
+                           reason.includes('reimbursement') ||
+                           reason.includes('ganti rugi') ||
+                           reason.includes('klaim') ||
+                           reason.includes('claim') ||
+                           reason.includes('selisih') ||
+                           reason.includes('perbedaan') ||
+                           reason.includes('perbaikan') ||
+                           reason.includes('pengembalian biaya');
+
+      const isIncome = !isAdjustment && (reason.includes('type: income') || reason.includes('penghasilan dari pesanan'));
 
       if (isAds) {
         biayaIklan += Math.abs(amount);
@@ -453,8 +466,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       return acc + (o.product_total || 0);
     }, 0);
     const averageOrderValue = totalOrdersCount > 0 ? totalOmzetPesanan / totalOrdersCount : 0;
-    const roasAktual = Math.abs(biayaIklan) > 0 ? totalOmzetPesanan / Math.abs(biayaIklan) : 0;
-    const acosAktual = totalOmzetPesanan > 0 ? (Math.abs(biayaIklan) / totalOmzetPesanan) * 100 : 0;
+    const roasAktual = Math.abs(biayaIklan) > 0 ? totalOmzetBersih / Math.abs(biayaIklan) : 0;
+    const acosAktual = totalOmzetBersih > 0 ? (Math.abs(biayaIklan) / totalOmzetBersih) * 100 : 0;
 
     return { 
       totalOrders: totalOrdersCount,
@@ -1048,7 +1061,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               value={`${(metrics.roasAktual || 0).toFixed(2)}x`} 
               trend="Return on Ad Spend"
               icon={<BrainCircuit className="w-4 h-4 text-purple-600" />}
-              description="Efektivitas iklan (Total Omzet / Biaya Iklan)."
+              description="Efektivitas iklan (Omzet Bersih / Biaya Iklan)."
               isHighlight
             />
             <KPICard 
@@ -1056,7 +1069,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               value={`${(metrics.acosAktual || 0).toFixed(2)}%`} 
               trend="Ad Cost of Sales"
               icon={<Percent className="w-4 h-4 text-rose-600" />}
-              description="Persentase biaya iklan dibandingkan total omzet (Biaya Iklan / Total Omzet)."
+              description="Persentase biaya iklan dibandingkan omzet bersih (Biaya Iklan / Omzet Bersih)."
               isNegative
             />
             <KPICard 
