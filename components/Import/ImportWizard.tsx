@@ -28,7 +28,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   "product_name": ["Nama Produk", "Product Name"],
   "quantity": ["Jumlah", "Quantity", "Qty"],
   // PENTING: "Total Harga Produk" harus dideteksi, jangan sampai tertukar dengan "Harga Awal"
-  "product_total": ["Dibayar Pembeli", "Total Harga Produk", "Product Subtotal", "Harga Awal"],
+  "product_total": ["Subtotal Pesanan", "Harga Setelah Diskon", "Dibayar Pembeli", "Total Harga Produk", "Product Subtotal", "Harga Awal"],
   "variation": ["Variasi", "Nama Variasi", "Variation Name", "Model Name"], 
   "city": ["Kota/Kabupaten", "City"],
   "province": ["Provinsi", "Province"],
@@ -356,9 +356,14 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
         const orderId = String(row[mapping['order_id']] || '').trim();
         if (!orderId) return;
 
-        const prodTotal = parseNumberIndonesia(row[mapping['product_total']]);
         const qtyRaw = row[mapping['quantity']];
         const qty = parseInt(String(qtyRaw).replace(/\D/g, '')) || 1;
+
+        let prodTotal = parseNumberIndonesia(row[mapping['product_total']]);
+        const mappedHeaderName = String(mapping['product_total'] || '').toLowerCase();
+        if (mappedHeaderName === 'harga setelah diskon' || mappedHeaderName === 'harga awal' || mappedHeaderName.includes('harga asli') || mappedHeaderName.includes('original price')) {
+          prodTotal = prodTotal * qty;
+        }
 
         if (!orderGroups[orderId]) {
           const voucher = parseNumberIndonesia(row[mapping['seller_voucher']]);

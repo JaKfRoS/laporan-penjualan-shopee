@@ -169,17 +169,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       }
 
       if (start) {
-        incomeQuery = incomeQuery.gte(mode, `${start} 00:00:00+07`);
+        incomeQuery = incomeQuery.gte(mode, start);
       }
       if (end) {
-        const [y, m, d] = end.split('-').map(Number);
-        const nextDayDate = new Date(y, m - 1, d + 1);
-        const ny = nextDayDate.getFullYear();
-        const nm = String(nextDayDate.getMonth() + 1).padStart(2, '0');
-        const nd = String(nextDayDate.getDate()).padStart(2, '0');
-        const nextDay = `${ny}-${nm}-${nd}`;
-        
-        incomeQuery = incomeQuery.lt(mode, `${nextDay} 00:00:00+07`);
+        incomeQuery = incomeQuery.lte(mode, end);
       }
 
     const [ordersData, adjData, incomeData] = await Promise.all([

@@ -576,28 +576,32 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
             }
         }
 
-        if (rowStr.includes('tanggal') && rowStr.includes('deskripsi') && (rowStr.includes('jumlah') || rowStr.includes('amount'))) {
+        const hasDate = rowStr.includes('tanggal') || rowStr.includes('date') || rowStr.includes('waktu');
+        const hasAmount = rowStr.includes('jumlah') || rowStr.includes('amount') || rowStr.includes('nilai') || rowStr.includes('idr') || rowStr.includes('rp');
+        const hasDesc = rowStr.includes('deskripsi') || rowStr.includes('description') || rowStr.includes('rincian') || rowStr.includes('keterangan') || rowStr.includes('details') || rowStr.includes('jenis') || rowStr.includes('tipe');
+
+        if (hasDate && hasAmount && hasDesc) {
             foundHeader = true;
             row.forEach((cell: any, idx: number) => {
                 const c = String(cell).toLowerCase().trim();
                 // Saldo Akhir / Balance
                 if ((c.includes('saldo') || c.includes('balance')) && !c.includes('awal') && !c.includes('start')) balanceColIdx = idx;
                 // Jumlah / Amount
-                if (c === 'jumlah' || c === 'amount' || (c.includes('jumlah') && !c.includes('transaksi'))) amountColIdx = idx;
+                if (c === 'jumlah' || c === 'amount' || c === 'nilai' || c.includes('jumlah(idr)') || c.includes('amount(idr)') || (c.includes('jumlah') && !c.includes('transaksi') && !c.includes('pesanan')) || (c.includes('amount') && !c.includes('transaction'))) amountColIdx = idx;
                 // Deskripsi / Description
-                if (c.includes('deskripsi') || c.includes('description') || c.includes('rincian')) descColIdx = idx;
+                if (c.includes('deskripsi') || c.includes('description') || c.includes('rincian') || c.includes('keterangan') || c.includes('details')) descColIdx = idx;
                 // Tanggal / Date
-                if (c.includes('tanggal') || c.includes('date') || c === 'waktu') dateColIdx = idx;
+                if (c.includes('tanggal') || c.includes('date') || c === 'waktu' || c.includes('waktu')) dateColIdx = idx;
                 // No. Pesanan / Order ID
-                if (c.includes('pesanan') || c.includes('order no') || c === 'order id') orderIdColIdx = idx;
+                if (c.includes('pesanan') || c.includes('order no') || c.includes('order_id') || c === 'order id' || c === 'no. pesanan') orderIdColIdx = idx;
                 // No. Transaksi / Transaction ID
-                if (((c.includes('transaksi') || c.includes('transaction')) && !c.includes('tipe') && !c.includes('jenis') && !c.includes('tanggal')) || c === 'id') {
+                if (((c.includes('transaksi') || c.includes('transaction')) && !c.includes('tipe') && !c.includes('jenis') && !c.includes('tanggal')) || c === 'id' || c.includes('no. transaksi') || c.includes('transaction id')) {
                     transactionIdColIdx = idx;
                 }
                 // Status
                 if (c === 'status') statusColIdx = idx;
                 // Jenis Transaksi / Transaction Type
-                if (c.includes('jenis transaksi') || c.includes('transaction type')) typeColIdx = idx;
+                if (c.includes('jenis transaksi') || c.includes('transaction type') || c.includes('tipe transaksi')) typeColIdx = idx;
             });
             continue;
         }
