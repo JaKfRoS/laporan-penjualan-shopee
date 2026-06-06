@@ -1,23 +1,18 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { supabase } from './services/supabase';
 
 async function test() {
-  const { data, error } = await supabase.from('orders').select('order_id, net_revenue');
+  const { data, error } = await supabase.from('orders').select('status');
   if (error) {
-    console.error(error);
+    console.error("Error fetching orders:", error);
     return;
   }
   
-  const counts: Record<string, number> = {};
-  data.forEach(d => {
-    counts[d.order_id] = (counts[d.order_id] || 0) + 1;
+  const statusCounts: Record<string, number> = {};
+  data?.forEach(d => {
+    const status = d.status || 'NULL';
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
   });
   
-  const duplicates = Object.entries(counts).filter(([k, v]) => v > 1);
-  console.log("Duplicates:", duplicates);
+  console.log("Status counts:", statusCounts);
 }
 test();

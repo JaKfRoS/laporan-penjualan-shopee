@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabase';
 import { Store, Order } from '../../types';
 import { DateRangePicker } from '../Dashboard/DateRangePicker';
-import { Loader2, FileText, Wallet, Upload, Plus, Trash2, Save, CheckCircle2, AlertCircle, ArrowDownUp, Pencil, X } from 'lucide-react';
+import { Loader2, FileText, Upload, Plus, Trash2, Save, CheckCircle2, AlertCircle, ArrowDownUp, Pencil, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -916,7 +916,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     const isAllStores = store.id === 'all';
     
     doc.setFontSize(18);
-    doc.text(isAllStores ? "Laporan Konsolidasi Keuangan (Semua Toko)" : `Laporan Audit Keuangan - ${store.name}`, 14, 20);
+    doc.text(isAllStores ? "Laporan Konsolidasi Keuangan (Semua Toko)" : `Laporan Keuangan - ${store.name}`, 14, 20);
     doc.setFontSize(10);
     doc.text(`Periode: ${dateRange.start || '-'} s/d ${dateRange.end || '-'}`, 14, 28);
     doc.text(`Tanggal Cetak: ${new Date().toLocaleString('id-ID')}`, 14, 34);
@@ -950,14 +950,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     });
 
     let currentY = (doc as any).lastAutoTable.finalY + 10;
-    
-    if (!isAllStores) {
-      doc.setFontSize(12);
-      doc.text(`Total Dana Tersedia (Escrow): Rp ${escrowBalance.toLocaleString()}`, 14, currentY);
-      doc.setFontSize(10);
-      doc.text("*Saldo mengambang di Shopee yang belum ditarik", 14, currentY + 6);
-      currentY += 20;
-    }
 
     if (isAllStores && allStores) {
       doc.addPage();
@@ -1063,7 +1055,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       doc.text(`Halaman ${i} dari ${pageCount}`, doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
     }
 
-    doc.save(`Audit_Keuangan_${new Date().toISOString().split('T')[0]}.pdf`);
+    const storeNameFile = isAllStores ? "Semua Toko" : store.name;
+    const periodStringFile = dateRange.start && dateRange.end 
+      ? `${dateRange.start}_sd_${dateRange.end}`
+      : (dateRange.start || dateRange.end || "Semua_Periode");
+    doc.save(`Laporan Keuangan - ${storeNameFile} - ${periodStringFile}.pdf`);
   };
 
   return (
@@ -1092,7 +1088,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           onClick={() => setActiveTab('summary')}
           className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'summary' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
         >
-          Ringkasan Audit
+          Ringkasan Laporan
         </button>
         <button 
           onClick={() => setActiveTab('upload')}
@@ -1167,21 +1163,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     </tr>
                   </tbody>
                 </table>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-yellow-50 dark:bg-yellow-900/20 p-6 rounded-xl border border-yellow-100 dark:border-yellow-800 gap-4">
-                 <div className="flex items-center gap-4">
-                    <div className="p-3 bg-yellow-100 dark:bg-yellow-900/40 rounded-full">
-                       <Wallet className="w-6 h-6 text-yellow-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-yellow-800 dark:text-yellow-500 text-lg">Total Dana Tersedia (Escrow)</h4>
-                      <p className="text-sm text-yellow-600 dark:text-yellow-400">Saldo mengambang di Shopee yang belum ditarik</p>
-                    </div>
-                 </div>
-                 <div className="text-3xl font-black text-yellow-700 dark:text-yellow-400">
-                    Rp {escrowBalance.toLocaleString()}
-                 </div>
               </div>
 
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden mt-6">
@@ -1401,14 +1382,10 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
               {finalAdsTotal > 0 && (
                 <div className="bg-green-50 dark:bg-green-900/20 p-6 rounded-2xl border border-green-100 dark:border-green-800 animate-in fade-in slide-in-from-bottom-4">
                   <h4 className="text-green-800 dark:text-green-400 font-bold mb-4">Hasil Scan File:</h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="max-w-md mx-auto">
                     <div className="bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm">
                       <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">Total Biaya Iklan</p>
                       <p className="text-2xl font-black text-red-600 mt-2">-Rp {finalAdsTotal.toLocaleString()}</p>
-                    </div>
-                    <div className="bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm">
-                      <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">Saldo Akhir (Escrow)</p>
-                      <p className="text-2xl font-black text-slate-900 dark:text-white mt-2">Rp {escrowBalance.toLocaleString()}</p>
                     </div>
                   </div>
                   <p className="text-sm text-green-700 dark:text-green-500 mt-4 flex items-center justify-center gap-2 font-medium">

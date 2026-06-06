@@ -757,7 +757,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           ['ROAS Aktual', `${metrics.roasAktual.toFixed(2)}x`, 'Return on Ad Spend'],
           ['% ACOS', `${metrics.acosAktual.toFixed(2)}%`, 'Advertising Cost of Sales'],
           ['Total Pesanan', metrics.totalOrders.toString(), 'Jumlah seluruh transaksi'],
-          ['AOV', `Rp ${metrics.averageOrderValue.toLocaleString()}`, 'Rata-rata nilai per transaksi'],
+          ['AOV', `Rp ${Math.round(metrics.averageOrderValue).toLocaleString('id-ID')}`, 'Rata-rata nilai per transaksi'],
           ['Pesanan Dibatalkan', metrics.cancelledCount.toString(), 'Jumlah pesanan batal'],
         ] : [
         ['Omzet Riil', `Rp ${metrics.omzetRiil.toLocaleString()}`, 'Total nilai pesanan (Dibayar Pembeli) status Selesai'],
@@ -1030,7 +1030,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               value={`Rp ${(metrics.totalOmzetPesanan || 0).toLocaleString()}`} 
               trend="Gross Revenue"
               icon={<ShoppingBag className="w-4 h-4 text-orange-600" />}
-              description="Total nilai seluruh pesanan masuk (termasuk Batal/Retur)."
+              description="Sama dengan 'Penjualan' di Shopee Bisnis Saya (termasuk pesanan yang dibatalkan setelah masuk status siap dikirim)."
               isHighlight
             />
             <KPICard 
@@ -1038,7 +1038,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               value={`Rp ${(metrics.totalOmzetBersih || 0).toLocaleString()}`} 
               trend="Net Revenue"
               icon={<CheckCircle2 className="w-4 h-4 text-green-600" />}
-              description="Total nilai pesanan aktif (mengecualikan Batal/Retur)."
+              description="Omset riil yang mengecualikan seluruh pesanan Batal/Retur (lebih akurat daripada 'Penjualan' Shopee)."
               isHighlight
             />
             <KPICard 
@@ -1074,7 +1074,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             />
             <KPICard 
               title="AOV" 
-              value={`Rp ${(metrics.averageOrderValue || 0).toLocaleString()}`} 
+              value={`Rp ${Math.round(metrics.averageOrderValue || 0).toLocaleString('id-ID')}`} 
               trend="Avg Order Value"
               icon={<ArrowRightLeft className="w-4 h-4 text-indigo-600" />}
               description="Rata-rata nilai belanja per pelanggan."
