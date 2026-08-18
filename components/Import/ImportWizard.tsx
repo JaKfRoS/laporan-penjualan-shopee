@@ -568,7 +568,20 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          let status = 'Selesai';
          if (refundAmount > 0) status = 'Pengembalian';
 
-         // We will only target income_reports to completely decouple finance data
+         // Sync financial fields into orderGroups if this order was also in Sales report
+         if (orderGroups[orderId]) {
+             if (releaseDate) orderGroups[orderId].order.release_date = releaseDate;
+             if (status) orderGroups[orderId].order.status = status;
+             orderGroups[orderId].order.net_revenue = netRevenue;
+             orderGroups[orderId].order.service_fee = totalMarketplaceFee;
+             orderGroups[orderId].order.fee_details = feeDetails;
+             if (incomeGmv > 0) {
+                 orderGroups[orderId].order.product_total = incomeGmv;
+                 orderGroups[orderId].order._has_income_gmv = true;
+             }
+         }
+
+         // We will target income_reports to completely decouple finance data
          // Ensure we don't have multiple rows for the same order in the loop
          const existingIndex = incomeReportsToInsert.findIndex(r => r.order_id === orderId);
          

@@ -144,7 +144,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       
       let incomeQuery = supabase
         .from('income_reports')
-        .select('*');
+        .select('*')
+        .order('release_date', { ascending: false, nullsFirst: false });
 
       if (store.id === 'all') {
         if (allStores && allStores.length > 0) {
@@ -189,19 +190,27 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       let additionalOrdersData: any[] = [];
       if (missingOrderIds.length > 0) {
-          for (let i = 0; i < missingOrderIds.length; i += 500) {
-             const chunk = missingOrderIds.slice(i, i + 500);
-             let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', chunk);
-             if (store.id === 'all') {
-                 // No extra filter
-             } else if (isMultiple) {
-                 chunkQuery = chunkQuery.in('store_id', targetStoreIds);
-             } else {
-                 chunkQuery = chunkQuery.eq('store_id', store.id);
-             }
-             const { data } = await chunkQuery;
-             if (data && data.length > 0) {
-                 additionalOrdersData = [...additionalOrdersData, ...data];
+          const CHUNK_SIZE = 60;
+          for (let i = 0; i < missingOrderIds.length; i += CHUNK_SIZE) {
+             if (controller.signal.aborted) return;
+             const chunk = missingOrderIds.slice(i, i + CHUNK_SIZE);
+             try {
+               let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', chunk);
+               if (store.id === 'all') {
+                   if (allStores && allStores.length > 0) {
+                      chunkQuery = chunkQuery.in('store_id', allStores.map(s => s.id));
+                   }
+               } else if (isMultiple) {
+                   chunkQuery = chunkQuery.in('store_id', targetStoreIds);
+               } else {
+                   chunkQuery = chunkQuery.eq('store_id', store.id);
+               }
+               const { data, error } = await chunkQuery;
+               if (!error && data && data.length > 0) {
+                   additionalOrdersData = [...additionalOrdersData, ...data];
+               }
+             } catch (chunkErr) {
+               console.warn("Chunk fetch warning in CashflowPage:", chunkErr);
              }
           }
       }
@@ -215,9 +224,14 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       (incomeData || []).forEach(inc => {
         if (combinedOrderMap.has(inc.order_id)) {
            const idx = combinedOrderMap.get(inc.order_id);
-           mergedOrders[idx] = { ...mergedOrders[idx], ...inc, is_from_income: true };
+           mergedOrders[idx] = { 
+             ...mergedOrders[idx], 
+             ...inc, 
+             order_items: mergedOrders[idx].order_items || [],
+             is_from_income: true 
+           };
         } else {
-           mergedOrders.push({ ...inc, is_from_income: true });
+           mergedOrders.push({ ...inc, order_items: [], is_from_income: true });
         }
       });
 
@@ -225,10 +239,18 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       
       // Calculate Metrics
       // 1. Filter Settled Orders
-      const settledOrders = mergedOrders.filter(o => {
+      const isReturnedOrder = (o: any) => {
         const s = (o.status || '').trim().toLowerCase();
-        return s === 'selesai' || s === 'pengembalian';
-      });
+        return s.includes('retur') || s.includes('pengembalian');
+      };
+
+      const isCompletedOrder = (o: any) => {
+        if (isReturnedOrder(o)) return false;
+        const s = (o.status || '').trim().toLowerCase();
+        return s === 'selesai' || s.includes('selesai') || s === 'completed' || o.is_from_income === true;
+      };
+
+      const settledOrders = mergedOrders.filter(o => isCompletedOrder(o) || isReturnedOrder(o));
 
       // 2. Net Revenue (Uang Cair)
       const revenue = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);

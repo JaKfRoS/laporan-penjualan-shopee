@@ -105,7 +105,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       let query = supabase
         .from('orders')
         .select('*, order_items(*)')
-        .order(mode, { ascending: false });
+        .order(mode, { ascending: false, nullsFirst: false });
 
       let adjQuery = supabase
         .from('adjustments')
@@ -155,7 +155,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
       let incomeQuery = supabase
         .from('income_reports')
-        .select('*');
+        .select('*')
+        .order('release_date', { ascending: false, nullsFirst: false });
 
       if (storeId === 'all') {
         if (allStores && allStores.length > 0) {
@@ -169,10 +170,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       }
 
       if (start) {
-        incomeQuery = incomeQuery.gte(mode, start);
+        incomeQuery = incomeQuery.gte('release_date', start);
       }
       if (end) {
-        incomeQuery = incomeQuery.lte(mode, end);
+        incomeQuery = incomeQuery.lte('release_date', `${end} 23:59:59+07`);
       }
 
     const [ordersData, adjData, incomeData] = await Promise.all([
@@ -201,19 +202,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
       let additionalOrdersData: any[] = [];
       if (missingOrderIds.length > 0) {
-          for (let i = 0; i < missingOrderIds.length; i += 500) {
-             const chunk = missingOrderIds.slice(i, i + 500);
-             let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', chunk);
-             if (storeId === 'all') {
-                 // No extra filter
-             } else if (isMultiple) {
-                 chunkQuery = chunkQuery.in('store_id', targetStoreIds);
-             } else {
-                 chunkQuery = chunkQuery.eq('store_id', storeId);
-             }
-             const { data } = await chunkQuery;
-             if (data && data.length > 0) {
-                 additionalOrdersData = [...additionalOrdersData, ...data];
+          // Use safe chunk size of 60 to prevent HTTP 414 URI Too Long errors on large accounts
+          const CHUNK_SIZE = 60;
+          for (let i = 0; i < missingOrderIds.length; i += CHUNK_SIZE) {
+             if (controller.signal.aborted) return;
+             const chunk = missingOrderIds.slice(i, i + CHUNK_SIZE);
+             try {
+               let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', chunk);
+               if (storeId === 'all') {
+                   if (allStores && allStores.length > 0) {
+                      chunkQuery = chunkQuery.in('store_id', allStores.map(s => s.id));
+                   }
+               } else if (isMultiple) {
+                   chunkQuery = chunkQuery.in('store_id', targetStoreIds);
+               } else {
+                   chunkQuery = chunkQuery.eq('store_id', storeId);
+               }
+               const { data, error } = await chunkQuery;
+               if (!error && data && data.length > 0) {
+                   additionalOrdersData = [...additionalOrdersData, ...data];
+               }
+             } catch (chunkErr) {
+               console.warn("Chunk fetch warning for orders batch:", chunkErr);
              }
           }
       }
@@ -227,9 +237,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       (incomeData || []).forEach(inc => {
         if (combinedOrderMap.has(inc.order_id)) {
            const idx = combinedOrderMap.get(inc.order_id);
-           mergedOrders[idx] = { ...mergedOrders[idx], ...inc, is_from_income: true };
+           mergedOrders[idx] = { 
+             ...mergedOrders[idx], 
+             ...inc, 
+             order_items: mergedOrders[idx].order_items || [],
+             is_from_income: true 
+           };
         } else {
-           mergedOrders.push({ ...inc, is_from_income: true });
+           mergedOrders.push({ ...inc, order_items: [], is_from_income: true });
         }
       });
 
@@ -256,34 +271,40 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     // 1. Total Pesanan Masuk (Semua status)
     const totalOrdersCount = data.length;
 
+    // Helper functions for robust status matching
+    const isReturnedOrder = (o: any) => {
+      const s = (o.status || '').trim().toLowerCase();
+      return s.includes('retur') || s.includes('pengembalian');
+    };
+
+    const isCancelledOrder = (o: any) => {
+      const s = (o.status || '').trim().toLowerCase();
+      return s.includes('batal') || s.includes('cancel');
+    };
+
+    const isCompletedOrder = (o: any) => {
+      if (isReturnedOrder(o) || isCancelledOrder(o)) return false;
+      const s = (o.status || '').trim().toLowerCase();
+      return s === 'selesai' || s.includes('selesai') || s === 'completed' || o.is_from_income === true;
+    };
+
     // 2. Pesanan Batal
-    const cancelledOrders = data.filter(o => 
-      (o.status || '').toLowerCase().includes('batal') || 
-      (o.status || '').toLowerCase().includes('cancel')
-    );
+    const cancelledOrders = data.filter(isCancelledOrder);
     const cancelledCount = cancelledOrders.length;
 
     // 3. Pesanan Selesai
-    const completedCount = data.filter(o => (o.status || '').toLowerCase() === 'selesai').length;
-
-    // 4. METRICS CALCULATION (SETTLED DATA FOCUS)
-    // 1. Filter: Hanya Order yang SUDAH SELESAI (Omzet Riil)
-    const completedOrdersOnly = data.filter(o => (o.status || '').trim().toLowerCase() === 'selesai');
+    const completedOrdersOnly = data.filter(isCompletedOrder);
+    const completedCount = completedOrdersOnly.length;
     
     // Filter: Transaksi Retur untuk Penyesuaian & Count
-    const returnedOrders = data.filter(o => {
-      const s = (o.status || '').trim().toLowerCase();
-      return s.includes('retur') || s.includes('pengembalian');
-    });
+    const returnedOrders = data.filter(isReturnedOrder);
+    const returnedCount = returnedOrders.length;
 
     // A. Omzet Riil (GMV Selesai)
     const omzetRiil = completedOrdersOnly.reduce((acc, o) => acc + Number(o.product_total || 0), 0);
 
     // H. Kebocoran Ongkir (Shipping Leakage) & Settled Orders for Cash Flow
-    const settledOrders = data.filter(o => {
-        const s = (o.status || '').trim().toLowerCase();
-        return s === 'selesai' || s === 'pengembalian';
-    });
+    const settledOrders = data.filter(o => isCompletedOrder(o) || isReturnedOrder(o));
 
     // G. Total Penyesuaian & Biaya Iklan
     let biayaIklan = 0;

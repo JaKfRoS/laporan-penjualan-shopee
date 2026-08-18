@@ -31,10 +31,13 @@ export const PerformanceTrendChart: React.FC<PerformanceTrendChartProps> = ({ or
 
     orders.forEach(order => {
       try {
-        const dateStr = format(parseISO(order.order_date), 'yyyy-MM-dd');
-        if (dailyData[dateStr]) {
-          dailyData[dateStr].revenue += order.product_total || 0;
-          dailyData[dateStr].orders += 1;
+        const rawDate = (order as any).release_date || order.order_date;
+        if (rawDate) {
+          const dateStr = format(parseISO(rawDate), 'yyyy-MM-dd');
+          if (dailyData[dateStr]) {
+            dailyData[dateStr].revenue += order.product_total || 0;
+            dailyData[dateStr].orders += 1;
+          }
         }
       } catch (e) {
         // Skip invalid date
