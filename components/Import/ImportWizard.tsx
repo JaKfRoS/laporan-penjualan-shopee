@@ -501,7 +501,21 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       const incomeReportsToInsert: any[] = [];
       const incomeUpdates: { orderId: string, payload: any }[] = [];
 
+      // Deteksi nama kolom untuk "Lihat berdasarkan" jika ada
+      const viewByCol = incomeHeaders.find(h => {
+          const cleanH = String(h).trim().toLowerCase();
+          return cleanH === 'lihat berdasarkan' || cleanH === 'view by' || cleanH === 'view_by';
+      });
+
       incomeData.forEach(row => {
+         // Lewati baris pecahan (SKU) agar tidak terjadi double counting keuangan. 
+         // Kita hanya memproses baris ringkasan "Order" (jika format baru).
+         if (viewByCol) {
+             const viewByValue = String(row[viewByCol] || '').trim().toLowerCase();
+             if (viewByValue === 'sku') {
+                 return;
+             }
+         }
          const orderId = String(row[incomeMapping['order_id']] || row['No. Pesanan'] || '').trim();
          if (!orderId) return;
 
@@ -594,15 +608,21 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          
          if (existingIndex >= 0) {
              const existing = incomeReportsToInsert[existingIndex];
-             existing.net_revenue += netRevenue;
-             existing.service_fee += totalMarketplaceFee;
+             // Shopee Income Reports may split an order into multiple rows (e.g. by SKU).
+             // Order-level metrics like net_revenue, fees, and refund are REPEATED on every row.
+             // We MUST use Math.max to prevent double/triple counting, rather than +=
+             existing.net_revenue = Math.max(existing.net_revenue, netRevenue);
+             existing.service_fee = Math.max(existing.service_fee, totalMarketplaceFee);
+             
+             // Product-level metrics like GMV are usually split per item, so it's safe to sum them
              existing.product_total += (incomeGmv > 0 ? incomeGmv : 0);
-             existing.refund_amount += refundAmount;
+             
+             existing.refund_amount = Math.max(existing.refund_amount, refundAmount);
              if (refundAmount > 0) existing.status = 'Pengembalian';
              
-             // Accumulate fee details
+             // Accumulate fee details using Math.max to prevent fee double counting
              for (const key in feeDetails) {
-                 existing.fee_details[key] = (existing.fee_details[key] || 0) + (feeDetails as any)[key];
+                 existing.fee_details[key] = Math.max(existing.fee_details[key] || 0, (feeDetails as any)[key] || 0);
              }
          } else {
              const incomeRow = {
