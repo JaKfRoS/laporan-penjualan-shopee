@@ -104,44 +104,17 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         return allData;
       };
 
-      let query = supabase
-        .from('orders')
-        .select('*, order_items(*)')
-        .order('release_date', { ascending: false });
+      const [y, m, d] = dateRange.end.split('-').map(Number);
+      const nextDayDate = new Date(y, m - 1, d + 1);
+      const ny = nextDayDate.getFullYear();
+      const nm = String(nextDayDate.getMonth() + 1).padStart(2, '0');
+      const nd = String(nextDayDate.getDate()).padStart(2, '0');
+      const nextDay = `${ny}-${nm}-${nd}`;
 
-      if (store.id === 'all') {
-        if (allStores && allStores.length > 0) {
-           const storeIds = allStores.map(s => s.id);
-           query = query.in('store_id', storeIds);
-        } else {
-           setNetRevenueSelesai(0);
-           setTotalHPPSelesai(0);
-           setLoading(false);
-           return;
-        }
-      } else if (isMultiple) {
-        query = query.in('store_id', targetStoreIds);
-      } else {
-        query = query.eq('store_id', store.id);
-      }
+      let incomeData: any[] = [];
+      let ordersData: any[] = [];
 
-      // Filter by Release Date (Cashflow Basis - Option B: WIB Standard with +07 offset)
-      if (dateRange.start) {
-        query = query.gte('release_date', `${dateRange.start} 00:00:00+07`);
-      }
-      if (dateRange.end) {
-        // Inclusive Start - Exclusive End (Standard Perbaikan)
-        const [y, m, d] = dateRange.end.split('-').map(Number);
-        const nextDayDate = new Date(y, m - 1, d + 1);
-        const ny = nextDayDate.getFullYear();
-        const nm = String(nextDayDate.getMonth() + 1).padStart(2, '0');
-        const nd = String(nextDayDate.getDate()).padStart(2, '0');
-        const nextDay = `${ny}-${nm}-${nd}`;
-        query = query.lt('release_date', `${nextDay} 00:00:00+07`);
-      }
-
-      const ordersData = await fetchAll(query);
-      
+      // 1. Primary Ledger: income_reports
       let incomeQuery = supabase
         .from('income_reports')
         .select('*')
@@ -159,22 +132,90 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       }
 
       if (dateRange.start) {
-        incomeQuery = incomeQuery.gte('release_date', `${dateRange.start} 00:00:00+07`);
+        incomeQuery = incomeQuery.gte('release_date', dateRange.start);
       }
       if (dateRange.end) {
-        const [y, m, d] = dateRange.end.split('-').map(Number);
-        const nextDayDate = new Date(y, m - 1, d + 1);
-        const ny = nextDayDate.getFullYear();
-        const nm = String(nextDayDate.getMonth() + 1).padStart(2, '0');
-        const nd = String(nextDayDate.getDate()).padStart(2, '0');
-        const nextDay = `${ny}-${nm}-${nd}`;
         incomeQuery = incomeQuery.lt('release_date', `${nextDay} 00:00:00+07`);
       }
 
-      const incomeData = await fetchAll(incomeQuery).catch(err => {
-          if (err.message?.includes('relation "income_reports" does not exist')) return [];
-          throw err;
-      });
+      try {
+        incomeData = await fetchAll(incomeQuery);
+      } catch (err: any) {
+        console.warn("Cashflow income_reports fetch failed:", err);
+        try {
+          let fallbackInc = supabase
+            .from('income_reports')
+            .select('*')
+            .order('release_date', { ascending: false, nullsFirst: false });
+          if (store.id === 'all') fallbackInc = fallbackInc.in('store_id', allStores!.map(s => s.id));
+          else if (isMultiple) fallbackInc = fallbackInc.in('store_id', targetStoreIds);
+          else fallbackInc = fallbackInc.eq('store_id', store.id);
+          if (dateRange.start) fallbackInc = fallbackInc.gte('release_date', dateRange.start);
+          if (dateRange.end) fallbackInc = fallbackInc.lte('release_date', dateRange.end);
+          incomeData = await fetchAll(fallbackInc);
+        } catch (e2) {
+          incomeData = [];
+        }
+      }
+
+      // 2. Secondary Ledger: orders table with release_date
+      try {
+        let ordQuery = supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .not('release_date', 'is', null)
+          .order('release_date', { ascending: false });
+
+        if (store.id === 'all') {
+          if (allStores && allStores.length > 0) {
+             const storeIds = allStores.map(s => s.id);
+             ordQuery = ordQuery.in('store_id', storeIds);
+          }
+        } else if (isMultiple) {
+          ordQuery = ordQuery.in('store_id', targetStoreIds);
+        } else {
+          ordQuery = ordQuery.eq('store_id', store.id);
+        }
+
+        if (dateRange.start) ordQuery = ordQuery.gte('release_date', `${dateRange.start} 00:00:00+07`);
+        if (dateRange.end) ordQuery = ordQuery.lt('release_date', `${nextDay} 00:00:00+07`);
+
+        ordersData = await fetchAll(ordQuery);
+      } catch (ordErr) {
+        ordersData = [];
+      }
+
+      // 3. Fallback: If both are empty, check completed orders in orders table by order_date
+      if (incomeData.length === 0 && ordersData.length === 0) {
+        try {
+          let fbOrdersQuery = supabase
+            .from('orders')
+            .select('*, order_items(*)')
+            .order('order_date', { ascending: false, nullsFirst: false });
+
+          if (store.id === 'all') {
+            if (allStores && allStores.length > 0) {
+               const storeIds = allStores.map(s => s.id);
+               fbOrdersQuery = fbOrdersQuery.in('store_id', storeIds);
+            }
+          } else if (isMultiple) {
+            fbOrdersQuery = fbOrdersQuery.in('store_id', targetStoreIds);
+          } else {
+            fbOrdersQuery = fbOrdersQuery.eq('store_id', store.id);
+          }
+
+          if (dateRange.start) fbOrdersQuery = fbOrdersQuery.gte('order_date', `${dateRange.start} 00:00:00+07`);
+          if (dateRange.end) fbOrdersQuery = fbOrdersQuery.lt('order_date', `${nextDay} 00:00:00+07`);
+
+          const allInRange = await fetchAll(fbOrdersQuery);
+          ordersData = (allInRange || []).filter((o: any) => {
+            const st = (o.status || '').toLowerCase();
+            return st.includes('selesai') || st === 'completed' || st.includes('rekonsiliasi') || (!st.includes('batal') && !st.includes('cancel') && !st.includes('retur') && !st.includes('pengembalian'));
+          });
+        } catch (fbErr) {
+          console.warn("Fallback completed orders error in CashflowPage:", fbErr);
+        }
+      }
 
       if (controller.signal.aborted) return;
 
@@ -241,19 +282,30 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       // 1. Filter Settled Orders
       const isReturnedOrder = (o: any) => {
         const s = (o.status || '').trim().toLowerCase();
-        return s.includes('retur') || s.includes('pengembalian');
+        return s.includes('retur') || s.includes('pengembalian') || s.includes('refund');
+      };
+
+      const isCancelledOrder = (o: any) => {
+        const s = (o.status || '').trim().toLowerCase();
+        return s.includes('batal') || s.includes('cancel');
       };
 
       const isCompletedOrder = (o: any) => {
-        if (isReturnedOrder(o)) return false;
+        if (isReturnedOrder(o) || isCancelledOrder(o)) return false;
         const s = (o.status || '').trim().toLowerCase();
-        return s === 'selesai' || s.includes('selesai') || s === 'completed' || o.is_from_income === true;
+        return s === 'selesai' || s.includes('selesai') || s === 'completed' || s.includes('rekonsiliasi') || s === 'terkirim' || o.is_from_income === true;
       };
 
       const settledOrders = mergedOrders.filter(o => isCompletedOrder(o) || isReturnedOrder(o));
 
       // 2. Net Revenue (Uang Cair)
-      const revenue = settledOrders.reduce((acc, o) => acc + (o.net_revenue || 0), 0);
+      const revenue = settledOrders.reduce((acc, o) => {
+        const net = Number(o.net_revenue);
+        if (!isNaN(net) && net !== 0) return acc + net;
+        const gmv = Number(o.product_total || o.total_payment || 0);
+        const fee = Number(o.service_fee || 0) + Number(o.admin_fee || 0);
+        return acc + (gmv > 0 ? Math.max(0, gmv - fee) : 0);
+      }, 0);
       
       // 3. Total HPP
       const hpp = settledOrders.reduce((acc, o) => {

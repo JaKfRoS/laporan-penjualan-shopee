@@ -102,23 +102,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         return allData;
       };
 
-      let query = supabase
-        .from('orders')
-        .select('*, order_items(*)')
-        .order(mode, { ascending: false, nullsFirst: false });
+      const isMultiple = (store as any).is_multiple;
+      const targetStoreIds = isMultiple ? (store as any).selected_ids : [storeId];
 
       let adjQuery = supabase
         .from('adjustments')
         .select('*')
         .order('adjustment_date', { ascending: false });
 
-      const isMultiple = (store as any).is_multiple;
-      const targetStoreIds = isMultiple ? (store as any).selected_ids : [storeId];
-
       if (storeId === 'all') {
         if (allStores && allStores.length > 0) {
            const storeIds = allStores.map(s => s.id);
-           query = query.in('store_id', storeIds);
            adjQuery = adjQuery.in('store_id', storeIds);
         } else {
            setFilteredOrders([]);
@@ -127,67 +121,155 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
            return;
         }
       } else if (isMultiple) {
-        query = query.in('store_id', targetStoreIds);
         adjQuery = adjQuery.in('store_id', targetStoreIds);
       } else {
-        query = query.eq('store_id', storeId);
         adjQuery = adjQuery.eq('store_id', storeId);
       }
 
-      // Server-side date filtering (Option B: WIB Standard with +07 offset)
-      if (start) {
-        query = query.gte(mode, `${start} 00:00:00+07`);
-        adjQuery = adjQuery.gte('adjustment_date', start);
-      }
-      if (end) {
-        // Inclusive Start - Exclusive End (Standard Perbaikan)
-        // We add 1 day to the end date and use 'lt' (less than)
-        const [y, m, d] = end.split('-').map(Number);
-        const nextDayDate = new Date(y, m - 1, d + 1);
-        const ny = nextDayDate.getFullYear();
-        const nm = String(nextDayDate.getMonth() + 1).padStart(2, '0');
-        const nd = String(nextDayDate.getDate()).padStart(2, '0');
-        const nextDay = `${ny}-${nm}-${nd}`;
-        
-        query = query.lt(mode, `${nextDay} 00:00:00+07`);
-        adjQuery = adjQuery.lte('adjustment_date', end);
-      }
+      if (start) adjQuery = adjQuery.gte('adjustment_date', start);
+      if (end) adjQuery = adjQuery.lte('adjustment_date', end);
 
-      let incomeQuery = supabase
-        .from('income_reports')
-        .select('*')
-        .order('release_date', { ascending: false, nullsFirst: false });
+      const [y, m, d] = end.split('-').map(Number);
+      const nextDayDate = new Date(y, m - 1, d + 1);
+      const ny = nextDayDate.getFullYear();
+      const nm = String(nextDayDate.getMonth() + 1).padStart(2, '0');
+      const nd = String(nextDayDate.getDate()).padStart(2, '0');
+      const nextDay = `${ny}-${nm}-${nd}`;
 
-      if (storeId === 'all') {
-        if (allStores && allStores.length > 0) {
-           const storeIds = allStores.map(s => s.id);
-           incomeQuery = incomeQuery.in('store_id', storeIds);
+      let ordersData: any[] = [];
+      let incomeData: any[] = [];
+
+      if (mode === 'order_date') {
+        // --- BASIS PESANAN DIBUAT ---
+        let query = supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .order('order_date', { ascending: false, nullsFirst: false });
+
+        if (storeId === 'all') {
+          query = query.in('store_id', allStores!.map(s => s.id));
+        } else if (isMultiple) {
+          query = query.in('store_id', targetStoreIds);
+        } else {
+          query = query.eq('store_id', storeId);
         }
-      } else if (isMultiple) {
-        incomeQuery = incomeQuery.in('store_id', targetStoreIds);
-      } else {
-        incomeQuery = incomeQuery.eq('store_id', storeId);
-      }
 
-      if (start) {
-        incomeQuery = incomeQuery.gte('release_date', start);
-      }
-      if (end) {
-        incomeQuery = incomeQuery.lte('release_date', `${end} 23:59:59+07`);
-      }
+        if (start) query = query.gte('order_date', `${start} 00:00:00+07`);
+        if (end) query = query.lt('order_date', `${nextDay} 00:00:00+07`);
 
-    const [ordersData, adjData, incomeData] = await Promise.all([
-        fetchAll(query),
-        fetchAll(adjQuery),
-        fetchAll(incomeQuery).catch(err => {
-            if (err.message?.includes('relation "income_reports" does not exist')) {
-                // Return empty array if relation not found, will prompt sql guide
-                return [];
+        ordersData = await fetchAll(query);
+
+        // Fetch corresponding income_reports to enrich fees/net revenue
+        if (ordersData.length > 0) {
+          const orderIds = ordersData.map(o => o.order_id);
+          const CHUNK_SIZE = 60;
+          for (let i = 0; i < orderIds.length; i += CHUNK_SIZE) {
+            if (controller.signal.aborted) return;
+            const chunk = orderIds.slice(i, i + CHUNK_SIZE);
+            try {
+              let chunkIncQuery = supabase.from('income_reports').select('*').in('order_id', chunk);
+              if (storeId === 'all') chunkIncQuery = chunkIncQuery.in('store_id', allStores!.map(s => s.id));
+              else if (isMultiple) chunkIncQuery = chunkIncQuery.in('store_id', targetStoreIds);
+              else chunkIncQuery = chunkIncQuery.eq('store_id', storeId);
+
+              const { data: incChunk } = await chunkIncQuery;
+              if (incChunk && incChunk.length > 0) {
+                incomeData = [...incomeData, ...incChunk];
+              }
+            } catch (chunkIncErr) {
+              console.warn("Income chunk enrichment skipped:", chunkIncErr);
             }
-            throw err;
-        })
-      ]);
-      
+          }
+        }
+      } else {
+        // --- BASIS PESANAN SELESAI (release_date) ---
+        // 1. Primary Ledger: income_reports
+        let incQuery = supabase
+          .from('income_reports')
+          .select('*')
+          .order('release_date', { ascending: false, nullsFirst: false });
+
+        if (storeId === 'all') {
+          incQuery = incQuery.in('store_id', allStores!.map(s => s.id));
+        } else if (isMultiple) {
+          incQuery = incQuery.in('store_id', targetStoreIds);
+        } else {
+          incQuery = incQuery.eq('store_id', storeId);
+        }
+
+        if (start) incQuery = incQuery.gte('release_date', start);
+        if (end) incQuery = incQuery.lt('release_date', `${nextDay} 00:00:00+07`);
+
+        try {
+          incomeData = await fetchAll(incQuery);
+        } catch (incErr: any) {
+          console.warn("income_reports fetch failed or table doesn't exist:", incErr);
+          try {
+            let fallbackIncQuery = supabase
+              .from('income_reports')
+              .select('*')
+              .order('release_date', { ascending: false, nullsFirst: false });
+            if (storeId === 'all') fallbackIncQuery = fallbackIncQuery.in('store_id', allStores!.map(s => s.id));
+            else if (isMultiple) fallbackIncQuery = fallbackIncQuery.in('store_id', targetStoreIds);
+            else fallbackIncQuery = fallbackIncQuery.eq('store_id', storeId);
+            if (start) fallbackIncQuery = fallbackIncQuery.gte('release_date', start);
+            if (end) fallbackIncQuery = fallbackIncQuery.lte('release_date', end);
+            incomeData = await fetchAll(fallbackIncQuery);
+          } catch (e2) {
+            incomeData = [];
+          }
+        }
+
+        // 2. Secondary Ledger: orders table with release_date
+        try {
+          let ordReleaseQuery = supabase
+            .from('orders')
+            .select('*, order_items(*)')
+            .not('release_date', 'is', null)
+            .order('release_date', { ascending: false, nullsFirst: false });
+
+          if (storeId === 'all') ordReleaseQuery = ordReleaseQuery.in('store_id', allStores!.map(s => s.id));
+          else if (isMultiple) ordReleaseQuery = ordReleaseQuery.in('store_id', targetStoreIds);
+          else ordReleaseQuery = ordReleaseQuery.eq('store_id', storeId);
+
+          if (start) ordReleaseQuery = ordReleaseQuery.gte('release_date', `${start} 00:00:00+07`);
+          if (end) ordReleaseQuery = ordReleaseQuery.lt('release_date', `${nextDay} 00:00:00+07`);
+
+          ordersData = await fetchAll(ordReleaseQuery);
+        } catch (ordErr) {
+          // Column release_date may not exist in orders table yet
+          ordersData = [];
+        }
+
+        // 3. Resilient Fallback: If both income_reports and orders.release_date have 0 records,
+        // fallback to completed orders in orders table for that date range so user data is never lost.
+        if (incomeData.length === 0 && ordersData.length === 0) {
+          try {
+            let fallbackCompletedQuery = supabase
+              .from('orders')
+              .select('*, order_items(*)')
+              .order('order_date', { ascending: false, nullsFirst: false });
+
+            if (storeId === 'all') fallbackCompletedQuery = fallbackCompletedQuery.in('store_id', allStores!.map(s => s.id));
+            else if (isMultiple) fallbackCompletedQuery = fallbackCompletedQuery.in('store_id', targetStoreIds);
+            else fallbackCompletedQuery = fallbackCompletedQuery.eq('store_id', storeId);
+
+            if (start) fallbackCompletedQuery = fallbackCompletedQuery.gte('order_date', `${start} 00:00:00+07`);
+            if (end) fallbackCompletedQuery = fallbackCompletedQuery.lt('order_date', `${nextDay} 00:00:00+07`);
+
+            const allOrdersInRange = await fetchAll(fallbackCompletedQuery);
+            ordersData = (allOrdersInRange || []).filter((o: any) => {
+              const st = (o.status || '').toLowerCase();
+              return st.includes('selesai') || st === 'completed' || st.includes('rekonsiliasi') || (!st.includes('batal') && !st.includes('cancel') && !st.includes('retur') && !st.includes('pengembalian'));
+            });
+          } catch (fbErr) {
+            console.warn("Fallback completed orders query error:", fbErr);
+          }
+        }
+      }
+
+      const adjData = await fetchAll(adjQuery).catch(() => []);
+
       if (controller.signal.aborted) return;
 
       const orderMap = new Map();
@@ -248,7 +330,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         }
       });
 
-      // 5. Jangan Ada Auto Fallback ke Periode Default
       setFilteredOrders(mergedOrders);
       setAdjustments(adjData || []);
     } catch (err: any) {
@@ -274,7 +355,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     // Helper functions for robust status matching
     const isReturnedOrder = (o: any) => {
       const s = (o.status || '').trim().toLowerCase();
-      return s.includes('retur') || s.includes('pengembalian');
+      return s.includes('retur') || s.includes('pengembalian') || s.includes('refund');
     };
 
     const isCancelledOrder = (o: any) => {
@@ -285,7 +366,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     const isCompletedOrder = (o: any) => {
       if (isReturnedOrder(o) || isCancelledOrder(o)) return false;
       const s = (o.status || '').trim().toLowerCase();
-      return s === 'selesai' || s.includes('selesai') || s === 'completed' || o.is_from_income === true;
+      return s === 'selesai' || s.includes('selesai') || s === 'completed' || s.includes('rekonsiliasi') || s === 'terkirim' || o.is_from_income === true;
     };
 
     // 2. Pesanan Batal
@@ -301,7 +382,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     const returnedCount = returnedOrders.length;
 
     // A. Omzet Riil (GMV Selesai)
-    const omzetRiil = completedOrdersOnly.reduce((acc, o) => acc + Number(o.product_total || 0), 0);
+    const omzetRiil = completedOrdersOnly.reduce((acc, o) => acc + Number(o.product_total || o.total_payment || 0), 0);
 
     // H. Kebocoran Ongkir (Shipping Leakage) & Settled Orders for Cash Flow
     const settledOrders = data.filter(o => isCompletedOrder(o) || isReturnedOrder(o));
@@ -373,7 +454,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     });
 
     // C. Dana Cair (Total Net Revenue dari Pesanan Selesai/Pengembalian)
-    const totalNetRevenue = settledOrders.reduce((acc, o) => acc + Number(o.net_revenue || 0), 0);
+    const totalNetRevenue = settledOrders.reduce((acc, o) => {
+      const net = Number(o.net_revenue);
+      if (!isNaN(net) && net !== 0) return acc + net;
+      // Fallback if net_revenue is not set: product_total - (admin_fee + service_fee)
+      const gmv = Number(o.product_total || o.total_payment || 0);
+      const fee = Number(o.service_fee || 0) + Number(o.admin_fee || 0);
+      return acc + (gmv > 0 ? Math.max(0, gmv - fee) : 0);
+    }, 0);
     const danaCair = totalNetRevenue;
 
     // J. Fee Breakdown (Selesai + Pengembalian for comprehensive cash flow view)

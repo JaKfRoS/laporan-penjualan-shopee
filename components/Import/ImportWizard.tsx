@@ -121,12 +121,24 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
           // Smart Sheet Detection for Income Report
           if (type === 'income') {
              let found = false;
-             for (const sheetName of wb.SheetNames) {
+             
+             // 1. Prioritize sheets containing "penghasilan" or "income" in their name
+             const prioritizedSheets = wb.SheetNames.filter(s => s.toLowerCase().includes('penghasilan') || s.toLowerCase().includes('income'));
+             const otherSheets = wb.SheetNames.filter(s => !s.toLowerCase().includes('penghasilan') && !s.toLowerCase().includes('income'));
+             const sheetsToSearch = [...prioritizedSheets, ...otherSheets];
+
+             for (const sheetName of sheetsToSearch) {
                  const ws = wb.Sheets[sheetName];
                  // Read first 20 rows to check for headers
                  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, range: 0, defval: '' }) as any[][];
-                 const idx = aoa.findIndex(row => 
-                    Array.isArray(row) && row.some(cell => String(cell).toLowerCase().includes('no. pesanan') || String(cell).toLowerCase().includes('order id'))
+                 
+                 // Look for a row that has a cell exactly matching our known headers (trimmed)
+                 // This prevents matching disclaimer text that happens to contain "no. pesanan"
+                 const idx = aoa.slice(0, 20).findIndex(row => 
+                    Array.isArray(row) && row.some(cell => {
+                        const val = String(cell).trim().toLowerCase();
+                        return val === 'no. pesanan' || val === 'order id' || val === 'id pesanan';
+                    })
                  );
                  
                  if (idx > -1) {
@@ -143,9 +155,12 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
                      targetSheetName = wb.SheetNames[1];
                      // Check header in Sheet 2
                      const ws = wb.Sheets[targetSheetName];
-                     const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, range: 0 }) as any[][];
-                     const idx = aoa.findIndex(row => 
-                        Array.isArray(row) && row.some(cell => String(cell).toLowerCase().includes('no. pesanan') || String(cell).toLowerCase().includes('order id'))
+                     const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, range: 0, defval: '' }) as any[][];
+                     const idx = aoa.slice(0, 20).findIndex(row => 
+                        Array.isArray(row) && row.some(cell => {
+                            const val = String(cell).trim().toLowerCase();
+                            return val === 'no. pesanan' || val === 'order id' || val === 'id pesanan';
+                        })
                      );
                      if (idx > -1) headerRowIndex = idx;
                  }
@@ -386,16 +401,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
           // User requested: "Jika kolom biaya masih kosong, beri status 'Pending Settlement'"
           // In Order Export, fees are often 0.
           
-          if (status.toLowerCase() === 'selesai') {
-              // We assume it's pending settlement until we match it with Income Data
-              // However, we don't want to overwrite 'Selesai' if we are just re-importing Orders.
-              // Let's set a flag or just keep it 'Selesai' and let Income Data confirm it.
-              // Actually, the user explicitly asked: "Jika biaya = 0, tampilkan status 'Menunggu Rekonsiliasi'"
-              // We can check if we have fee columns mapped and if they are 0.
-              // But Order Export usually doesn't have full fee columns.
-              // So, let's set it to 'Menunggu Rekonsiliasi' if it's 'Selesai'. 
-              // Income Data processing will change it back to 'Selesai'.
-              status = 'Menunggu Rekonsiliasi';
+          if (status.toLowerCase() === 'selesai' || status.toLowerCase().includes('selesai')) {
+              status = 'Selesai';
           }
 
           orderGroups[orderId] = {
