@@ -571,10 +571,10 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         if (updateError) throw updateError;
 
-        toast.success("Mapping berhasil & pesanan diperbarui!", { id: toastId });
+        toast.success(`Berhasil terhubung ke ${targetSku}`, { id: toastId });
         setSelectedUnmapped(null);
         setTargetSku('');
-        fetchUnmappedItems(); 
+        fetchUnmappedItems();
 
      } catch (err: any) {
         console.error(err);
@@ -624,7 +624,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         if (updateError) throw updateError;
 
-        toast.success("Produk dibuat & di-mapping!", { id: toastId });
+        toast.success(`Produk dibuat & berhasil terhubung ke ${newProduct.sku}`, { id: toastId });
         setIsQuickCreating(false);
         setNewProduct({ sku: '', parent_sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
         setSelectedUnmapped(null);
