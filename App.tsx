@@ -3,14 +3,23 @@ import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from './services/supabase';
 import { AuthView } from './components/Auth/AuthView';
 import { Sidebar } from './components/Sidebar';
-import { Dashboard } from './components/Dashboard/Dashboard';
-import { ImportWizard } from './components/Import/ImportWizard';
-import { PriceCalculator } from './components/Calculator/PriceCalculator';
-import { ProductManager } from './components/Product/ProductManager';
+import { Suspense, lazy } from 'react';
+
+const FallbackLoading = () => (
+  <div className="flex flex-col items-center justify-center min-h-[50vh]">
+    <Loader2 className="w-10 h-10 text-orange-500 animate-spin mb-4" />
+    <p className="text-slate-500 font-medium">Memuat halaman...</p>
+  </div>
+);
+
+const Dashboard = lazy(() => import('./components/Dashboard/Dashboard').then(m => ({ default: m.Dashboard })));
+const ImportWizard = lazy(() => import('./components/Import/ImportWizard').then(m => ({ default: m.ImportWizard })));
+const PriceCalculator = lazy(() => import('./components/Calculator/PriceCalculator').then(m => ({ default: m.PriceCalculator })));
+const ProductManager = lazy(() => import('./components/Product/ProductManager').then(m => ({ default: m.ProductManager })));
 import { StoreSelector } from './components/StoreSelector';
 import { Layout } from './components/Layout';
-import AdsCenter from './components/Ads/AdsCenter';
-import { CashflowPage } from './components/Cashflow/CashflowPage';
+const AdsCenter = lazy(() => import('./components/Ads/AdsCenter'));
+const CashflowPage = lazy(() => import('./components/Cashflow/CashflowPage').then(m => ({ default: m.CashflowPage })));
 import { Toaster, toast } from 'react-hot-toast';
 
 // Intercept toast.error globally to suppress refresh token errors
@@ -521,74 +530,74 @@ export default function App() {
             </div>
           </header>
 
-
-
-          {activeTab === 'dashboard' && currentStore && (
-            <Dashboard 
-              store={currentStore} 
-              allStores={stores} 
-              key={`dash-${currentStore.id}-${refreshKey}`} 
-            />
-          )}
-
-          {activeTab === 'keuangan' && currentStore && (
-             <CashflowPage 
-               store={currentStore} 
-               allStores={stores} 
-             />
-          )}
-
-          {activeTab === 'calculator' && currentStore && (
-            (currentStore.id === 'all' || (currentStore as any).is_multiple) ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                 <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                    <Calculator className="w-10 h-10 text-slate-400" />
-                 </div>
-                 <h2 className="text-xl font-bold mb-2">Pilih Satu Toko Saja</h2>
-                 <p className="text-slate-500 max-w-md text-sm">Kalkulator biaya hanya berlaku untuk satu toko spesifik karena perbedaan skema biaya antar toko.</p>
-              </div>
-            ) : (
-              <PriceCalculator store={currentStore} />
-            )
-          )}
-
-          {activeTab === 'products' && currentStore && (
-            (currentStore.id === 'all' || (currentStore as any).is_multiple) ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                 <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                    <PackageSearch className="w-10 h-10 text-slate-400" />
-                 </div>
-                 <h2 className="text-xl font-bold mb-2">Pilih Satu Toko Saja</h2>
-                 <p className="text-slate-500 max-w-md text-sm">Manajemen produk hanya dapat dilakukan untuk satu toko dalam satu waktu.</p>
-              </div>
-            ) : (
-              <ProductManager store={currentStore} />
-            )
-          )}
-
-          {activeTab === 'ads' && currentStore && (
-            <AdsCenter store={currentStore} />
-          )}
-          
-          {activeTab === 'import' && currentStore && (
-            (currentStore.id === 'all' || (currentStore as any).is_multiple) ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                 <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                    <Layers className="w-10 h-10 text-slate-400" />
-                 </div>
-                 <h2 className="text-xl font-bold mb-2">Pilih Satu Toko Saja</h2>
-                 <p className="text-slate-500 max-w-md text-sm">Anda tidak dapat mengimpor data ke banyak toko sekaligus. Silakan pilih satu toko spesifik melalui menu di pojok kanan atas.</p>
-              </div>
-            ) : (
-              <ImportWizard 
-                key={currentStore.id}
+          <Suspense fallback={<FallbackLoading />}>
+            {activeTab === 'dashboard' && currentStore && (
+              <Dashboard 
                 store={currentStore} 
-                onComplete={() => {
-                  setRefreshKey(Date.now());
-                }} 
+                allStores={stores} 
+                key={`dash-${currentStore.id}-${refreshKey}`} 
               />
-            )
-          )}
+            )}
+
+            {activeTab === 'keuangan' && currentStore && (
+               <CashflowPage 
+                 store={currentStore} 
+                 allStores={stores} 
+               />
+            )}
+
+            {activeTab === 'calculator' && currentStore && (
+              (currentStore.id === 'all' || (currentStore as any).is_multiple) ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                   <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                      <Calculator className="w-10 h-10 text-slate-400" />
+                   </div>
+                   <h2 className="text-xl font-bold mb-2">Pilih Satu Toko Saja</h2>
+                   <p className="text-slate-500 max-w-md text-sm">Kalkulator biaya hanya berlaku untuk satu toko spesifik karena perbedaan skema biaya antar toko.</p>
+                </div>
+              ) : (
+                <PriceCalculator store={currentStore} />
+              )
+            )}
+
+            {activeTab === 'products' && currentStore && (
+              (currentStore.id === 'all' || (currentStore as any).is_multiple) ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                   <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                      <PackageSearch className="w-10 h-10 text-slate-400" />
+                   </div>
+                   <h2 className="text-xl font-bold mb-2">Pilih Satu Toko Saja</h2>
+                   <p className="text-slate-500 max-w-md text-sm">Manajemen produk hanya dapat dilakukan untuk satu toko dalam satu waktu.</p>
+                </div>
+              ) : (
+                <ProductManager store={currentStore} />
+              )
+            )}
+
+            {activeTab === 'ads' && currentStore && (
+              <AdsCenter store={currentStore} />
+            )}
+            
+            {activeTab === 'import' && currentStore && (
+              (currentStore.id === 'all' || (currentStore as any).is_multiple) ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                   <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                      <Layers className="w-10 h-10 text-slate-400" />
+                   </div>
+                   <h2 className="text-xl font-bold mb-2">Pilih Satu Toko Saja</h2>
+                   <p className="text-slate-500 max-w-md text-sm">Anda tidak dapat mengimpor data ke banyak toko sekaligus. Silakan pilih satu toko spesifik melalui menu di pojok kanan atas.</p>
+                </div>
+              ) : (
+                <ImportWizard 
+                  key={currentStore.id}
+                  store={currentStore} 
+                  onComplete={() => {
+                    setRefreshKey(Date.now());
+                  }} 
+                />
+              )
+            )}
+          </Suspense>
           
           {activeTab === 'settings' && (
              <div className="max-w-4xl space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">

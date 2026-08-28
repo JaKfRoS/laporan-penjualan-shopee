@@ -53,7 +53,7 @@ const INCOME_HEADER_ALIASES: Record<string, string[]> = {
   "net_revenue": ["Total Penghasilan", "Net Revenue", "Jumlah Dana Dilepaskan", "Pendapatan Bersih", "Total Dana Dilepaskan"],
   "refund_amount": ["Jumlah Pengembalian Dana ke Pembeli", "Refund Amount"],
   "return_shipping_fee": ["Ongkos Kirim Pengembalian Barang", "Return Shipping Fee"],
-  "shipping_fee_forwarded": ["Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim", "Shipping Fee Paid by Seller", "Shipping Fee Forwarded"],
+  "shipping_fee_forwarded": ["Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim", "Ongkos Kirim yang Dibayarkan ke Jasa Kirim", "Ongkos Kirim yang Diteruskan oleh Shopee", "Ongkos Kirim Diteruskan oleh Shopee", "Ongkos Kirim Diteruskan ke Jasa Kirim", "Ongkir Diteruskan", "Shipping Fee Paid by Seller", "Shipping Fee Forwarded"],
   "shipping_rebate": ["Gratis Ongkir dari Shopee", "Shipping Fee Rebate", "Shipping Rebate"],
   "shipping_paid_by_buyer": ["Ongkos Kirim Dibayar oleh Pembeli", "Shipping Fee Paid by Buyer", "Ongkir Dibayar Pembeli"],
   "seller_cofund_voucher": ["Voucher co-fund disponsor oleh Penjual", "Seller Co-fund Voucher"],
@@ -527,7 +527,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          const premFee = Math.abs(parseNumberIndonesia(row[incomeMapping['premium_fee']] || row['Premi']));
          const refundAmount = Math.abs(parseNumberIndonesia(row[incomeMapping['refund_amount']] || row['Jumlah Pengembalian Dana ke Pembeli']));
          const returnShippingFee = Math.abs(parseNumberIndonesia(row[incomeMapping['return_shipping_fee']] || row['Ongkos Kirim Pengembalian Barang']));
-         const shippingForwarded = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_fee_forwarded']] || row['Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim']));
+         const shippingForwarded = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_fee_forwarded']] || row['Ongkos Kirim yang Dibayarkan ke Jasa Kirim'] || row['Ongkos Kirim yang Diteruskan oleh Shopee ke Jasa Kirim'] || row['Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim'] || row['Ongkos Kirim Diteruskan oleh Shopee ke Jasa Kirim']));
          const sellerVoucher = Math.abs(parseNumberIndonesia(row[incomeMapping['seller_voucher']] || row['Voucher disponsor oleh Penjual']));
          const shippingRebate = Math.abs(parseNumberIndonesia(row[incomeMapping['shipping_rebate']] || row['Diskon Ongkos Kirim Ditanggung Shopee'] || row['Gratis Ongkir dari Shopee']));
          const transactionFee = Math.abs(parseNumberIndonesia(row[incomeMapping['transaction_fee']] || row['Biaya Transaksi']));
