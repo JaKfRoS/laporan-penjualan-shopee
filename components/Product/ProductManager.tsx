@@ -777,79 +777,110 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
        </div>
 
        {activeTab === 'mapping' && (
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-             <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-orange-100 dark:bg-orange-500/10 rounded-lg text-orange-600">
-                   <ArrowRightLeft className="w-6 h-6" />
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-4 sm:p-6">
+             <div className="flex items-center gap-3 mb-5">
+                <div className="p-2 bg-orange-100 dark:bg-orange-500/10 rounded-lg text-orange-600 shrink-0">
+                   <ArrowRightLeft className="w-5 h-5" />
                 </div>
-                <div>
-                   <h2 className="text-lg font-black uppercase tracking-tight dark:text-white">Mapping Produk Shopee</h2>
-                   <p className="text-xs text-slate-500">Hubungkan produk Shopee dengan Master SKU untuk mendapatkan data HPP.</p>
+                <div className="min-w-0">
+                   <h2 className="text-sm sm:text-base font-black uppercase tracking-tight dark:text-white">Mapping Produk Shopee</h2>
+                   <p className="text-[11px] sm:text-xs text-slate-500">Hubungkan produk Shopee dengan Master SKU untuk mendapatkan data HPP.</p>
                 </div>
              </div>
 
              {loadingMapping ? (
-                 <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>
+                 <div className="py-16 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>
              ) : unmappedItems.length === 0 ? (
-                 <div className="py-20 text-center flex flex-col items-center">
-                    <CheckCircle2 className="w-16 h-16 text-green-500 mb-4" />
-                    <h3 className="text-xl font-bold text-slate-800 dark:text-white">Semua Aman!</h3>
-                    <p className="text-slate-500">Semua produk dalam pesanan sudah terhubung ke Master SKU.</p>
+                 <div className="py-16 text-center flex flex-col items-center">
+                    <CheckCircle2 className="w-12 h-12 text-green-500 mb-3" />
+                    <h3 className="text-base font-bold text-slate-800 dark:text-white">Semua Aman!</h3>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-1">Semua produk dalam pesanan sudah terhubung ke Master SKU.</p>
                  </div>
              ) : (
-                 <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                       <thead className="bg-slate-50 dark:bg-slate-800">
-                          <tr>
-                             <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">Nama Produk (Shopee)</th>
-                             <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">Variasi</th>
-                             <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase text-center">Jml Transaksi</th>
-                             <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase">Aksi</th>
-                          </tr>
-                       </thead>
-                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                          {unmappedItems.map((item, idx) => (
-                             <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                <td className="px-6 py-4 font-medium text-sm dark:text-white">
-                                  {item.name}
-                                  {/* NEW: Show Suggestion Badge if Smart Logic found match */}
-                                  {products.some(p => p.sku === targetSku) && item === selectedUnmapped && (
-                                     <span className="block mt-1 text-[10px] text-orange-500 font-bold flex items-center gap-1">
-                                       <Lightbulb className="w-3 h-3" /> Auto-Suggest Available
-                                     </span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{item.variation || '-'}</td>
-                                <td className="px-6 py-4 text-center font-bold text-slate-700 dark:text-slate-300">{item.count}</td>
-                                <td className="px-6 py-4">
-                                   <button 
-                                      onClick={() => setSelectedUnmapped(item)}
-                                      className="px-4 py-2 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-bold rounded-lg border border-orange-200 dark:border-orange-800 hover:bg-orange-100 transition-all"
-                                   >
-                                      Connect SKU
-                                   </button>
-                                </td>
+                 <>
+                    {/* Mobile: stacked cards. The table below needs ~4 columns of
+                        width, which overflowed and clipped the product name on
+                        narrow screens. */}
+                    <div className="flex flex-col gap-2.5 md:hidden">
+                       {unmappedItems.map((item, idx) => (
+                          <div key={idx} className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+                             <p className="text-xs font-bold text-slate-800 dark:text-white leading-snug line-clamp-2">{item.name}</p>
+                             <div className="flex items-center flex-wrap gap-1.5 mt-1.5">
+                                {item.variation && (
+                                   <span className="px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-[10px] font-bold truncate max-w-[60%]">
+                                      {item.variation}
+                                   </span>
+                                )}
+                                <span className="px-2 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold">
+                                   {item.count}x transaksi
+                                </span>
+                             </div>
+                             <button
+                                onClick={() => setSelectedUnmapped(item)}
+                                className="mt-2.5 w-full py-2 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-black rounded-lg border border-orange-200 dark:border-orange-800 hover:bg-orange-100 transition-all uppercase tracking-wide"
+                             >
+                                Connect SKU
+                             </button>
+                          </div>
+                       ))}
+                    </div>
+
+                    <div className="hidden md:block overflow-x-auto">
+                       <table className="w-full text-left">
+                          <thead className="bg-slate-50 dark:bg-slate-800">
+                             <tr>
+                                <th className="px-4 py-3 text-[11px] font-black text-slate-400 uppercase">Nama Produk (Shopee)</th>
+                                <th className="px-4 py-3 text-[11px] font-black text-slate-400 uppercase">Variasi</th>
+                                <th className="px-4 py-3 text-[11px] font-black text-slate-400 uppercase text-center whitespace-nowrap">Jml Transaksi</th>
+                                <th className="px-4 py-3 text-[11px] font-black text-slate-400 uppercase text-right">Aksi</th>
                              </tr>
-                          ))}
-                       </tbody>
-                    </table>
-                 </div>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                             {unmappedItems.map((item, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                   <td className="px-4 py-3 font-medium text-[13px] dark:text-white max-w-[380px]">
+                                     <span className="line-clamp-2">{item.name}</span>
+                                     {/* NEW: Show Suggestion Badge if Smart Logic found match */}
+                                     {products.some(p => p.sku === targetSku) && item === selectedUnmapped && (
+                                        <span className="mt-1 text-[10px] text-orange-500 font-bold flex items-center gap-1">
+                                          <Lightbulb className="w-3 h-3" /> Auto-Suggest Available
+                                        </span>
+                                     )}
+                                   </td>
+                                   <td className="px-4 py-3 text-[13px] text-slate-500 dark:text-slate-400">{item.variation || '-'}</td>
+                                   <td className="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-300">{item.count}</td>
+                                   <td className="px-4 py-3 text-right">
+                                      <button
+                                         onClick={() => setSelectedUnmapped(item)}
+                                         className="px-3 py-1.5 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-bold rounded-lg border border-orange-200 dark:border-orange-800 hover:bg-orange-100 transition-all whitespace-nowrap"
+                                      >
+                                         Connect SKU
+                                      </button>
+                                   </td>
+                                </tr>
+                             ))}
+                          </tbody>
+                       </table>
+                    </div>
+                 </>
              )}
           </div>
        )}
 
        {selectedUnmapped && (
-           <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[95vh]">
-                 <div className="p-5 md:p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start shrink-0 bg-slate-50/50 dark:bg-slate-800/30">
-                    <div>
-                       <h3 className="text-base md:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Hubungkan SKU</h3>
-                       <p className="text-[10px] md:text-xs text-slate-500 mt-1">Produk Shopee: <span className="font-bold text-orange-600">{selectedUnmapped.name} {selectedUnmapped.variation ? `(${selectedUnmapped.variation})` : ''}</span></p>
+           <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+              {/* dvh (not vh) so the mobile browser's address/toolbar chrome is
+                  excluded — with vh the modal ran taller than the visible area. */}
+              <div className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[88dvh] sm:max-h-[90dvh]">
+                 <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start gap-3 shrink-0 bg-slate-50/50 dark:bg-slate-800/30">
+                    <div className="min-w-0">
+                       <h3 className="text-sm sm:text-base font-black uppercase tracking-tight text-slate-900 dark:text-white">Hubungkan SKU</h3>
+                       <p className="text-[10px] sm:text-xs text-slate-500 mt-1 line-clamp-2">Produk Shopee: <span className="font-bold text-orange-600">{selectedUnmapped.name} {selectedUnmapped.variation ? `(${selectedUnmapped.variation})` : ''}</span></p>
                     </div>
-                    <button onClick={() => { setSelectedUnmapped(null); setIsQuickCreating(false); }} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><X className="w-6 h-6" /></button>
+                    <button onClick={() => { setSelectedUnmapped(null); setIsQuickCreating(false); }} className="p-1.5 -mr-1 shrink-0 text-slate-400 hover:text-red-500 transition-colors"><X className="w-5 h-5" /></button>
                  </div>
-                 
-                 <div className="p-5 md:p-6 space-y-6 overflow-y-auto custom-scrollbar">
+
+                 <div className="p-4 sm:p-5 space-y-4 sm:space-y-5 overflow-y-auto custom-scrollbar">
                     {!isQuickCreating ? (
                         <>
                             <div className="space-y-2">
@@ -863,13 +894,13 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 </label>
                                 
                                 <div className="relative group">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+                                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
                                     <input
                                         type="text"
                                         placeholder="Ketik untuk mencari produk..."
                                         value={mappingSearchTerm}
                                         onChange={(e) => setMappingSearchTerm(e.target.value)}
-                                        className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
+                                        className="w-full pl-10 pr-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
                                     />
                                 </div>
 
@@ -905,12 +936,12 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                     </div>
                                 )}
 
-                                 <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm bg-slate-50 dark:bg-slate-800/50">
-                                    <select 
+                                 <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm bg-slate-50 dark:bg-slate-800/50">
+                                    <select
                                         value={targetSku}
                                         onChange={(e) => setTargetSku(e.target.value)}
-                                        className="w-full p-2 bg-transparent outline-none font-bold text-slate-700 dark:text-white text-sm"
-                                        size={5} 
+                                        className="w-full p-1.5 bg-transparent outline-none font-bold text-slate-700 dark:text-white text-xs sm:text-sm"
+                                        size={4}
                                     >
                                         <option value="" className="p-3 text-slate-400">-- Pilih SKU Internal --</option>
                                         {mappingOptions.map(p => (
@@ -923,8 +954,8 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 <p className="text-[10px] text-slate-400 text-right font-bold uppercase tracking-widest">Menampilkan {mappingOptions.length} produk</p>
                             </div>
                             
-                            <div className="flex items-center justify-between p-4 bg-orange-50 dark:bg-orange-500/10 rounded-2xl border border-orange-100 dark:border-orange-500/20">
-                                <span className="text-[10px] md:text-xs text-slate-500 font-bold uppercase tracking-wide">Produk belum ada?</span>
+                            <div className="flex items-center justify-between gap-3 p-3 bg-orange-50 dark:bg-orange-500/10 rounded-xl border border-orange-100 dark:border-orange-500/20">
+                                <span className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-wide">Produk belum ada?</span>
                                 <button 
                                     onClick={() => {
                                         setIsQuickCreating(true);
@@ -946,9 +977,9 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                             <button 
                                 onClick={handleApplyMapping}
                                 disabled={!targetSku}
-                                className="w-full py-4 bg-slate-900 dark:bg-orange-600 text-white font-black rounded-2xl hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-3 shadow-xl shadow-slate-900/20 dark:shadow-orange-600/20 uppercase tracking-widest text-sm"
+                                className="w-full py-3 bg-slate-900 dark:bg-orange-600 text-white font-black rounded-xl hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 dark:shadow-orange-600/20 uppercase tracking-widest text-xs sm:text-sm"
                             >
-                                <LinkIcon className="w-5 h-5" />
+                                <LinkIcon className="w-4 h-4" />
                                 SIMPAN MAPPING
                             </button>
                         </>

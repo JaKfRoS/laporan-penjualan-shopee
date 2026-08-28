@@ -1141,7 +1141,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         )}
 
         {filters.mode === 'order_date' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 mt-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 mt-8">
             <KPICard 
               title="Omset Pesanan (GMV)" 
               value={`Rp ${(metrics.totalOmzetPesanan || 0).toLocaleString()}`} 
@@ -1213,7 +1213,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 <div className="h-5 w-1.5 bg-orange-500 rounded-full"></div>
                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Alur Keuangan (Cash Flow)</h3>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
                 <KPICard 
                   title="Omzet Riil" 
                   value={`Rp ${(metrics.omzetRiil || 0).toLocaleString()}`} 
@@ -1270,7 +1270,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 <div className="h-5 w-1.5 bg-slate-400 dark:bg-slate-600 rounded-full"></div>
                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Metrik Pendukung</h3>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
                 <KPICard 
                   title="% Net Profit" 
                   value={`${metrics.percentNetProfit.toFixed(1)}%`} 
