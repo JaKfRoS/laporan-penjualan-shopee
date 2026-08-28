@@ -40,7 +40,7 @@ const INCOME_HEADER_ALIASES: Record<string, string[]> = {
   "order_id": ["No. Pesanan", "Order ID", "No. Referensi", "ID Pesanan"],
   "order_date": ["Waktu Pesanan Dibuat", "Order Creation Date"],
   "release_date": ["Tanggal Dana Dilepaskan", "Waktu Pesanan Selesai", "Order Complete Time", "Waktu Pencairan", "Tanggal Pencairan"],
-  "original_price": ["Harga Asli Produk", "Original Price", "Harga Awal"],
+  "original_price": ["Harga Asli Produk", "Original Price", "Harga Awal", "Harga Produk"],
   "product_discount": ["Total Diskon Produk", "Product Discount", "Diskon Produk"],
   "shopee_product_discount": ["Diskon Produk dari Shopee", "Shopee Product Discount"],
   "seller_voucher": ["Voucher disponsor oleh Penjual", "Seller Voucher", "Voucher Penjual"],
@@ -72,6 +72,11 @@ const normalize = (str: any) => {
   if (!str) return '';
   return String(str).trim().toLowerCase();
 };
+
+// Helper: Normalize a Header for Comparison. Shopee export files sometimes vary
+// slightly in spacing (e.g. "Status Pembatalan/ Pengembalian" vs "Status Pembatalan/Pengembalian"),
+// so we strip ALL whitespace (in addition to trim/lowercase) before comparing headers/aliases.
+const normalizeHeaderKey = (str: any) => normalize(str).replace(/\s+/g, '');
 
 export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete }) => {
   const [mode, setMode] = useState<'sales' | 'ads'>('sales');
@@ -203,10 +208,10 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
           
           Object.entries(HEADER_ALIASES).forEach(([dbKey, aliases]) => {
             for (const alias of aliases) {
-                const foundHeader = headers.find(h => h.trim().toLowerCase() === alias.toLowerCase());
+                const foundHeader = headers.find(h => normalizeHeaderKey(h) === normalizeHeaderKey(alias));
                 if (foundHeader) {
                     newMapping[dbKey] = foundHeader;
-                    break; 
+                    break;
                 }
             }
           });
@@ -492,8 +497,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       const incomeMapping: Mapping = {};
       Object.entries(INCOME_HEADER_ALIASES).forEach(([dbKey, aliases]) => {
          const found = incomeHeaders.find(h => {
-             const cleanH = String(h).trim().toLowerCase().replace(/\(idr\)/g, '').replace(/\(rp\)/g, '').trim();
-             return aliases.some(a => cleanH === a.toLowerCase() || cleanH.includes(a.toLowerCase()));
+             const cleanH = normalizeHeaderKey(String(h).replace(/\(idr\)/gi, '').replace(/\(rp\)/gi, ''));
+             return aliases.some(a => cleanH === normalizeHeaderKey(a) || cleanH.includes(normalizeHeaderKey(a)));
          });
          if (found) incomeMapping[dbKey] = found;
       });
