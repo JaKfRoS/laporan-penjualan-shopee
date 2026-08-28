@@ -33,10 +33,10 @@ export const KPICard: React.FC<KPICardProps> = ({ title, value, trend, icon, isN
           <div className={`p-2 rounded-xl shrink-0 transition-colors ${
             isHighlight ? 'bg-white/20' : 'bg-slate-50 dark:bg-slate-800 group-hover:bg-orange-50 dark:group-hover:bg-orange-500/10'
           }`}>
-            {React.isValidElement(icon) 
-              ? React.cloneElement(icon as React.ReactElement, { 
-                  className: `${(icon as React.ReactElement).props.className} ${isHighlight ? 'text-white' : 'text-slate-400 group-hover:text-orange-600'}` 
-                }) 
+            {React.isValidElement<{ className?: string }>(icon)
+              ? React.cloneElement(icon, {
+                  className: `${icon.props.className || ''} ${isHighlight ? 'text-white' : 'text-slate-400 group-hover:text-orange-600'}`
+                })
               : icon || <Activity className={`w-4 h-4 ${isHighlight ? 'text-white' : 'text-slate-400 group-hover:text-orange-600'}`} />
             }
           </div>

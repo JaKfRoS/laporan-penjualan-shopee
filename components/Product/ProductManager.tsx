@@ -587,7 +587,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         toast.success("Produk dibuat & di-mapping!", { id: toastId });
         setIsQuickCreating(false);
-        setNewProduct({ sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
+        setNewProduct({ sku: '', parent_sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
         setSelectedUnmapped(null);
         fetchUnmappedItems();
 
@@ -759,10 +759,11 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 <button 
                                     onClick={() => {
                                         setIsQuickCreating(true);
-                                        setNewProduct({ 
-                                            sku: '', 
+                                        setNewProduct({
+                                            sku: '',
+                                            parent_sku: '',
                                             product_name: selectedUnmapped.name,
-                                            variation_name: selectedUnmapped.variation || '', 
+                                            variation_name: selectedUnmapped.variation || '',
                                             cost_price: 0,
                                             processing_fee: 1250
                                         });

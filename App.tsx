@@ -18,6 +18,7 @@ const PriceCalculator = lazy(() => import('./components/Calculator/PriceCalculat
 const ProductManager = lazy(() => import('./components/Product/ProductManager').then(m => ({ default: m.ProductManager })));
 import { StoreSelector } from './components/StoreSelector';
 import { Layout } from './components/Layout';
+import { ErrorBoundary } from './components/ErrorBoundary';
 const AdsCenter = lazy(() => import('./components/Ads/AdsCenter'));
 const CashflowPage = lazy(() => import('./components/Cashflow/CashflowPage').then(m => ({ default: m.CashflowPage })));
 import { Toaster, toast } from 'react-hot-toast';
@@ -530,6 +531,7 @@ export default function App() {
             </div>
           </header>
 
+          <ErrorBoundary key={`${activeTab}-${currentStore?.id}-${refreshKey}`} label="Halaman">
           <Suspense fallback={<FallbackLoading />}>
             {activeTab === 'dashboard' && currentStore && (
               <Dashboard 
@@ -598,7 +600,8 @@ export default function App() {
               )
             )}
           </Suspense>
-          
+          </ErrorBoundary>
+
           {activeTab === 'settings' && (
              <div className="max-w-4xl space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
               <div className="bg-white dark:bg-slate-900 p-6 md:p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm">
