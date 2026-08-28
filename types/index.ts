@@ -5,6 +5,9 @@ export interface Store {
   name: string;
   created_at: string;
   last_import_at?: string;
+  // Synthetic fields for the "multiple stores selected" pseudo-store
+  is_multiple?: boolean;
+  selected_ids?: string[];
 }
 
 export interface OrderItem {

@@ -674,8 +674,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                 }
                 // Status
                 if (c === 'status') statusColIdx = idx;
-                // Jenis Transaksi / Transaction Type
-                if (c.includes('jenis transaksi') || c.includes('transaction type') || c.includes('tipe transaksi')) typeColIdx = idx;
+                // Tipe Transaksi (transaction category, e.g. "Isi Ulang Saldo Iklan") takes priority
+                // over the more generic "Jenis Transaksi" (Transaksi Masuk/Keluar direction) when a
+                // file has both columns, since the category is the more informative label to store.
+                if (c.includes('tipe transaksi') || c.includes('transaction type')) typeColIdx = idx;
+                else if (typeColIdx === -1 && c.includes('jenis transaksi')) typeColIdx = idx;
             });
             continue;
         }
