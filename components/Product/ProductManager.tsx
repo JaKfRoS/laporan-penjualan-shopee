@@ -49,6 +49,10 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
 
+  // Tracks the currently-shown "Berhasil terhubung..." toast (with Urungkan)
+  // so a new mapping dismisses the previous one instead of stacking up.
+  const lastMappingToastId = useRef<string | null>(null);
+
   useEffect(() => {
     fetchProducts();
     if (activeTab === 'mapping') fetchUnmappedItems();
@@ -604,6 +608,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         const undoName = selectedUnmapped.name;
         const undoVariation = selectedUnmapped.variation;
+        if (lastMappingToastId.current) toast.dismiss(lastMappingToastId.current);
         toast.success((t) => (
             <span className="flex items-center gap-3">
                 <span>Berhasil terhubung ke <b>{targetSku}</b></span>
@@ -615,6 +620,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                 </button>
             </span>
         ), { id: toastId, duration: 5000 });
+        lastMappingToastId.current = toastId;
         setSelectedUnmapped(null);
         setTargetSku('');
         fetchUnmappedItems();
@@ -670,6 +676,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         const undoName = selectedUnmapped!.name;
         const undoVariation = selectedUnmapped!.variation;
         const createdSku = newProduct.sku;
+        if (lastMappingToastId.current) toast.dismiss(lastMappingToastId.current);
         toast.success((t) => (
             <span className="flex items-center gap-3">
                 <span>Produk dibuat & berhasil terhubung ke <b>{createdSku}</b></span>
@@ -681,6 +688,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                 </button>
             </span>
         ), { id: toastId, duration: 5000 });
+        lastMappingToastId.current = toastId;
         setIsQuickCreating(false);
         setNewProduct({ sku: '', parent_sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
         setSelectedUnmapped(null);
