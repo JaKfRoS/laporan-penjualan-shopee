@@ -541,6 +541,37 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     setLoadingMapping(false);
   };
 
+  // Reverts a just-applied mapping: unmaps the affected order_items and removes
+  // the saved sku_mapping so it doesn't silently re-apply on the next import.
+  const handleUndoMapping = async (name: string, variation: string) => {
+     const undoToastId = toast.loading("Membatalkan mapping...");
+     try {
+        const { error: revertError } = await supabase
+            .from('order_items')
+            .update({ final_sku: null, is_sku_mapped: false, hpp_at_time: 0 })
+            .eq('store_id', store.id)
+            .eq('product_name', name)
+            .eq('variation', variation);
+
+        if (revertError) throw revertError;
+
+        const { error: deleteMapError } = await supabase
+            .from('sku_mappings')
+            .delete()
+            .eq('store_id', store.id)
+            .eq('shopee_product_name', name)
+            .eq('shopee_variation_name', variation);
+
+        if (deleteMapError) throw deleteMapError;
+
+        toast.success("Mapping dibatalkan", { id: undoToastId });
+        fetchUnmappedItems();
+     } catch (err: any) {
+        console.error(err);
+        toast.error("Gagal membatalkan mapping: " + err.message, { id: undoToastId });
+     }
+  };
+
   const handleApplyMapping = async () => {
      if (!selectedUnmapped || !targetSku) return;
      const toastId = toast.loading("Menyimpan mapping...");
@@ -571,7 +602,19 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         if (updateError) throw updateError;
 
-        toast.success(`Berhasil terhubung ke ${targetSku}`, { id: toastId });
+        const undoName = selectedUnmapped.name;
+        const undoVariation = selectedUnmapped.variation;
+        toast.success((t) => (
+            <span className="flex items-center gap-3">
+                <span>Berhasil terhubung ke <b>{targetSku}</b></span>
+                <button
+                    onClick={() => { toast.dismiss(t.id); handleUndoMapping(undoName, undoVariation); }}
+                    className="shrink-0 px-2 py-1 text-xs font-black text-orange-600 hover:text-orange-700 underline uppercase tracking-wide"
+                >
+                    Urungkan
+                </button>
+            </span>
+        ), { id: toastId, duration: 5000 });
         setSelectedUnmapped(null);
         setTargetSku('');
         fetchUnmappedItems();
@@ -624,7 +667,20 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         if (updateError) throw updateError;
 
-        toast.success(`Produk dibuat & berhasil terhubung ke ${newProduct.sku}`, { id: toastId });
+        const undoName = selectedUnmapped!.name;
+        const undoVariation = selectedUnmapped!.variation;
+        const createdSku = newProduct.sku;
+        toast.success((t) => (
+            <span className="flex items-center gap-3">
+                <span>Produk dibuat & berhasil terhubung ke <b>{createdSku}</b></span>
+                <button
+                    onClick={() => { toast.dismiss(t.id); handleUndoMapping(undoName, undoVariation); }}
+                    className="shrink-0 px-2 py-1 text-xs font-black text-orange-600 hover:text-orange-700 underline uppercase tracking-wide"
+                >
+                    Urungkan
+                </button>
+            </span>
+        ), { id: toastId, duration: 5000 });
         setIsQuickCreating(false);
         setNewProduct({ sku: '', parent_sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
         setSelectedUnmapped(null);
