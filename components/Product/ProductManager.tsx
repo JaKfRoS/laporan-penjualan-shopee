@@ -40,6 +40,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   const [selectedUnmapped, setSelectedUnmapped] = useState<{name: string, variation: string} | null>(null);
   const [targetSku, setTargetSku] = useState('');
   const [mappingSearchTerm, setMappingSearchTerm] = useState('');
+  const [suggestedMatches, setSuggestedMatches] = useState<(Product & { matchScore: number })[]>([]);
   
   // Quick Create State (in Mapping)
   const [isQuickCreating, setIsQuickCreating] = useState(false);
@@ -53,22 +54,23 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
     if (activeTab === 'mapping') fetchUnmappedItems();
   }, [store, activeTab]);
 
-  // --- SMART SUGGESTION EFFECT V3 (STRICT MODE) ---
+  // --- SMART SUGGESTION EFFECT V4 (RANKED CANDIDATES) ---
   useEffect(() => {
     if (selectedUnmapped && products.length > 0) {
-      setMappingSearchTerm(''); 
-      
-      const clean = (str: string) => str ? str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim() : '';
+      setMappingSearchTerm('');
+
+      // Treat common separators (, / - _ ( ) |) as word breaks instead of deleting
+      // them, so e.g. "Coklat,XL" tokenizes as ["coklat", "xl"] rather than "coklatxl".
+      const clean = (str: string) => str
+        ? str.toLowerCase().replace(/[,/\-_()|]+/g, ' ').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
+        : '';
       const getTokens = (str: string) => clean(str).split(/\s+/).filter(w => w.length > 1);
 
       const sName = clean(selectedUnmapped.name);
       const sVar = clean(selectedUnmapped.variation || '');
       const sTokens = getTokens(selectedUnmapped.name);
 
-      let bestScore = -Infinity;
-      let bestSku = '';
-
-      products.forEach(p => {
+      const scored = products.map(p => {
         let score = 0;
         const mName = clean(p.product_name);
         const mVar = clean(p.variation_name || '');
@@ -106,7 +108,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                 if (sName.includes(mVar)) {
                     score += 60;
                 } else {
-                    score -= 20; 
+                    score -= 20;
                 }
             }
         }
@@ -115,7 +117,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         const mTokens = getTokens(p.product_name);
         const intersection = sTokens.filter(t => mTokens.includes(t));
         const union = new Set([...sTokens, ...mTokens]);
-        
+
         if (union.size > 0) {
             const jaccard = intersection.length / union.size;
             score += jaccard * 50;
@@ -125,19 +127,21 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         if (sName === mName) score += 30;
         else if (sName.includes(mName) || mName.includes(sName)) score += 15;
 
-        if (score > bestScore) {
-          bestScore = score;
-          bestSku = p.sku;
-        }
-      });
+        return { ...p, matchScore: score };
+      }).sort((a, b) => b.matchScore - a.matchScore);
+
+      const best = scored[0];
 
       // Threshold: Hanya pilih jika skor positif dan cukup tinggi (>30)
       // Ini menghindari saran ngawur jika tidak ada yang cocok sama sekali
-      if (bestScore > 30) {
-          setTargetSku(bestSku);
-      } else {
-          setTargetSku('');
-      }
+      setTargetSku(best && best.matchScore > 30 ? best.sku : '');
+
+      // Show a handful of runner-up candidates too (lower bar than auto-select)
+      // so users mapping hundreds of near-identical variants can just click the
+      // right one instead of hunting through the whole product list.
+      setSuggestedMatches(scored.filter(p => p.matchScore > 15).slice(0, 5));
+    } else {
+      setSuggestedMatches([]);
     }
   }, [selectedUnmapped, products]);
 
@@ -737,7 +741,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                 
                                 <div className="relative group">
                                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
-                                    <input 
+                                    <input
                                         type="text"
                                         placeholder="Ketik untuk mencari produk..."
                                         value={mappingSearchTerm}
@@ -745,6 +749,38 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                         className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all"
                                     />
                                 </div>
+
+                                {!mappingSearchTerm && suggestedMatches.length > 0 && (
+                                    <div className="space-y-1.5">
+                                        <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center gap-1">
+                                            <Lightbulb className="w-3 h-3" /> Saran SKU Mirip
+                                        </p>
+                                        <div className="flex flex-col gap-1.5">
+                                            {suggestedMatches.map((p, idx) => (
+                                                <button
+                                                    key={p.sku}
+                                                    type="button"
+                                                    onClick={() => setTargetSku(p.sku)}
+                                                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all ${
+                                                        targetSku === p.sku
+                                                            ? 'border-orange-500 bg-orange-50 dark:bg-orange-500/10'
+                                                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-orange-300'
+                                                    }`}
+                                                >
+                                                    <span className="shrink-0 font-mono text-[11px] font-black px-2 py-1 rounded-lg bg-slate-900 text-white dark:bg-orange-600">
+                                                        {p.sku}
+                                                    </span>
+                                                    <span className="min-w-0 flex-1 text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
+                                                        {p.product_name} {p.variation_name ? `- ${p.variation_name}` : ''}
+                                                    </span>
+                                                    {idx === 0 && (
+                                                        <span className="shrink-0 text-[9px] font-black text-orange-500 uppercase">Terbaik</span>
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
                                  <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm bg-slate-50 dark:bg-slate-800/50">
                                     <select 
