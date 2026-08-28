@@ -483,10 +483,10 @@ export default function App() {
         <Layout>
           <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 md:mb-10">
             <div className="min-w-0">
-              <h1 className="text-xl md:text-2xl xl:text-3xl font-black tracking-tighter uppercase flex items-center gap-3">
+              <h1 className="text-base sm:text-lg xl:text-xl font-black tracking-tight uppercase flex items-center gap-2.5 min-w-0">
                 {currentStore?.id === 'all' ? (
                   <>
-                    <Layers className="w-5 h-5 md:w-7 md:h-7 text-purple-600 shrink-0" />
+                    <Layers className="w-5 h-5 md:w-6 md:h-6 text-purple-600 shrink-0" />
                     <span className="truncate">Semua Toko</span>
                   </>
                 ) : (
