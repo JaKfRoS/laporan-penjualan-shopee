@@ -49,9 +49,36 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
 
-  // Tracks the currently-shown "Berhasil terhubung..." toast (with Urungkan)
-  // so a new mapping dismisses the previous one instead of stacking up.
-  const lastMappingToastId = useRef<string | null>(null);
+  // react-hot-toast pauses EVERY auto-dismiss timer while the pointer is considered
+  // to be inside the toaster container (use-toaster bails out entirely with
+  // `if (pausedAt) return`, so no dismiss timeouts get scheduled at all). On touch
+  // devices a tap synthesizes mouseenter but frequently no matching mouseleave, so
+  // once a user taps a toast — e.g. the Urungkan button — toasts can hang on screen
+  // indefinitely no matter how long they wait. Drive these toasts' lifetime with our
+  // own timer instead: toast.dismiss() dispatches directly and is not pause-gated.
+  const mappingToastRef = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+
+  const clearMappingToast = () => {
+    if (mappingToastRef.current) {
+      clearTimeout(mappingToastRef.current.timer);
+      toast.dismiss(mappingToastRef.current.id);
+      mappingToastRef.current = null;
+    }
+  };
+
+  const showMappingToast = (content: React.ReactNode, existingId: string, duration = 5000) => {
+    clearMappingToast();
+    const id = toast.success(content as any, { id: existingId, duration: Infinity });
+    const timer = setTimeout(() => {
+      toast.dismiss(id);
+      if (mappingToastRef.current?.id === id) mappingToastRef.current = null;
+    }, duration);
+    mappingToastRef.current = { id, timer };
+  };
+
+  useEffect(() => () => {
+    if (mappingToastRef.current) clearTimeout(mappingToastRef.current.timer);
+  }, []);
 
   useEffect(() => {
     fetchProducts();
@@ -568,7 +595,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         if (deleteMapError) throw deleteMapError;
 
-        toast.success("Mapping dibatalkan", { id: undoToastId });
+        showMappingToast("Mapping dibatalkan", undoToastId, 3000);
         fetchUnmappedItems();
      } catch (err: any) {
         console.error(err);
@@ -608,19 +635,18 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
         const undoName = selectedUnmapped.name;
         const undoVariation = selectedUnmapped.variation;
-        if (lastMappingToastId.current) toast.dismiss(lastMappingToastId.current);
-        toast.success((t) => (
+        showMappingToast(
             <span className="flex items-center gap-3">
                 <span>Berhasil terhubung ke <b>{targetSku}</b></span>
                 <button
-                    onClick={() => { toast.dismiss(t.id); handleUndoMapping(undoName, undoVariation); }}
+                    onClick={() => { clearMappingToast(); handleUndoMapping(undoName, undoVariation); }}
                     className="shrink-0 px-2 py-1 text-xs font-black text-orange-600 hover:text-orange-700 underline uppercase tracking-wide"
                 >
                     Urungkan
                 </button>
-            </span>
-        ), { id: toastId, duration: 5000 });
-        lastMappingToastId.current = toastId;
+            </span>,
+            toastId
+        );
         setSelectedUnmapped(null);
         setTargetSku('');
         fetchUnmappedItems();
@@ -676,19 +702,18 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
         const undoName = selectedUnmapped!.name;
         const undoVariation = selectedUnmapped!.variation;
         const createdSku = newProduct.sku;
-        if (lastMappingToastId.current) toast.dismiss(lastMappingToastId.current);
-        toast.success((t) => (
+        showMappingToast(
             <span className="flex items-center gap-3">
                 <span>Produk dibuat & berhasil terhubung ke <b>{createdSku}</b></span>
                 <button
-                    onClick={() => { toast.dismiss(t.id); handleUndoMapping(undoName, undoVariation); }}
+                    onClick={() => { clearMappingToast(); handleUndoMapping(undoName, undoVariation); }}
                     className="shrink-0 px-2 py-1 text-xs font-black text-orange-600 hover:text-orange-700 underline uppercase tracking-wide"
                 >
                     Urungkan
                 </button>
-            </span>
-        ), { id: toastId, duration: 5000 });
-        lastMappingToastId.current = toastId;
+            </span>,
+            toastId
+        );
         setIsQuickCreating(false);
         setNewProduct({ sku: '', parent_sku: '', product_name: '', variation_name: '', cost_price: 0, processing_fee: 1250 });
         setSelectedUnmapped(null);
