@@ -1,6 +1,7 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import Fuse from 'fuse.js';
 import { supabase } from '../../services/supabase';
 import { Store, Product } from '../../types';
 import { toast } from 'react-hot-toast';
@@ -596,17 +597,26 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
       }
   };
 
-  const filteredProducts = products.filter(p => 
-      (p.product_name || '').toLowerCase().includes((searchProduct || '').toLowerCase()) || 
-      (p.variation_name || '').toLowerCase().includes((searchProduct || '').toLowerCase()) || 
-      (p.sku || '').toLowerCase().includes((searchProduct || '').toLowerCase())
-  );
+  // Fuzzy search so a typo, missing letter, or different word order still finds the
+  // right master product (previously required an exact substring match).
+  const productsFuse = useMemo(() => new Fuse(products, {
+      keys: [
+          { name: 'product_name', weight: 0.5 },
+          { name: 'sku', weight: 0.3 },
+          { name: 'variation_name', weight: 0.2 },
+      ],
+      threshold: 0.4,
+      ignoreLocation: true,
+      minMatchCharLength: 2,
+  }), [products]);
 
-  const mappingOptions = products.filter(p => 
-      !mappingSearchTerm || 
-      (p.product_name || '').toLowerCase().includes((mappingSearchTerm || '').toLowerCase()) ||
-      (p.sku || '').toLowerCase().includes((mappingSearchTerm || '').toLowerCase())
-  );
+  const filteredProducts = searchProduct.trim()
+      ? productsFuse.search(searchProduct.trim()).map(r => r.item)
+      : products;
+
+  const mappingOptions = mappingSearchTerm.trim()
+      ? productsFuse.search(mappingSearchTerm.trim()).map(r => r.item)
+      : products;
 
   return (
     <div className="space-y-6">
