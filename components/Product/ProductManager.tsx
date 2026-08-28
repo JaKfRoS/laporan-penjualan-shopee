@@ -150,14 +150,31 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
   const fetchProducts = async () => {
     setLoadingProducts(true);
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .eq('store_id', store.id)
-      .order('product_name');
-    
-    if (error) toast.error("Gagal memuat produk: " + error.message);
-    else setProducts(data || []);
+
+    // Paginate: a single request caps at 1000 rows, and stores can have more
+    // master SKUs than that — without this, products past the first 1000 would
+    // silently be invisible to search, mapping suggestions, and the list itself.
+    let allProducts: Product[] = [];
+    let from = 0;
+    const pageSize = 1000;
+    let fetchError: any = null;
+    while (true) {
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .eq('store_id', store.id)
+          .order('product_name')
+          .range(from, from + pageSize - 1);
+
+        if (error) { fetchError = error; break; }
+
+        allProducts = allProducts.concat(data || []);
+        if (!data || data.length < pageSize) break;
+        from += pageSize;
+    }
+
+    if (fetchError) toast.error("Gagal memuat produk: " + fetchError.message);
+    else setProducts(allProducts);
     
     setSelectedSkus(new Set()); 
     setLoadingProducts(false);
@@ -481,19 +498,36 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
 
   const fetchUnmappedItems = async () => {
     setLoadingMapping(true);
-    const { data, error } = await supabase
-      .from('order_items')
-      .select('product_name, variation')
-      .eq('store_id', store.id)
-      .eq('is_sku_mapped', false);
 
-    if (error) {
-        setLoadingMapping(false);
-        return;
+    // Supabase caps a single request at 1000 rows by default. Without pagination,
+    // stores with more than 1000 unmapped order_items would only ever see a
+    // partial, arbitrarily-ordered slice — so the "unmapped" count and list could
+    // look stuck even after mapping many items, since each refetch samples a
+    // different subset instead of the full remaining backlog.
+    let allItems: { product_name: string; variation: string | null }[] = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+        const { data, error } = await supabase
+          .from('order_items')
+          .select('product_name, variation')
+          .eq('store_id', store.id)
+          .eq('is_sku_mapped', false)
+          .range(from, from + pageSize - 1);
+
+        if (error) {
+            toast.error("Gagal memuat produk belum ter-mapping: " + error.message);
+            setLoadingMapping(false);
+            return;
+        }
+
+        allItems = allItems.concat(data || []);
+        if (!data || data.length < pageSize) break;
+        from += pageSize;
     }
 
     const groups: Record<string, number> = {};
-    data?.forEach(item => {
+    allItems.forEach(item => {
         const key = `${item.product_name}|||${item.variation || ''}`;
         groups[key] = (groups[key] || 0) + 1;
     });
