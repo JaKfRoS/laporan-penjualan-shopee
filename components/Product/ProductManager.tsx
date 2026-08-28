@@ -756,7 +756,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
                                         <option value="" className="p-3 text-slate-400">-- Pilih SKU Internal --</option>
                                         {mappingOptions.map(p => (
                                             <option key={p.sku} value={p.sku} className="p-3 border-b border-slate-100 dark:border-slate-700/50 hover:bg-orange-50 dark:hover:bg-orange-500/10 cursor-pointer">
-                                                {p.product_name} {p.variation_name ? `[${p.variation_name}]` : ''} ({p.sku})
+                                                [{p.sku}] {p.product_name} {p.variation_name ? `- ${p.variation_name}` : ''}
                                             </option>
                                         ))}
                                     </select>
