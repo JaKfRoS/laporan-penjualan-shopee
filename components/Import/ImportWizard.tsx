@@ -500,6 +500,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
 
       const incomeReportsToInsert: any[] = [];
       const incomeUpdates: { orderId: string, payload: any }[] = [];
+      const skuIncomeReportsToInsert: any[] = [];
 
       // Deteksi nama kolom untuk "Lihat berdasarkan" jika ada
       const viewByCol = incomeHeaders.find(h => {
@@ -508,18 +509,26 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       });
 
       incomeData.forEach(row => {
-         // Lewati baris pecahan (SKU) agar tidak terjadi double counting keuangan. 
-         // Kita hanya memproses baris ringkasan "Order" (jika format baru).
-         if (viewByCol) {
-             const viewByValue = String(row[viewByCol] || '').trim().toLowerCase();
-             if (viewByValue === 'sku') {
-                 return;
-             }
-         }
          const orderId = String(row[incomeMapping['order_id']] || row['No. Pesanan'] || '').trim();
          if (!orderId) return;
 
          const netRevenue = parseNumberIndonesia(row[incomeMapping['net_revenue']] || row['Total Penghasilan'] || row['Jumlah Dana Dilepaskan']);
+
+         // Jika ini baris SKU (detail produk), simpan terpisah untuk analisis variasi terlaris
+         if (viewByCol) {
+             const viewByValue = String(row[viewByCol] || '').trim().toLowerCase();
+             if (viewByValue === 'sku') {
+                 skuIncomeReportsToInsert.push({
+                     store_id: store.id,
+                     order_id: orderId,
+                     product_name: String(row['Nama Produk'] || row['Product Name'] || '').trim(),
+                     product_id: String(row['ID Produk'] || row['Product ID'] || '').trim(),
+                     original_price: Math.abs(parseNumberIndonesia(row[incomeMapping['original_price']] || row['Harga Asli Produk'])),
+                     net_revenue: netRevenue
+                 });
+                 return; // Lewati pemrosesan finance untuk baris ini
+             }
+         }
          const adminFee = Math.abs(parseNumberIndonesia(row[incomeMapping['admin_fee']] || row['Biaya Administrasi']));
          const serviceFee = Math.abs(parseNumberIndonesia(row[incomeMapping['service_fee']] || row['Biaya Layanan']));
          const amsFee = Math.abs(parseNumberIndonesia(row[incomeMapping['ams_commission']] || row['Biaya Komisi AMS']));
@@ -597,7 +606,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
              orderGroups[orderId].order.service_fee = totalMarketplaceFee;
              orderGroups[orderId].order.fee_details = feeDetails;
              if (incomeGmv > 0) {
-                 orderGroups[orderId].order.product_total = incomeGmv;
                  orderGroups[orderId].order._has_income_gmv = true;
              }
          }
@@ -693,7 +701,65 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
           }
       }
 
-      // 5.6 PROCESS ADJUSTMENT DATA
+      // 5.7 PROCESS SKU INCOME DATA (PRODUCT REVENUE BREAKDOWN)
+      if (skuIncomeReportsToInsert.length > 0) {
+          // Fetch existing order items for these orders to map variation and quantity
+          const orderIdsToFetch = Array.from(new Set(skuIncomeReportsToInsert.map(r => r.order_id)));
+          
+          let existingItems: any[] = [];
+          if (orderIdsToFetch.length > 0) {
+              const chunkSize = 100;
+              for (let i = 0; i < orderIdsToFetch.length; i += chunkSize) {
+                  const chunk = orderIdsToFetch.slice(i, i + chunkSize);
+                  const { data } = await supabase
+                      .from('order_items')
+                      .select('*')
+                      .eq('store_id', store.id)
+                      .in('order_id', chunk);
+                  if (data) existingItems = existingItems.concat(data);
+              }
+          }
+
+          const productLineItemsToInsert = skuIncomeReportsToInsert.map(skuRow => {
+              // Try to find the matching item in order_items
+              // Fallback to name matching if product_id is not reliable or missing
+              const possibleMatches = existingItems.filter(item => 
+                  item.order_id === skuRow.order_id && 
+                  item.product_name.toLowerCase().includes(skuRow.product_name.toLowerCase())
+              );
+
+              // If there are multiple matches (different variations), 
+              // we just pick the first one for now, or match by closest price (omitted for brevity)
+              const match = possibleMatches[0];
+
+              return {
+                  store_id: store.id,
+                  order_id: skuRow.order_id,
+                  product_id: skuRow.product_id,
+                  product_name: skuRow.product_name,
+                  variation_name: match ? match.variation : null,
+                  quantity: match ? match.quantity : 1,
+                  original_price: skuRow.original_price,
+                  net_revenue: skuRow.net_revenue,
+                  updated_at: new Date().toISOString()
+              };
+          });
+
+          const chunkSize = 500;
+          for (let i = 0; i < productLineItemsToInsert.length; i += chunkSize) {
+              const chunk = productLineItemsToInsert.slice(i, i + chunkSize);
+              const { error: lineItemError } = await supabase
+                  .from('product_line_items')
+                  .upsert(chunk, { onConflict: 'store_id, order_id, product_name, variation_name' });
+              
+              if (lineItemError) {
+                  console.warn("Gagal menyimpan Product Line Items (kemungkinan tabel belum ada, pastikan untuk membuat tabel product_line_items)", lineItemError);
+                  // We don't throw here to avoid failing the whole import just because the new table isn't created yet
+              }
+          }
+      }
+
+      // 5.8 UPDATE CACHE & UI
       if (adjustmentData.length > 0) {
           const adjustmentsToInsert = adjustmentData.map((row, index) => {
               const dateRaw = row['Tanggal Penyesuaian Dibuat'] || row['Tanggal Dana Dilepaskan'];

@@ -10,7 +10,7 @@ import { PerformanceTrendChart } from './PerformanceTrendChart';
 import { ProductChart } from './ProductChart';
 import { OrdersTable } from './OrdersTable';
 import { DateRangePicker } from './DateRangePicker';
-import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch } from 'lucide-react';
+import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle } from 'lucide-react';
 import { getSalesInsights } from '../../services/gemini';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -381,11 +381,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     const returnedOrders = data.filter(isReturnedOrder);
     const returnedCount = returnedOrders.length;
 
-    // A. Omzet Riil (GMV Selesai)
-    const omzetRiil = completedOrdersOnly.reduce((acc, o) => acc + Number(o.product_total || o.total_payment || 0), 0);
-
     // H. Kebocoran Ongkir (Shipping Leakage) & Settled Orders for Cash Flow
     const settledOrders = data.filter(o => isCompletedOrder(o) || isReturnedOrder(o));
+
+    // A. Omzet Riil (GMV Selesai + Retur agar konsisten dengan Dana Cair yang menggunakan settledOrders)
+    const omzetRiil = settledOrders.reduce((acc, o) => acc + Number(o.product_total || o.total_payment || 0), 0);
 
     // G. Total Penyesuaian & Biaya Iklan
     let biayaIklan = 0;
@@ -442,14 +442,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           amount
         });
         penyesuaianLain += amount;
-      }
-    });
-
-    completedOrdersOnly.forEach(o => {
-      if (o.fee_details) {
-        if (o.fee_details.auto_topup_fee) biayaIklan += Math.abs(o.fee_details.auto_topup_fee);
-        if (o.fee_details.seller_coin_cashback) biayaIklan += Math.abs(o.fee_details.seller_coin_cashback);
-        if (o.fee_details.seller_cofund_coin_cashback) biayaIklan += Math.abs(o.fee_details.seller_cofund_coin_cashback);
       }
     });
 
@@ -593,7 +585,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       feeBreakdown,
       adjustmentPlus,
       adjustmentMinus,
-      adjustmentDetails
+      adjustmentDetails,
+      isAnomaly: danaCair > omzetRiil && danaCair > 0
     };
   }, [filteredOrders, adjustments]);
 
@@ -1114,6 +1107,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             </button>
           </div>
         </div>
+
+        {metrics.isAnomaly && filters.mode !== 'order_date' && (
+          <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-4 rounded-xl mt-6 animate-in slide-in-from-top-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-black text-red-700 dark:text-red-400 uppercase tracking-wide">Peringatan Anomali Data</h4>
+                <p className="text-xs text-red-600 dark:text-red-300 mt-1 font-medium leading-relaxed">
+                  Dana Cair (Rp {metrics.danaCair.toLocaleString()}) saat ini lebih besar daripada Omzet Riil (Rp {metrics.omzetRiil.toLocaleString()}).
+                  Secara perhitungan ini tidak mungkin terjadi. Ini biasanya disebabkan karena ada pesanan di Laporan Penghasilan yang belum terhubung/cocok dengan Laporan Pesanan (Order). Pastikan Anda telah mengunggah Laporan Pesanan untuk periode yang mencakup pesanan-pesanan tersebut.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {insights && (
           <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-1 rounded-3xl shadow-xl animate-in slide-in-from-top-4 mt-6">
