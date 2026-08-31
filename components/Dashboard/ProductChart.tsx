@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
+import { chunk, mapWithConcurrency } from '../../services/concurrency';
 import { Package, ShoppingBag, TrendingUp, AlertCircle } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 
@@ -27,23 +28,19 @@ export const ProductChart: React.FC<ProductChartProps> = ({ storeId, allStoreIds
       setLoadingLineItems(true);
       try {
         const orderIds = orders.map(o => o.order_id);
-        const chunkSize = 100;
-        let allData: any[] = [];
-        
-        for (let i = 0; i < orderIds.length; i += chunkSize) {
-          const chunk = orderIds.slice(i, i + chunkSize);
-          let query = supabase.from('product_line_items').select('*').in('order_id', chunk);
+        // Was a serial loop: one round-trip per 100 orders, so a busy month cost
+        // dozens of sequential requests before the top-products panel appeared.
+        const results = await mapWithConcurrency(chunk(orderIds, 150), 5, async (ids) => {
+          let query = supabase.from('product_line_items').select('*').in('order_id', ids);
           if (allStoreIds && allStoreIds.length > 0) {
              query = query.in('store_id', allStoreIds);
           } else {
              query = query.eq('store_id', storeId);
           }
           const { data, error } = await query;
-          if (data && !error) {
-            allData = allData.concat(data);
-          }
-        }
-        setProductLineItems(allData);
+          return data && !error ? data : [];
+        });
+        setProductLineItems(results.flat());
       } catch (err) {
         console.error('Error fetching product line items', err);
       } finally {
