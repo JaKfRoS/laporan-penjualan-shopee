@@ -59,9 +59,9 @@ const INCOME_HEADER_ALIASES: Record<string, string[]> = {
   "seller_cofund_voucher": ["Voucher co-fund disponsor oleh Penjual", "Seller Co-fund Voucher"],
   "seller_coin_cashback": ["Cashback Koin disponsori Penjual", "Seller Coin Cashback"],
   "seller_cofund_coin_cashback": ["Cashback Koin Co-fund disponsori Penjual", "Seller Co-fund Coin Cashback"],
-  "shipping_discount_by_courier": ["Diskon Ongkir Ditanggung Jasa Kirim", "Shipping Discount by Courier"],
+  "shipping_discount_by_courier": ["Diskon Ongkir Ditanggung Jasa Kirim", "Potongan Ongkos Kirim dari Jasa Kirim", "Shipping Discount by Courier"],
   "shipping_refund": ["Pengembalian Biaya Kirim", "Shipping Refund"],
-  "return_to_sender_shipping_fee": ["Kembali ke Biaya Pengiriman Pengirim", "Return to Sender Shipping Fee"],
+  "return_to_sender_shipping_fee": ["Kembali ke Biaya Pengiriman Pengirim", "Return to Sender Shipping Fee", "Return to Seller Fee"],
   "save_shipping_program_fee": ["Biaya Program Hemat Biaya Kirim", "Save Shipping Program Fee"],
   "campaign_fee": ["Biaya Kampanye", "Campaign Fee"],
   "auto_topup_fee": ["Biaya Isi Saldo Otomatis (dari Penghasilan)", "Auto Top-up Fee"]
@@ -503,6 +503,15 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          if (found) incomeMapping[dbKey] = found;
       });
 
+      // "Biaya Gratis Ongkir XTRA" is split by parcel-size category into several
+      // columns ("... - Ukuran Biasa (Kategori D/F/G)", and Shopee adds more over
+      // time), so a single alias can't capture it. Sum every matching column —
+      // previously this fee was dropped entirely, understating marketplace fees.
+      const freeShippingXtraHeaders = incomeHeaders.filter(h => {
+          const cleanH = normalizeHeaderKey(h);
+          return cleanH.includes('gratisongkirxtra') || cleanH.includes('freeshippingxtra');
+      });
+
       const incomeReportsToInsert: any[] = [];
       const incomeUpdates: { orderId: string, payload: any }[] = [];
       const skuIncomeReportsToInsert: any[] = [];
@@ -557,6 +566,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          const saveShippingProgramFee = Math.abs(parseNumberIndonesia(row[incomeMapping['save_shipping_program_fee']] || row['Biaya Program Hemat Biaya Kirim']));
          const campaignFee = Math.abs(parseNumberIndonesia(row[incomeMapping['campaign_fee']] || row['Biaya Kampanye']));
          const autoTopupFee = Math.abs(parseNumberIndonesia(row[incomeMapping['auto_topup_fee']] || row['Biaya Isi Saldo Otomatis (dari Penghasilan)'] || row['Biaya Isi Saldo Otomatis']));
+         const freeShippingXtraFee = freeShippingXtraHeaders.reduce(
+            (sum, h) => sum + Math.abs(parseNumberIndonesia(row[h])), 0);
 
          const originalPrice = Math.abs(parseNumberIndonesia(row[incomeMapping['original_price']] || row['Harga Asli Produk']));
          const productDiscount = Math.abs(parseNumberIndonesia(row[incomeMapping['product_discount']] || row['Total Diskon Produk']));
@@ -565,7 +576,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          // Calculate total marketplace fee using GMV - Net Revenue for perfect accuracy if GMV is available
          // Note: Net Revenue = GMV + ShippingPaidByBuyer - TotalMarketplaceFee
          // So TotalMarketplaceFee = GMV + ShippingPaidByBuyer - Net Revenue
-         const calculatedFee = (adminFee + amsFee + serviceFee + procFee + premFee + shippingForwarded + returnShippingFee + sellerVoucher + refundAmount + transactionFee) - shippingRebate - shippingPaidByBuyer;
+         const calculatedFee = (adminFee + amsFee + serviceFee + procFee + premFee + shippingForwarded + returnShippingFee + sellerVoucher + refundAmount + transactionFee + freeShippingXtraFee) - shippingRebate - shippingPaidByBuyer;
          const totalMarketplaceFee = incomeGmv > 0 ? (incomeGmv + shippingPaidByBuyer - netRevenue) : calculatedFee;
          
          const feeDetails = {
@@ -590,7 +601,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
             return_to_sender_shipping_fee: returnToSenderShippingFee,
             save_shipping_program_fee: saveShippingProgramFee,
             campaign_fee: campaignFee,
-            auto_topup_fee: autoTopupFee
+            auto_topup_fee: autoTopupFee,
+            free_shipping_xtra_fee: freeShippingXtraFee
          };
 
          // Parse Release Date and Order Date if available

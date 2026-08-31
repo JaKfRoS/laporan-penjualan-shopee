@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../../services/supabase';
+import { chunk, mapWithConcurrency } from '../../services/concurrency';
 import { Store, Order } from '../../types';
 import { KPICard } from './KPICard';
 import { PerformanceTrendChart } from './PerformanceTrendChart';
@@ -159,27 +160,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
         ordersData = await fetchAll(query);
 
-        // Fetch corresponding income_reports to enrich fees/net revenue
+        // Fetch corresponding income_reports to enrich fees/net revenue.
+        // This is a plain select, so it takes a larger chunk than the orders
+        // query below without risking an over-long URL.
         if (ordersData.length > 0) {
           const orderIds = ordersData.map(o => o.order_id);
-          const CHUNK_SIZE = 60;
-          for (let i = 0; i < orderIds.length; i += CHUNK_SIZE) {
-            if (controller.signal.aborted) return;
-            const chunk = orderIds.slice(i, i + CHUNK_SIZE);
+          const incChunks = await mapWithConcurrency(chunk(orderIds, 120), 5, async (ids) => {
+            if (controller.signal.aborted) return [];
             try {
-              let chunkIncQuery = supabase.from('income_reports').select('*').in('order_id', chunk);
+              let chunkIncQuery = supabase.from('income_reports').select('*').in('order_id', ids);
               if (storeId === 'all') chunkIncQuery = chunkIncQuery.in('store_id', allStores!.map(s => s.id));
               else if (isMultiple) chunkIncQuery = chunkIncQuery.in('store_id', targetStoreIds);
               else chunkIncQuery = chunkIncQuery.eq('store_id', storeId);
 
               const { data: incChunk } = await chunkIncQuery;
-              if (incChunk && incChunk.length > 0) {
-                incomeData = [...incomeData, ...incChunk];
-              }
+              return incChunk || [];
             } catch (chunkIncErr) {
               console.warn("Income chunk enrichment skipped:", chunkIncErr);
+              return [];
             }
-          }
+          });
+          incomeData = incChunks.flat();
         }
       } else {
         // --- BASIS PESANAN SELESAI (release_date) ---
@@ -284,13 +285,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
       let additionalOrdersData: any[] = [];
       if (missingOrderIds.length > 0) {
-          // Use safe chunk size of 60 to prevent HTTP 414 URI Too Long errors on large accounts
-          const CHUNK_SIZE = 60;
-          for (let i = 0; i < missingOrderIds.length; i += CHUNK_SIZE) {
-             if (controller.signal.aborted) return;
-             const chunk = missingOrderIds.slice(i, i + CHUNK_SIZE);
+          // Chunk size stays at 60 to prevent HTTP 414 URI Too Long errors on large
+          // accounts; the chunks now run a few at a time instead of one by one.
+          const orderChunks = await mapWithConcurrency(chunk(missingOrderIds, 60), 5, async (ids) => {
+             if (controller.signal.aborted) return [];
              try {
-               let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', chunk);
+               let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', ids);
                if (storeId === 'all') {
                    if (allStores && allStores.length > 0) {
                       chunkQuery = chunkQuery.in('store_id', allStores.map(s => s.id));
@@ -301,13 +301,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                    chunkQuery = chunkQuery.eq('store_id', storeId);
                }
                const { data, error } = await chunkQuery;
-               if (!error && data && data.length > 0) {
-                   additionalOrdersData = [...additionalOrdersData, ...data];
-               }
+               return !error && data ? data : [];
              } catch (chunkErr) {
                console.warn("Chunk fetch warning for orders batch:", chunkErr);
+               return [];
              }
-          }
+          });
+          additionalOrdersData = orderChunks.flat();
       }
 
       const combinedOrders = [...(ordersData || []), ...additionalOrdersData];
@@ -479,7 +479,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       returnToSenderShippingFee: 0,
       saveShippingProgramFee: 0,
       campaignFee: 0,
-      autoTopupFee: 0
+      autoTopupFee: 0,
+      freeShippingXtra: 0
     };
 
     settledOrders.forEach(o => {
@@ -506,6 +507,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         feeBreakdown.saveShippingProgramFee += (o.fee_details.save_shipping_program_fee || 0);
         feeBreakdown.campaignFee += (o.fee_details.campaign_fee || 0);
         feeBreakdown.autoTopupFee += (o.fee_details.auto_topup_fee || 0);
+        feeBreakdown.freeShippingXtra += (o.fee_details.free_shipping_xtra_fee || 0);
       }
     });
 
@@ -524,12 +526,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       feeBreakdown.sellerCofundVoucher +
       feeBreakdown.sellerCoinCashback +
       feeBreakdown.sellerCofundCoinCashback +
-      feeBreakdown.shippingRefund +
       feeBreakdown.returnToSenderShippingFee +
       feeBreakdown.saveShippingProgramFee +
       feeBreakdown.campaignFee +
-      feeBreakdown.autoTopupFee
-    ) - feeBreakdown.shippingRebate - feeBreakdown.shippingPaidByBuyer - feeBreakdown.shippingDiscountByCourier - feeBreakdown.shopeeProductDiscount;
+      feeBreakdown.autoTopupFee +
+      feeBreakdown.freeShippingXtra
+    ) - feeBreakdown.shippingRebate - feeBreakdown.shippingPaidByBuyer - feeBreakdown.shippingDiscountByCourier - feeBreakdown.shopeeProductDiscount - feeBreakdown.shippingRefund;
 
     // D. Total HPP (Hanya untuk order yang SELESAI)
     const hppSelesai = completedOrdersOnly.reduce((acc, o) => {
@@ -691,7 +693,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           addRowIfNonZero("Gratis Ongkir dari Shopee", metrics.feeBreakdown.shippingRebate, "Pemasukan");
           addRowIfNonZero("Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim", -metrics.feeBreakdown.shippingForwarded, "Biaya");
           addRowIfNonZero("Ongkos Kirim Pengembalian Barang", -metrics.feeBreakdown.returnShipping, "Biaya", true);
-          addRowIfNonZero("Pengembalian Biaya Kirim", -metrics.feeBreakdown.shippingRefund, "Biaya");
+          addRowIfNonZero("Pengembalian Biaya Kirim", metrics.feeBreakdown.shippingRefund, "Pemasukan");
           addRowIfNonZero("Kembali ke Biaya Pengiriman Pengirim", -metrics.feeBreakdown.returnToSenderShippingFee, "Biaya");
 
           // Biaya Admin & Layanan
@@ -704,6 +706,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           addRowIfNonZero("Biaya Transaksi", -metrics.feeBreakdown.transaction, "Biaya");
           addRowIfNonZero("Biaya Kampanye", -metrics.feeBreakdown.campaignFee, "Biaya");
           addRowIfNonZero("Biaya Isi Saldo Otomatis (dari Penghasilan)", -metrics.feeBreakdown.autoTopupFee, "Biaya");
+          addRowIfNonZero("Biaya Gratis Ongkir XTRA", -metrics.feeBreakdown.freeShippingXtra, "Biaya");
 
           // Pengembalian Dana
           addRowIfNonZero("Jumlah Pengembalian Dana ke Pembeli", -metrics.feeBreakdown.refund, "Biaya", true);
@@ -1445,7 +1448,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 {metrics.feeBreakdown.shippingRefund !== 0 && (
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-slate-500 font-medium">Pengembalian Biaya Kirim</span>
-                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.shippingRefund.toLocaleString()}</span>
+                    <span className="text-xs font-bold text-green-600">+Rp {metrics.feeBreakdown.shippingRefund.toLocaleString()}</span>
                   </div>
                 )}
                 {metrics.feeBreakdown.returnToSenderShippingFee !== 0 && (
@@ -1493,6 +1496,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-slate-500 font-medium">Biaya Program Hemat Biaya Kirim</span>
                     <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.saveShippingProgramFee.toLocaleString()}</span>
+                  </div>
+                )}
+                {metrics.feeBreakdown.freeShippingXtra !== 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 font-medium">Biaya Gratis Ongkir XTRA</span>
+                    <span className="text-xs font-bold text-red-600">-Rp {metrics.feeBreakdown.freeShippingXtra.toLocaleString()}</span>
                   </div>
                 )}
                 {metrics.feeBreakdown.transaction !== 0 && (
