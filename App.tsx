@@ -19,6 +19,7 @@ const ProductManager = lazy(() => import('./components/Product/ProductManager').
 import { StoreSelector } from './components/StoreSelector';
 import { Layout } from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { deleteStoreWithData } from './services/storeDeletion';
 const AdsCenter = lazy(() => import('./components/Ads/AdsCenter'));
 const CashflowPage = lazy(() => import('./components/Cashflow/CashflowPage').then(m => ({ default: m.CashflowPage })));
 import { Toaster, toast } from 'react-hot-toast';
@@ -48,7 +49,6 @@ export default function App() {
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [showSqlGuide, setShowSqlGuide] = useState(false);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -289,12 +289,7 @@ export default function App() {
 
     const toastId = toast.loading('Menghapus toko...');
     try {
-      const { error } = await supabase
-        .from('stores')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      await deleteStoreWithData(supabase, id);
 
       const updatedStores = stores.filter(s => s.id !== id);
       setStores(updatedStores);
@@ -317,10 +312,8 @@ export default function App() {
     } catch (err: any) {
       console.error(err);
       if (await handleSupabaseError(err)) return;
-      // Jika error foreign key constraint, tampilkan panduan SQL
       if (err.code === '23503') {
-         toast.error("Gagal: Database menolak penghapusan. Jalankan script SQL Update.", { id: toastId });
-         setShowSqlGuide(true);
+         toast.error("Gagal: masih ada data lain yang terkait dengan toko ini.", { id: toastId });
       } else {
          toast.error("Gagal hapus toko: " + err.message, { id: toastId });
       }
@@ -370,6 +363,12 @@ export default function App() {
         .from('income_reports')
         .delete()
         .eq('store_id', currentStore.id);
+
+      // Hapus rincian produk per pesanan (kalau tabelnya sudah ada)
+      const { error: deleteLineItems } = await supabase
+        .from('product_line_items')
+        .delete()
+        .eq('store_id', currentStore.id);
         
       // Also clear mappings? Optional. Let's keep mappings for convenience, only clear transactions.
 
@@ -377,6 +376,7 @@ export default function App() {
       if (deleteAds) throw deleteAds;
       if (deleteAdjustments) throw deleteAdjustments;
       if (deleteIncome && !deleteIncome.message.includes('relation "income_reports" does not exist')) throw deleteIncome;
+      if (deleteLineItems && !/does not exist|schema cache/i.test(deleteLineItems.message || '')) throw deleteLineItems;
 
       toast.success("Data pesanan & iklan berhasil dikosongkan.", { id: loadingToast });
       setIsConfirmingClear(false);
@@ -386,7 +386,6 @@ export default function App() {
       console.error(err);
       if (await handleSupabaseError(err)) return;
       toast.error("Gagal hapus data: " + err.message, { id: loadingToast });
-      setShowSqlGuide(true);
     } finally {
       setIsDeleting(false);
     }
@@ -423,7 +422,6 @@ export default function App() {
       console.error(err);
       if (await handleSupabaseError(err)) return;
       toast.error("Gagal: " + err.message, { id: loadingToast });
-      setShowSqlGuide(true);
     } finally {
       setIsDeleting(false);
     }
