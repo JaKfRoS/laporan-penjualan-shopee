@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabase';
+import { chunk, mapWithConcurrency } from '../../services/concurrency';
 import { Store, Order } from '../../types';
 import { DateRangePicker } from '../Dashboard/DateRangePicker';
 import { Loader2, FileText, Upload, Plus, Trash2, Save, CheckCircle2, AlertCircle, ArrowDownUp, Pencil, X } from 'lucide-react';
@@ -231,12 +232,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
 
       let additionalOrdersData: any[] = [];
       if (missingOrderIds.length > 0) {
-          const CHUNK_SIZE = 60;
-          for (let i = 0; i < missingOrderIds.length; i += CHUNK_SIZE) {
-             if (controller.signal.aborted) return;
-             const chunk = missingOrderIds.slice(i, i + CHUNK_SIZE);
+          // Was a serial loop (one round-trip per 60 orders); now bounded parallel.
+          const missingChunks = await mapWithConcurrency(chunk(missingOrderIds, 60), 5, async (ids) => {
+             if (controller.signal.aborted) return [];
              try {
-               let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', chunk);
+               let chunkQuery = supabase.from('orders').select('*, order_items(*)').in('order_id', ids);
                if (store.id === 'all') {
                    if (allStores && allStores.length > 0) {
                       chunkQuery = chunkQuery.in('store_id', allStores.map(s => s.id));
@@ -247,13 +247,13 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                    chunkQuery = chunkQuery.eq('store_id', store.id);
                }
                const { data, error } = await chunkQuery;
-               if (!error && data && data.length > 0) {
-                   additionalOrdersData = [...additionalOrdersData, ...data];
-               }
+               return !error && data ? data : [];
              } catch (chunkErr) {
                console.warn("Chunk fetch warning in CashflowPage:", chunkErr);
+               return [];
              }
-          }
+          });
+          additionalOrdersData = missingChunks.flat();
       }
 
       const combinedOrders = [...(ordersData || []), ...additionalOrdersData];
@@ -851,17 +851,23 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       try {
           // Use upsert with ignoreDuplicates: true to let the database handle deduplication atomically
           // The unique constraint is on (store_id, order_id, adjustment_date, amount)
-          const { error, data } = await supabase
-              .from('adjustments')
-              .upsert(transactions, { 
-                  onConflict: 'store_id,order_id,adjustment_date,amount',
-                  ignoreDuplicates: true 
-              })
-              .select('id'); // Requesting IDs back to count how many were actually inserted
-          
-          if (error) throw error;
-          
-          const insertedCount = data?.length || 0;
+          // A balance-transaction report can carry a few thousand rows; sending them
+          // all in one request risks payload-size limits and makes one bad row fail
+          // the whole batch. Chunk it like ImportWizard does for its own upserts.
+          const insertedBatches = await mapWithConcurrency(chunk(transactions, 500), 3, async (batch) => {
+              const { error, data } = await supabase
+                  .from('adjustments')
+                  .upsert(batch, {
+                      onConflict: 'store_id,order_id,adjustment_date,amount',
+                      ignoreDuplicates: true
+                  })
+                  .select('id'); // Requesting IDs back to count how many were actually inserted
+
+              if (error) throw error;
+              return data || [];
+          });
+
+          const insertedCount = insertedBatches.flat().length;
           const skippedCount = transactions.length - insertedCount;
           
           if (insertedCount > 0) {
