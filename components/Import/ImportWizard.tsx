@@ -503,6 +503,24 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
          if (found) incomeMapping[dbKey] = found;
       });
 
+      // "Total Penghasilan" (net_revenue) is the one column the rest of this
+      // function cannot safely proceed without: every fee/profit figure in the
+      // app is ultimately derived from it. Some Shopee export variants (e.g.
+      // the per-SKU "Penghasilan" detail sheet) omit this column entirely —
+      // silently defaulting to 0 there previously corrupted Dana Cair/Profit
+      // Riil for the whole period without any indication something was wrong.
+      // Fail loudly instead: refuse the import and tell the user exactly why.
+      if (!incomeMapping['net_revenue']) {
+        toast.error(
+          'Gagal memproses Laporan Penghasilan: kolom "Total Penghasilan" tidak ditemukan di file ini. ' +
+          'Kemungkinan format file berbeda dari yang dikenali aplikasi. Data pesanan & keuangan TIDAK diimpor — ' +
+          'silakan cek kembali file yang diunduh dari Shopee, atau hubungi kami jika format filenya memang sudah benar.',
+          { duration: 8000 }
+        );
+        setIsProcessing(false);
+        return;
+      }
+
       // "Biaya Gratis Ongkir XTRA" is split by parcel-size category into several
       // columns ("... - Ukuran Biasa (Kategori D/F/G)", and Shopee adds more over
       // time), so a single alias can't capture it. Sum every matching column —
