@@ -1055,10 +1055,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     );
   }
 
+  // Saat filter/toko berganti, data lama masih ditampilkan sementara data baru
+  // dimuat (agar layar tidak blank/berkedip). Tandai secara jelas bahwa angka
+  // yang tampil masih data lama, supaya tidak disalahartikan sebagai hasil akhir.
+  const isRefreshing = loading && filteredOrders.length > 0;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 relative">
-      
-      <div>
+
+      {isRefreshing && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 bg-slate-900/90 dark:bg-slate-700/90 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-2xl backdrop-blur-sm animate-in fade-in slide-in-from-top-4">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          Memperbarui data...
+        </div>
+      )}
+
+      <div className={`transition-opacity duration-300 ${isRefreshing ? 'opacity-40 pointer-events-none select-none' : ''}`}>
         {/* Controls Header */}
         <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6">
           <div className="w-full xl:flex-1 flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-4">
