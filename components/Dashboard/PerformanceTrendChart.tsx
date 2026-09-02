@@ -31,7 +31,7 @@ export const PerformanceTrendChart: React.FC<PerformanceTrendChartProps> = ({ or
 
     orders.forEach(order => {
       try {
-        const rawDate = (order as any).release_date || order.order_date;
+        const rawDate = order.order_date;
         if (rawDate) {
           const dateStr = format(parseISO(rawDate), 'yyyy-MM-dd');
           if (dailyData[dateStr]) {
