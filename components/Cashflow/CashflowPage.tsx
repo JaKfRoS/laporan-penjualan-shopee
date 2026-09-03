@@ -471,23 +471,17 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
            
            const reasonLower = reason.toLowerCase();
             const isAdsText = reasonLower.includes('iklan') || reasonLower.includes('ads') || reasonLower.includes('koin penjual');
-            const isAdjustmentText = reasonLower.includes('penyesuaian') || 
-                                     reasonLower.includes('adjustment') || 
-                                     reasonLower.includes('kompensasi') || 
-                                     reasonLower.includes('reimbursement') ||
-                                     reasonLower.includes('ganti rugi') ||
-                                     reasonLower.includes('klaim') ||
-                                     reasonLower.includes('claim') ||
-                                     reasonLower.includes('selisih') ||
-                                     reasonLower.includes('perbedaan') ||
-                                     reasonLower.includes('perbaikan') ||
-                                     reasonLower.includes('pengembalian biaya');
 
             if (typeVal === 'Ads' || isAdsText) category = 'Isi Ulang Saldo Iklan/Koin Penjual';
-            else if (typeVal === 'Adjustment' || isAdjustmentText) category = 'Penyesuaian Saldo';
             else if (typeVal === 'Withdrawal') category = 'Penarikan Dana';
             else if (typeVal === 'Income') category = 'Penghasilan dari Pesanan';
-            else category = 'Transaksi Shopee Otomatis';
+            // Catch-all (mis. "Pencairan Dana Cepat"/"Pelunasan Dana Cepat", yang tidak match
+            // typeVal apapun dan tidak selalu mengandung kata kunci "penyesuaian"/"adjustment")
+            // dihitung sebagai Penyesuaian Saldo juga, konsisten dengan Dashboard yang menganggap
+            // semua transaksi selain Iklan/Withdrawal/Income sebagai penyesuaian. Sebelumnya
+            // transaksi seperti ini diberi label terpisah ("Transaksi Shopee Otomatis") dan
+            // tidak pernah ikut dijumlahkan ke KPI manapun, sehingga hilang dari Laba Bersih Riil.
+            else category = 'Penyesuaian Saldo';
 
 
            const fullDesc = descMatch ? descMatch[1].trim() : reason.replace('[AUTO_UPLOAD]', '').trim();

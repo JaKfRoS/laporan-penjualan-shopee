@@ -548,8 +548,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       return acc + orderHpp;
     }, 0);
 
-    // E. Profit Riil = Dana Cair - HPP + Penyesuaian
-    const profitRiil = danaCair - hppSelesai + penyesuaianLain;
+    // E. Profit Riil = Dana Cair - HPP - Biaya Iklan + Penyesuaian
+    // Biaya Iklan sebelumnya cuma ditampilkan sebagai KPI terpisah tanpa pernah dikurangkan
+    // ke Profit Riil, jadi angka yang ditampilkan sebagai "profit" sebenarnya belum
+    // memperhitungkan biaya iklan yang sudah dikeluarkan — overstated sejumlah biaya iklan itu.
+    const profitRiil = danaCair - hppSelesai - biayaIklan + penyesuaianLain;
 
     // F. Supporting Metrics
     const percentNetProfit = omzetRiil > 0 ? (profitRiil / omzetRiil) * 100 : 0;
@@ -666,7 +669,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           rows.push(["Dana Cair", metrics.danaCair, "Total pendapatan bersih yang diterima"]);
           rows.push(["HPP", -metrics.hppSelesai, "Total modal pokok produk pesanan selesai"]);
           rows.push(["Penyesuaian Shopee", metrics.adjustmentPlus + metrics.adjustmentMinus, "Total penyesuaian saldo (Kompensasi, Klaim, Bonus, dll)"]);
-          rows.push(["Profit Riil", metrics.profitRiil, "Dana Cair - HPP"]);
+          rows.push(["Profit Riil", metrics.profitRiil, "Dana Cair - HPP - Biaya Iklan + Penyesuaian"]);
           rows.push(["% Net Profit", `${metrics.percentNetProfit.toFixed(1)}%`, "Profit Riil / Omzet Riil"]);
           rows.push(["% Potongan Marketplace", `${metrics.percentPotonganOmzet.toFixed(1)}%`, "Potongan / Omzet Riil"]);
           rows.push(["Selisih Ongkir", metrics.shippingLeakage, "(Ongkir Pembeli + Gratis Ongkir) - (Ongkir Diteruskan + Ongkir Retur)"]);
@@ -877,7 +880,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         ['Dana Cair', `Rp ${metrics.danaCair.toLocaleString()}`, 'Total pendapatan bersih yang diterima'],
         ['HPP', `-Rp ${metrics.hppSelesai.toLocaleString()}`, 'Total modal pokok produk pesanan selesai'],
         ['Penyesuaian Shopee', `${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`, 'Total penyesuaian saldo (Kompensasi, Klaim, Bonus, dll)'],
-        ['Profit Riil', `Rp ${metrics.profitRiil.toLocaleString()}`, 'Dana Cair - HPP + Penyesuaian'],
+        ['Profit Riil', `Rp ${metrics.profitRiil.toLocaleString()}`, 'Dana Cair - HPP - Biaya Iklan + Penyesuaian'],
         ['% Net Profit', `${metrics.percentNetProfit.toFixed(1)}%`, 'Profit Riil / Omzet Riil'],
         ['% Potongan Marketplace', `${metrics.percentPotonganOmzet.toFixed(1)}%`, 'Potongan / Omzet Riil'],
         ['Selisih Ongkir', `-Rp ${metrics.shippingLeakage.toLocaleString()}`, 'Selisih ongkir pembeli vs aktual'],
@@ -1280,7 +1283,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   value={`Rp ${(metrics.profitRiil || 0).toLocaleString()}`} 
                   trend="Net Profit"
                   icon={<Wallet className="w-4 h-4 text-yellow-600" />}
-                  description="Dana Cair - HPP + Penyesuaian."
+                  description="Dana Cair - HPP - Biaya Iklan + Penyesuaian."
                   isHighlight
                 />
               </div>
