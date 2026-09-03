@@ -11,7 +11,7 @@ import { PerformanceTrendChart } from './PerformanceTrendChart';
 import { ProductChart } from './ProductChart';
 import { OrdersTable } from './OrdersTable';
 import { DateRangePicker } from './DateRangePicker';
-import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle } from 'lucide-react';
+import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getSalesInsights } from '../../services/gemini';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -60,7 +60,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
   const [loading, setLoading] = useState(true);
   const [insights, setInsights] = useState<string | null>(null);
   const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
-  
+  const [adjustmentsPage, setAdjustmentsPage] = useState(1);
+  const ADJUSTMENTS_PAGE_SIZE = 8;
+
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // 3. Refactor useEffect Fetching with specific dependencies
@@ -69,6 +71,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     return () => {
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
+  }, [filters.mode, filters.start, filters.end, store.id]);
+
+  // Reset ke halaman pertama setiap kali periode/toko berganti agar tidak nyangkut di halaman kosong
+  useEffect(() => {
+    setAdjustmentsPage(1);
   }, [filters.mode, filters.start, filters.end, store.id]);
 
   const fetchData = async (mode: string, start: string, end: string, storeId: string) => {
@@ -1337,7 +1344,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   <ArrowRightLeft className="w-5 h-5 text-purple-600" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">Rincian Penyesuaian Saldo</h3>
+                  <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">Rincian Penyesuaian</h3>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Dana Masuk/Keluar Non-Pesanan</p>
                 </div>
               </div>
@@ -1350,28 +1357,65 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                  </div>
               </div>
             </div>
-            <div className="p-0 overflow-x-auto">
-               <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50/50 dark:bg-slate-800/50 text-slate-400">
-                     <tr>
-                        <th className="px-6 py-3 font-black uppercase text-[10px] tracking-wider">Tanggal</th>
-                        <th className="px-6 py-3 font-black uppercase text-[10px] tracking-wider">Keterangan</th>
-                        <th className="px-6 py-3 font-black uppercase text-[10px] tracking-wider text-right">Nominal</th>
-                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                     {metrics.adjustmentDetails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((adj, idx) => (
-                        <tr key={adj.id || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                           <td className="px-6 py-3 font-medium text-slate-500 whitespace-nowrap">{format(new Date(adj.date), 'dd/MM/yyyy')}</td>
-                           <td className="px-6 py-3 font-bold text-slate-700 dark:text-slate-300">{adj.description}</td>
-                           <td className={`px-6 py-3 text-right font-black ${adj.amount < 0 ? 'text-red-500' : 'text-green-500'}`}>
-                              {adj.amount < 0 ? '-' : '+'}Rp {Math.abs(adj.amount).toLocaleString()}
-                           </td>
-                        </tr>
-                     ))}
-                  </tbody>
-               </table>
-            </div>
+            {(() => {
+              const sortedAdjustments = [...metrics.adjustmentDetails].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+              const totalPages = Math.max(1, Math.ceil(sortedAdjustments.length / ADJUSTMENTS_PAGE_SIZE));
+              const currentPage = Math.min(adjustmentsPage, totalPages);
+              const pageItems = sortedAdjustments.slice((currentPage - 1) * ADJUSTMENTS_PAGE_SIZE, currentPage * ADJUSTMENTS_PAGE_SIZE);
+              return (
+                <>
+                  <div className="p-0 overflow-x-auto">
+                     <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50/50 dark:bg-slate-800/50 text-slate-400">
+                           <tr>
+                              <th className="px-6 py-3 font-black uppercase text-[10px] tracking-wider">Tanggal</th>
+                              <th className="px-6 py-3 font-black uppercase text-[10px] tracking-wider">Keterangan</th>
+                              <th className="px-6 py-3 font-black uppercase text-[10px] tracking-wider text-right">Nominal</th>
+                           </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                           {pageItems.map((adj, idx) => (
+                              <tr key={adj.id || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                                 <td className="px-6 py-3 font-medium text-slate-500 whitespace-nowrap">{format(new Date(adj.date), 'dd/MM/yyyy')}</td>
+                                 <td className="px-6 py-3 font-bold text-slate-700 dark:text-slate-300">{adj.description}</td>
+                                 <td className={`px-6 py-3 text-right font-black ${adj.amount < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                    {adj.amount < 0 ? '-' : '+'}Rp {Math.abs(adj.amount).toLocaleString()}
+                                 </td>
+                              </tr>
+                           ))}
+                        </tbody>
+                     </table>
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="px-6 py-4 flex items-center justify-between gap-4 border-t border-slate-50 dark:border-slate-800">
+                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                         Halaman {currentPage} dari {totalPages}
+                       </span>
+                       <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAdjustmentsPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                            aria-label="Halaman sebelumnya"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAdjustmentsPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                            aria-label="Halaman selanjutnya"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                       </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 

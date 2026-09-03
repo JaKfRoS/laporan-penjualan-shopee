@@ -171,55 +171,55 @@ export const ProductChart: React.FC<ProductChartProps> = ({ storeId, allStoreIds
         {loadingLineItems && <div className="text-xs text-slate-400 animate-pulse">Menghitung analitik variasi...</div>}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
         {topProducts.map((product, index) => {
           const key = `${product.name}:::${product.variation}`;
           return (
-          <div 
-            key={index} 
-            className="group bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden flex flex-col p-4 relative"
+          <div
+            key={index}
+            className="group bg-white dark:bg-slate-900 rounded-lg sm:rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden flex flex-col p-2 sm:p-4 relative"
             id={`top-product-card-${index}`}
           >
-            <div className="absolute top-0 left-0 w-8 h-8 bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-black rounded-br-xl z-10 text-xs">
+            <div className="absolute top-0 left-0 w-6 h-6 sm:w-8 sm:h-8 bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-black rounded-br-lg sm:rounded-br-xl z-10 text-[10px] sm:text-xs">
               #{index + 1}
             </div>
-            
+
             {/* Image Placeholder */}
-            <div className="w-full aspect-square bg-slate-50 dark:bg-slate-800/50 rounded-lg mb-4 flex items-center justify-center border border-slate-100 dark:border-slate-800 relative overflow-hidden">
+            <div className="w-full aspect-square bg-slate-50 dark:bg-slate-800/50 rounded-md sm:rounded-lg mb-2 sm:mb-4 flex items-center justify-center border border-slate-100 dark:border-slate-800 relative overflow-hidden">
                <div className="relative">
-                 <Package className="w-12 h-12 text-slate-200 dark:text-slate-700" />
+                 <Package className="w-8 h-8 sm:w-12 sm:h-12 text-slate-200 dark:text-slate-700" />
                </div>
             </div>
 
             {/* Product Info */}
-            <div className="mb-4 text-center">
-              <h4 className="text-sm font-bold text-slate-800 dark:text-white line-clamp-2 min-h-[2.5rem] leading-tight mb-1" title={product.name}>
+            <div className="mb-2 sm:mb-4 text-center">
+              <h4 className="text-[11px] sm:text-sm font-bold text-slate-800 dark:text-white line-clamp-2 min-h-[2rem] sm:min-h-[2.5rem] leading-tight mb-1" title={product.name}>
                 {product.name}
               </h4>
               {product.variation && (
-                <span className="inline-block px-2 py-0.5 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-[10px] font-bold rounded-md truncate max-w-full">
+                <span className="inline-block px-1.5 sm:px-2 py-0.5 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-[9px] sm:text-[10px] font-bold rounded-md truncate max-w-full">
                   {product.variation}
                 </span>
               )}
             </div>
 
-            <div className="w-full space-y-2 mb-4 mt-auto">
-              <div className="flex justify-between items-center text-[11px] leading-tight">
-                <span className="text-slate-500 font-medium">Qty Terjual:</span>
+            <div className="w-full space-y-1 sm:space-y-2 mb-2 sm:mb-4 mt-auto">
+              <div className="flex justify-between items-center text-[10px] sm:text-[11px] leading-tight">
+                <span className="text-slate-500 font-medium">Qty:</span>
                 <span className="text-slate-900 dark:text-slate-300 font-bold">{product.qty} pcs</span>
               </div>
-              <div className="flex justify-between items-center text-[11px] leading-tight">
+              <div className="flex justify-between items-center text-[10px] sm:text-[11px] leading-tight">
                 <span className="text-slate-500 font-medium">Revenue:</span>
                 <span className="text-green-600 font-black">Rp {(product.total / 1000000).toFixed(1)}jt</span>
               </div>
             </div>
 
             {/* 30 Days Badge Footer */}
-            <div className="mt-4 pt-2 flex items-center justify-between gap-2 border-t border-slate-50 dark:border-slate-800">
-               <div className="bg-orange-500 text-white text-[8px] font-black px-2 py-1 rounded-[4px] uppercase whitespace-nowrap">
-                  Omzet 30hr
+            <div className="mt-2 sm:mt-4 pt-2 flex items-center justify-between gap-1 sm:gap-2 border-t border-slate-50 dark:border-slate-800">
+               <div className="bg-orange-500 text-white text-[7px] sm:text-[8px] font-black px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-[4px] uppercase whitespace-nowrap">
+                  30hr
                </div>
-               <span className="text-[11px] font-black text-orange-500">
+               <span className="text-[10px] sm:text-[11px] font-black text-orange-500">
                  {loading30Days ? '...' : `Rp ${((last30DaysData[key] || 0) / 1000000).toFixed(1)}jt`}
                </span>
             </div>
