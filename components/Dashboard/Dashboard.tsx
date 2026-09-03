@@ -116,7 +116,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       let adjQuery = supabase
         .from('adjustments')
         .select('*')
-        .order('adjustment_date', { ascending: false });
+        // adjustment_date sendirian bukan kunci unik (ratusan baris/hari berbagi
+        // tanggal yang sama), jadi pagination .range() di bawah bisa melewatkan
+        // atau menduplikasi baris tanpa tie-breaker kedua yang unik.
+        .order('adjustment_date', { ascending: false })
+        .order('id', { ascending: true });
 
       if (storeId === 'all') {
         if (allStores && allStores.length > 0) {
@@ -152,7 +156,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         let query = supabase
           .from('orders')
           .select('*, order_items(*)')
-          .order('order_date', { ascending: false, nullsFirst: false });
+          .order('order_date', { ascending: false, nullsFirst: false })
+          .order('id', { ascending: true });
 
         if (storeId === 'all') {
           query = query.in('store_id', allStores!.map(s => s.id));
@@ -195,7 +200,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         let incQuery = supabase
           .from('income_reports')
           .select('*')
-          .order('release_date', { ascending: false, nullsFirst: false });
+          .order('release_date', { ascending: false, nullsFirst: false })
+          .order('id', { ascending: true });
 
         if (storeId === 'all') {
           incQuery = incQuery.in('store_id', allStores!.map(s => s.id));
@@ -216,7 +222,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             let fallbackIncQuery = supabase
               .from('income_reports')
               .select('*')
-              .order('release_date', { ascending: false, nullsFirst: false });
+              .order('release_date', { ascending: false, nullsFirst: false })
+              .order('id', { ascending: true });
             if (storeId === 'all') fallbackIncQuery = fallbackIncQuery.in('store_id', allStores!.map(s => s.id));
             else if (isMultiple) fallbackIncQuery = fallbackIncQuery.in('store_id', targetStoreIds);
             else fallbackIncQuery = fallbackIncQuery.eq('store_id', storeId);
@@ -234,7 +241,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             .from('orders')
             .select('*, order_items(*)')
             .not('release_date', 'is', null)
-            .order('release_date', { ascending: false, nullsFirst: false });
+            .order('release_date', { ascending: false, nullsFirst: false })
+            .order('id', { ascending: true });
 
           if (storeId === 'all') ordReleaseQuery = ordReleaseQuery.in('store_id', allStores!.map(s => s.id));
           else if (isMultiple) ordReleaseQuery = ordReleaseQuery.in('store_id', targetStoreIds);
@@ -256,7 +264,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
             let fallbackCompletedQuery = supabase
               .from('orders')
               .select('*, order_items(*)')
-              .order('order_date', { ascending: false, nullsFirst: false });
+              .order('order_date', { ascending: false, nullsFirst: false })
+              .order('id', { ascending: true });
 
             if (storeId === 'all') fallbackCompletedQuery = fallbackCompletedQuery.in('store_id', allStores!.map(s => s.id));
             else if (isMultiple) fallbackCompletedQuery = fallbackCompletedQuery.in('store_id', targetStoreIds);

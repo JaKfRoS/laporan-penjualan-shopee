@@ -120,7 +120,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       let incomeQuery = supabase
         .from('income_reports')
         .select('*')
-        .order('release_date', { ascending: false, nullsFirst: false });
+        .order('release_date', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: true });
 
       if (store.id === 'all') {
         if (allStores && allStores.length > 0) {
@@ -148,7 +149,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           let fallbackInc = supabase
             .from('income_reports')
             .select('*')
-            .order('release_date', { ascending: false, nullsFirst: false });
+            .order('release_date', { ascending: false, nullsFirst: false })
+            .order('id', { ascending: true });
           if (store.id === 'all') fallbackInc = fallbackInc.in('store_id', allStores!.map(s => s.id));
           else if (isMultiple) fallbackInc = fallbackInc.in('store_id', targetStoreIds);
           else fallbackInc = fallbackInc.eq('store_id', store.id);
@@ -166,7 +168,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           .from('orders')
           .select('*, order_items(*)')
           .not('release_date', 'is', null)
-          .order('release_date', { ascending: false });
+          .order('release_date', { ascending: false })
+          .order('id', { ascending: true });
 
         if (store.id === 'all') {
           if (allStores && allStores.length > 0) {
@@ -193,7 +196,8 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           let fbOrdersQuery = supabase
             .from('orders')
             .select('*, order_items(*)')
-            .order('order_date', { ascending: false, nullsFirst: false });
+            .order('order_date', { ascending: false, nullsFirst: false })
+            .order('id', { ascending: true });
 
           if (store.id === 'all') {
             if (allStores && allStores.length > 0) {
