@@ -34,6 +34,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const [activeTab, setActiveTab] = useState<'summary' | 'upload' | 'manual'>('summary');
   
   // Metrics
+  const [omzetRiil, setOmzetRiil] = useState(0);
   const [netRevenueSelesai, setNetRevenueSelesai] = useState(0);
   const [totalHPPSelesai, setTotalHPPSelesai] = useState(0);
   const [adsTotal, setAdsTotal] = useState(0);
@@ -297,6 +298,10 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       };
 
       const settledOrders = mergedOrders.filter(o => isCompletedOrder(o) || isReturnedOrder(o));
+
+      // 1b. Omzet Riil (Penjualan Kotor, sebelum potongan marketplace) — dasar untuk Laba Kotor
+      const omzet = settledOrders.reduce((acc, o) => acc + Number(o.product_total || o.total_payment || 0), 0);
+      setOmzetRiil(omzet);
 
       // 2. Net Revenue (Uang Cair)
       const revenue = settledOrders.reduce((acc, o) => {
@@ -992,6 +997,15 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     .reduce((acc, tx) => acc + tx.amount, 0);
   
   const finalAdsTotal = adsTotal + autoTopupTotal;
+  // Potongan Marketplace = selisih antara Omzet Riil (kotor) dan Dana Cair (net_revenue dari Shopee),
+  // dijamin selalu rekonsil karena diturunkan dari netRevenueSelesai (sumber yang sudah divalidasi),
+  // bukan dihitung ulang dari fee_details (yang punya celah kecil, mis. Penyesuaian Penjual dari Shopee).
+  const potonganMarketplace = Math.max(0, omzetRiil - netRevenueSelesai);
+  const labaKotor = netRevenueSelesai - totalHPPSelesai;
+  // Struktur mengikuti urutan baku Laporan Laba Rugi: Penjualan -> Potongan Marketplace -> Dana Cair
+  // -> HPP -> Laba Kotor -> Beban Operasional (Iklan/Manual/Penyesuaian) -> Laba Bersih.
+  // Angka akhir sengaja identik dengan versi sebelumnya (hanya disusun ulang tampilannya);
+  // Penarikan Dana TIDAK ikut di sini karena itu perpindahan saldo, bukan beban.
   const labaBersihRiil = netRevenueSelesai - finalAdsTotal + totalManualExpenses - totalHPPSelesai + shopeeAdjustmentsTotal;
 
   const generatePDF = () => {
@@ -1005,12 +1019,14 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     doc.text(`Tanggal Cetak: ${new Date().toLocaleString('id-ID')}`, 14, 34);
 
     const tableBody = [
-      ['1. Total Dana Masuk (Penghasilan Pesanan)', `Rp ${netRevenueSelesai.toLocaleString()}`],
-      ['2. Total Potongan Saldo (Iklan/Koin)', `(Rp ${finalAdsTotal.toLocaleString()})`],
-      ['3. Total Penarikan Dana (Withdrawal)', `(Rp ${withdrawalsTotal.toLocaleString()})`],
-      ['4. Total Penyesuaian dari Shopee', `${shopeeAdjustmentsTotal < 0 ? '-' : '+'}Rp ${Math.abs(shopeeAdjustmentsTotal).toLocaleString()}`],
-      ['5. Total Penyesuaian Manual', `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`],
-      ['6. Total HPP (Modal Produk)', `(Rp ${totalHPPSelesai.toLocaleString()})`],
+      ['1. Penjualan (Omzet Riil)', `Rp ${omzetRiil.toLocaleString()}`],
+      ['2. Potongan Marketplace', `(Rp ${potonganMarketplace.toLocaleString()})`],
+      ['= Dana Cair', `Rp ${netRevenueSelesai.toLocaleString()}`],
+      ['3. Harga Pokok Penjualan (HPP)', `(Rp ${totalHPPSelesai.toLocaleString()})`],
+      ['= Laba Kotor', `Rp ${labaKotor.toLocaleString()}`],
+      ['4. Beban Iklan', `(Rp ${finalAdsTotal.toLocaleString()})`],
+      ['5. Beban/Pemasukan Operasional Manual', `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`],
+      ['6. Penyesuaian Lain dari Shopee', `${shopeeAdjustmentsTotal < 0 ? '-' : '+'}Rp ${Math.abs(shopeeAdjustmentsTotal).toLocaleString()}`],
       ['LABA BERSIH RIIL', `Rp ${labaBersihRiil.toLocaleString()}`],
     ];
 
@@ -1024,7 +1040,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         1: { halign: 'right', fontStyle: 'bold' }
       },
       didParseCell: function(data) {
-        if (data.row.index === 6) {
+        if (data.row.index === 2 || data.row.index === 4) {
+            data.cell.styles.fillColor = [236, 240, 241];
+            data.cell.styles.fontStyle = 'bold';
+        }
+        if (data.row.index === 8) {
             data.cell.styles.fillColor = [46, 204, 113];
             data.cell.styles.textColor = [255, 255, 255];
             data.cell.styles.fontStyle = 'bold';
@@ -1032,7 +1052,16 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       }
     });
 
-    let currentY = (doc as any).lastAutoTable.finalY + 10;
+    let currentY = (doc as any).lastAutoTable.finalY + 6;
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text(
+      `Total Penarikan Dana (Withdrawal): Rp ${withdrawalsTotal.toLocaleString()} — info saja, perpindahan saldo ke rekening bank, tidak mengurangi Laba Bersih.`,
+      14,
+      currentY
+    );
+    doc.setTextColor(0);
+    currentY += 10;
 
     if (isAllStores && allStores) {
       doc.addPage();
@@ -1206,38 +1235,48 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                     <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">1. Total Dana Masuk</td>
-                      <td className="px-6 py-4 text-right text-green-600 font-bold">Rp {netRevenueSelesai.toLocaleString()}</td>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">1. Penjualan (Omzet Riil)</td>
+                      <td className="px-6 py-4 text-right text-green-600 font-bold">Rp {omzetRiil.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right text-slate-400">Nilai Pesanan Selesai/Retur</td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">2. Potongan Marketplace</td>
+                      <td className="px-6 py-4 text-right text-red-600 font-bold">-Rp {potonganMarketplace.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right text-slate-400">Fee Shopee (Penghasilan Pesanan)</td>
+                    </tr>
+                    <tr className="bg-slate-50/50 dark:bg-slate-800/30">
+                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">= Dana Cair</td>
+                      <td className="px-6 py-4 text-right text-slate-700 dark:text-slate-300 font-bold">Rp {netRevenueSelesai.toLocaleString()}</td>
                       <td className="px-6 py-4 text-right text-slate-400">Penghasilan Pesanan</td>
                     </tr>
                     <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">2. Total Potongan Saldo</td>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">3. Harga Pokok Penjualan (HPP)</td>
+                      <td className="px-6 py-4 text-right text-orange-600 font-bold">-Rp {totalHPPSelesai.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right text-slate-400">Modal Produk</td>
+                    </tr>
+                    <tr className="bg-slate-50/50 dark:bg-slate-800/30">
+                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">= Laba Kotor</td>
+                      <td className="px-6 py-4 text-right text-slate-700 dark:text-slate-300 font-bold">Rp {labaKotor.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right text-slate-400">Dana Cair − HPP</td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">4. Beban Iklan</td>
                       <td className="px-6 py-4 text-right text-red-600 font-bold">-Rp {finalAdsTotal.toLocaleString()}</td>
                       <td className="px-6 py-4 text-right text-slate-400">Iklan/Koin (Upload)</td>
                     </tr>
                     <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">3. Total Penarikan Dana</td>
-                      <td className="px-6 py-4 text-right text-red-600 font-bold">-Rp {withdrawalsTotal.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right text-slate-400">Withdrawal (Upload)</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">4. Total Penyesuaian dari Shopee</td>
-                      <td className={`px-6 py-4 text-right font-bold ${shopeeAdjustmentsTotal < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {shopeeAdjustmentsTotal < 0 ? '-' : '+'}Rp {Math.abs(shopeeAdjustmentsTotal).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 text-right text-slate-400">Adjustment (Upload)</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">5. Total Penyesuaian Manual</td>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">5. Beban/Pemasukan Operasional Manual</td>
                       <td className={`px-6 py-4 text-right font-bold ${totalManualExpenses < 0 ? 'text-red-600' : 'text-green-600'}`}>
                         {totalManualExpenses < 0 ? '-' : '+'}Rp {Math.abs(totalManualExpenses).toLocaleString()}
                       </td>
                       <td className="px-6 py-4 text-right text-slate-400">Manual (Biaya/Pemasukan)</td>
                     </tr>
                     <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">6. Total HPP</td>
-                      <td className="px-6 py-4 text-right text-orange-600 font-bold">-Rp {totalHPPSelesai.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right text-slate-400">Modal Produk</td>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">6. Penyesuaian Lain dari Shopee</td>
+                      <td className={`px-6 py-4 text-right font-bold ${shopeeAdjustmentsTotal < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {shopeeAdjustmentsTotal < 0 ? '-' : '+'}Rp {Math.abs(shopeeAdjustmentsTotal).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 text-right text-slate-400">Adjustment (Upload)</td>
                     </tr>
                     <tr className="bg-blue-50/50 dark:bg-blue-900/20">
                       <td className="px-6 py-4 font-black text-blue-700 dark:text-blue-400 text-lg">LABA BERSIH RIIL</td>
@@ -1246,6 +1285,16 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              {/* Penarikan Dana bukan beban (bukan bagian Laba Rugi) — cuma perpindahan saldo Shopee
+                  ke rekening bank, jadi ditampilkan terpisah sebagai info, bukan pengurang laba. */}
+              <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Penarikan Dana (Withdrawal)</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Info saja — perpindahan saldo ke rekening bank, tidak mengurangi Laba Bersih</p>
+                </div>
+                <p className="text-lg font-black text-slate-600 dark:text-slate-300 whitespace-nowrap">Rp {withdrawalsTotal.toLocaleString()}</p>
               </div>
 
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden mt-6">
