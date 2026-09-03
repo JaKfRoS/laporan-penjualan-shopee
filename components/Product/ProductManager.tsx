@@ -195,6 +195,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({ store }) => {
           .select('*')
           .eq('store_id', store.id)
           .order('product_name')
+          .order('sku', { ascending: true })
           .range(from, from + pageSize - 1);
 
         if (error) { fetchError = error; break; }
