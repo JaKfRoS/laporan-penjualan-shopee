@@ -1002,6 +1002,30 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   // Penarikan Dana TIDAK ikut di sini karena itu perpindahan saldo, bukan beban.
   const labaBersihRiil = netRevenueSelesai - finalAdsTotal + totalManualExpenses - totalHPPSelesai + shopeeAdjustmentsTotal;
 
+  // Baris Ringkasan Laporan dipakai bareng oleh render tabel desktop & card mobile,
+  // supaya angka/format tidak bisa drift antara kedua tampilan.
+  const ringkasanRows: { label: string; value: string; valueClass: string; source: string; variant?: 'subtotal' | 'total' }[] = [
+    { label: '1. Penjualan (Omzet Riil)', value: `Rp ${omzetRiil.toLocaleString()}`, valueClass: 'text-green-600', source: 'Nilai Pesanan Selesai/Retur' },
+    { label: '2. Potongan Marketplace', value: `-Rp ${potonganMarketplace.toLocaleString()}`, valueClass: 'text-red-600', source: 'Fee Shopee (Penghasilan Pesanan)' },
+    { label: '= Dana Cair', value: `Rp ${netRevenueSelesai.toLocaleString()}`, valueClass: 'text-slate-700 dark:text-slate-300', source: 'Penghasilan Pesanan', variant: 'subtotal' },
+    { label: '3. Harga Pokok Penjualan (HPP)', value: `-Rp ${totalHPPSelesai.toLocaleString()}`, valueClass: 'text-orange-600', source: 'Modal Produk' },
+    { label: '= Laba Kotor', value: `Rp ${labaKotor.toLocaleString()}`, valueClass: 'text-slate-700 dark:text-slate-300', source: 'Dana Cair − HPP', variant: 'subtotal' },
+    { label: '4. Biaya Iklan', value: `-Rp ${finalAdsTotal.toLocaleString()}`, valueClass: 'text-red-600', source: 'Iklan/Koin (Upload)' },
+    {
+      label: '5. Beban/Pemasukan Operasional Manual',
+      value: `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`,
+      valueClass: totalManualExpenses < 0 ? 'text-red-600' : 'text-green-600',
+      source: 'Manual (Biaya/Pemasukan)',
+    },
+    {
+      label: '6. Penyesuaian Lain dari Shopee',
+      value: `${shopeeAdjustmentsTotal < 0 ? '-' : '+'}Rp ${Math.abs(shopeeAdjustmentsTotal).toLocaleString()}`,
+      valueClass: shopeeAdjustmentsTotal < 0 ? 'text-red-600' : 'text-green-600',
+      source: 'Adjustment (Upload)',
+    },
+    { label: 'LABA BERSIH RIIL', value: `Rp ${labaBersihRiil.toLocaleString()}`, valueClass: 'text-blue-700 dark:text-blue-400', source: 'Final Profit', variant: 'total' },
+  ];
+
   const generatePDF = () => {
     const doc = new jsPDF();
     const isAllStores = store.id === 'all';
@@ -1218,7 +1242,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         <div className="space-y-6">
           {activeTab === 'summary' && (
             <div className="space-y-6">
-              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto">
+              <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto">
                 <table className="w-full text-sm text-left min-w-[600px] mb-0">
                   <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
                     <tr>
@@ -1228,57 +1252,53 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                    <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">1. Penjualan (Omzet Riil)</td>
-                      <td className="px-6 py-4 text-right text-green-600 font-bold">Rp {omzetRiil.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right text-slate-400">Nilai Pesanan Selesai/Retur</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">2. Potongan Marketplace</td>
-                      <td className="px-6 py-4 text-right text-red-600 font-bold">-Rp {potonganMarketplace.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right text-slate-400">Fee Shopee (Penghasilan Pesanan)</td>
-                    </tr>
-                    <tr className="bg-slate-50/50 dark:bg-slate-800/30">
-                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">= Dana Cair</td>
-                      <td className="px-6 py-4 text-right text-slate-700 dark:text-slate-300 font-bold">Rp {netRevenueSelesai.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right text-slate-400">Penghasilan Pesanan</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">3. Harga Pokok Penjualan (HPP)</td>
-                      <td className="px-6 py-4 text-right text-orange-600 font-bold">-Rp {totalHPPSelesai.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right text-slate-400">Modal Produk</td>
-                    </tr>
-                    <tr className="bg-slate-50/50 dark:bg-slate-800/30">
-                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">= Laba Kotor</td>
-                      <td className="px-6 py-4 text-right text-slate-700 dark:text-slate-300 font-bold">Rp {labaKotor.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right text-slate-400">Dana Cair − HPP</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">4. Biaya Iklan</td>
-                      <td className="px-6 py-4 text-right text-red-600 font-bold">-Rp {finalAdsTotal.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right text-slate-400">Iklan/Koin (Upload)</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">5. Beban/Pemasukan Operasional Manual</td>
-                      <td className={`px-6 py-4 text-right font-bold ${totalManualExpenses < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {totalManualExpenses < 0 ? '-' : '+'}Rp {Math.abs(totalManualExpenses).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 text-right text-slate-400">Manual (Biaya/Pemasukan)</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">6. Penyesuaian Lain dari Shopee</td>
-                      <td className={`px-6 py-4 text-right font-bold ${shopeeAdjustmentsTotal < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {shopeeAdjustmentsTotal < 0 ? '-' : '+'}Rp {Math.abs(shopeeAdjustmentsTotal).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 text-right text-slate-400">Adjustment (Upload)</td>
-                    </tr>
-                    <tr className="bg-blue-50/50 dark:bg-blue-900/20">
-                      <td className="px-6 py-4 font-black text-blue-700 dark:text-blue-400 text-lg">LABA BERSIH RIIL</td>
-                      <td className="px-6 py-4 text-right text-blue-700 dark:text-blue-400 font-black text-lg">Rp {labaBersihRiil.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right text-blue-500 font-medium">Final Profit</td>
-                    </tr>
+                    {ringkasanRows.map((row, i) => (
+                      <tr
+                        key={row.label}
+                        className={
+                          row.variant === 'total'
+                            ? 'bg-blue-50/50 dark:bg-blue-900/20'
+                            : row.variant === 'subtotal'
+                            ? 'bg-slate-50/50 dark:bg-slate-800/30'
+                            : undefined
+                        }
+                      >
+                        <td className={row.variant === 'total' ? 'px-6 py-4 font-black text-blue-700 dark:text-blue-400 text-lg' : row.variant === 'subtotal' ? 'px-6 py-4 font-bold text-slate-700 dark:text-slate-300' : 'px-6 py-4 font-medium text-slate-900 dark:text-white'}>
+                          {row.label}
+                        </td>
+                        <td className={`px-6 py-4 text-right font-bold ${row.valueClass} ${row.variant === 'total' ? 'text-lg' : ''}`}>
+                          {row.value}
+                        </td>
+                        <td className={row.variant === 'total' ? 'px-6 py-4 text-right text-blue-500 font-medium' : 'px-6 py-4 text-right text-slate-400'}>
+                          {row.source}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="md:hidden space-y-2">
+                {ringkasanRows.map((row) => (
+                  <div
+                    key={row.label}
+                    className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${
+                      row.variant === 'total'
+                        ? 'bg-blue-50/50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900/40'
+                        : row.variant === 'subtotal'
+                        ? 'bg-slate-50/50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-700'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className={row.variant === 'total' ? 'font-black text-blue-700 dark:text-blue-400 text-sm' : row.variant === 'subtotal' ? 'font-bold text-slate-700 dark:text-slate-300 text-xs' : 'font-medium text-slate-900 dark:text-white text-xs'}>
+                        {row.label}
+                      </p>
+                      <p className={`text-[10px] mt-0.5 ${row.variant === 'total' ? 'text-blue-500' : 'text-slate-400'}`}>{row.source}</p>
+                    </div>
+                    <p className={`font-bold whitespace-nowrap ${row.valueClass} ${row.variant === 'total' ? 'text-base' : 'text-sm'}`}>{row.value}</p>
+                  </div>
+                ))}
               </div>
 
               {/* Penarikan Dana bukan beban (bukan bagian Laba Rugi) — cuma perpindahan saldo Shopee
@@ -1305,94 +1325,141 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                     {sortOrder === 'asc' ? 'Terlama - Terbaru' : 'Terbaru - Terlama'}
                   </button>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
-                      <tr>
-                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Tanggal</th>
-                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Kategori</th>
-                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Deskripsi</th>
-                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-right">Nominal</th>
-                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-center">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                      {[...manualTransactions]
-                        .sort((a, b) => {
-                          const timeA = new Date(a.date).getTime();
-                          const timeB = new Date(b.date).getTime();
-                          return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
-                        })
-                        .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                        .map((tx) => (
-                        <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                          <td className="px-6 py-4 font-medium whitespace-nowrap">{format(new Date(tx.date), 'dd/MM/yyyy')}</td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              tx.category === 'Penghasilan dari Pesanan' ? 'bg-green-100 text-green-700' :
-                              tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual' ? 'bg-red-100 text-red-700' :
-                              tx.category === 'Penarikan Dana' ? 'bg-blue-100 text-blue-700' :
-                              'bg-slate-100 text-slate-700'
-                            }`}>
-                              {tx.category}
-                            </span>
-                          </td>
-                           <td className="px-6 py-4 text-slate-600 dark:text-slate-400 max-w-xs">
-                             <div className="truncate font-medium" title={tx.description}>{tx.description}</div>
-                             {tx.fullReason?.includes('[AUTO_UPLOAD]') && (
-                               <div className="text-[10px] text-slate-400 mt-1 flex flex-wrap gap-1">
-                                 {(() => {
-                                   const reason = tx.fullReason || '';
-                                   const orderMatch = reason.match(/Order: ([^|]+)/);
-                                   const transMatch = reason.match(/Trans: ([^|]+)/);
-                                   const statusMatch = reason.match(/Status: ([^|]+)/);
-                                   const typeMatch = reason.match(/TransType: ([^|]+)/);
-                                   return (
-                                     <>
-                                       {orderMatch && orderMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Ord: {orderMatch[1]}</span>}
-                                       {transMatch && transMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Trx: {transMatch[1]}</span>}
-                                       {statusMatch && statusMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Stat: {statusMatch[1]}</span>}
-                                       {typeMatch && typeMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Tipe: {typeMatch[1]}</span>}
-                                     </>
-                                   );
-                                 })()}
-                               </div>
-                             )}
-                           </td>
-                          <td className={`px-6 py-4 text-right font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            {tx.amount < 0 ? '-' : '+'}Rp {Math.abs(tx.amount).toLocaleString()}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center justify-center gap-2">
-                              <button 
-                                onClick={() => setEditingTx(tx)}
-                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                                title="Edit"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button 
-                                onClick={() => tx.id && deleteTransaction(tx.id)}
-                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                title="Hapus"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                {(() => {
+                  const pagedRecentTx = [...manualTransactions]
+                    .sort((a, b) => {
+                      const timeA = new Date(a.date).getTime();
+                      const timeB = new Date(b.date).getTime();
+                      return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+                    })
+                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+                  const renderReasonTags = (tx: any) => tx.fullReason?.includes('[AUTO_UPLOAD]') && (() => {
+                    const reason = tx.fullReason || '';
+                    const orderMatch = reason.match(/Order: ([^|]+)/);
+                    const transMatch = reason.match(/Trans: ([^|]+)/);
+                    const statusMatch = reason.match(/Status: ([^|]+)/);
+                    const typeMatch = reason.match(/TransType: ([^|]+)/);
+                    return (
+                      <div className="text-[10px] text-slate-400 mt-1 flex flex-wrap gap-1">
+                        {orderMatch && orderMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Ord: {orderMatch[1]}</span>}
+                        {transMatch && transMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Trx: {transMatch[1]}</span>}
+                        {statusMatch && statusMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Stat: {statusMatch[1]}</span>}
+                        {typeMatch && typeMatch[1] !== '-' && <span className="bg-slate-100 dark:bg-slate-700 px-1 rounded">Tipe: {typeMatch[1]}</span>}
+                      </div>
+                    );
+                  })();
+
+                  const categoryBadgeClass = (category: string) =>
+                    category === 'Penghasilan dari Pesanan' ? 'bg-green-100 text-green-700' :
+                    category === 'Isi Ulang Saldo Iklan/Koin Penjual' ? 'bg-red-100 text-red-700' :
+                    category === 'Penarikan Dana' ? 'bg-blue-100 text-blue-700' :
+                    'bg-slate-100 text-slate-700';
+
+                  return (
+                    <>
+                      <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
+                            <tr>
+                              <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Tanggal</th>
+                              <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Kategori</th>
+                              <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Deskripsi</th>
+                              <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-right">Nominal</th>
+                              <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-center">Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                            {pagedRecentTx.map((tx) => (
+                              <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                <td className="px-6 py-4 font-medium whitespace-nowrap">{format(new Date(tx.date), 'dd/MM/yyyy')}</td>
+                                <td className="px-6 py-4">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${categoryBadgeClass(tx.category)}`}>
+                                    {tx.category}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-slate-600 dark:text-slate-400 max-w-xs">
+                                  <div className="truncate font-medium" title={tx.description}>{tx.description}</div>
+                                  {renderReasonTags(tx)}
+                                </td>
+                                <td className={`px-6 py-4 text-right font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                  {tx.amount < 0 ? '-' : '+'}Rp {Math.abs(tx.amount).toLocaleString()}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button
+                                      onClick={() => setEditingTx(tx)}
+                                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                      title="Edit"
+                                    >
+                                      <Pencil size={14} />
+                                    </button>
+                                    <button
+                                      onClick={() => tx.id && deleteTransaction(tx.id)}
+                                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                      title="Hapus"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                            {manualTransactions.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
+                                  Belum ada data transaksi untuk ditampilkan
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-700">
+                        {pagedRecentTx.map((tx) => (
+                          <div key={tx.id} className="px-4 py-3">
+                            <div className="flex items-start justify-between gap-2 mb-1.5">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${categoryBadgeClass(tx.category)}`}>
+                                {tx.category}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">{format(new Date(tx.date), 'dd/MM/yyyy')}</span>
                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {manualTransactions.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
+                            <p className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">{tx.description}</p>
+                            {renderReasonTags(tx)}
+                            <div className="flex items-center justify-between gap-2 mt-2">
+                              <span className={`text-sm font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {tx.amount < 0 ? '-' : '+'}Rp {Math.abs(tx.amount).toLocaleString()}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => setEditingTx(tx)}
+                                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                  title="Edit"
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                                <button
+                                  onClick={() => tx.id && deleteTransaction(tx.id)}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                  title="Hapus"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {manualTransactions.length === 0 && (
+                          <div className="px-6 py-12 text-center text-slate-400 italic text-sm">
                             Belum ada data transaksi untuk ditampilkan
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+
                 {manualTransactions.length > 0 && (
                   <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div className="flex items-center gap-2">
@@ -1652,61 +1719,105 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
               </div>
 
               <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
-                    <tr>
-                      <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Tanggal</th>
-                      {store.id === 'all' && <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Toko</th>}
-                      <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Kategori</th>
-                      <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Deskripsi</th>
-                      <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs text-right">Nominal</th>
-                      <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs text-center">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                    {manualTransactions
-                      .filter(tx => tx.isManual)
-                      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                      .slice((currentPageManual - 1) * itemsPerPage, currentPageManual * itemsPerPage)
-                      .map((tx) => (
-                      <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td className="px-6 py-4 font-medium">{format(new Date(tx.date), 'dd/MM/yyyy')}</td>
-                        {store.id === 'all' && (
-                          <td className="px-6 py-4">
-                            <span className="text-xs font-medium text-slate-500">{tx.storeName}</span>
-                          </td>
-                        )}
-                        <td className="px-6 py-4">
-                          <span className="px-3 py-1 bg-slate-100 dark:bg-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300">
-                            {tx.category}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{tx.description}</td>
-                        <td className={`px-6 py-4 text-right font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                          {tx.amount < 0 ? '-' : '+'}Rp {Math.abs(tx.amount).toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <button 
-                            onClick={() => tx.id && deleteTransaction(tx.id)}
-                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {manualTransactions.filter(tx => tx.isManual).length === 0 && (
-                      <tr>
-                        <td colSpan={store.id === 'all' ? 6 : 5} className="px-6 py-12 text-center text-slate-400 italic">
-                          <div className="flex flex-col items-center gap-2">
+                {(() => {
+                  const pagedManualTx = manualTransactions
+                    .filter(tx => tx.isManual)
+                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                    .slice((currentPageManual - 1) * itemsPerPage, currentPageManual * itemsPerPage);
+                  const isEmpty = manualTransactions.filter(tx => tx.isManual).length === 0;
+
+                  return (
+                    <>
+                      <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
+                            <tr>
+                              <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Tanggal</th>
+                              {store.id === 'all' && <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Toko</th>}
+                              <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Kategori</th>
+                              <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs">Deskripsi</th>
+                              <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs text-right">Nominal</th>
+                              <th className="px-6 py-4 font-bold uppercase tracking-wider text-xs text-center">Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                            {pagedManualTx.map((tx) => (
+                              <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                <td className="px-6 py-4 font-medium">{format(new Date(tx.date), 'dd/MM/yyyy')}</td>
+                                {store.id === 'all' && (
+                                  <td className="px-6 py-4">
+                                    <span className="text-xs font-medium text-slate-500">{tx.storeName}</span>
+                                  </td>
+                                )}
+                                <td className="px-6 py-4">
+                                  <span className="px-3 py-1 bg-slate-100 dark:bg-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300">
+                                    {tx.category}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{tx.description}</td>
+                                <td className={`px-6 py-4 text-right font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                  {tx.amount < 0 ? '-' : '+'}Rp {Math.abs(tx.amount).toLocaleString()}
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                  <button
+                                    onClick={() => tx.id && deleteTransaction(tx.id)}
+                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                            {isEmpty && (
+                              <tr>
+                                <td colSpan={store.id === 'all' ? 6 : 5} className="px-6 py-12 text-center text-slate-400 italic">
+                                  <div className="flex flex-col items-center gap-2">
+                                    <AlertCircle className="w-8 h-8 opacity-20" />
+                                    <p>Belum ada transaksi manual</p>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-700">
+                        {pagedManualTx.map((tx) => (
+                          <div key={tx.id} className="px-4 py-3">
+                            <div className="flex items-start justify-between gap-2 mb-1.5">
+                              <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                {tx.category}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">{format(new Date(tx.date), 'dd/MM/yyyy')}</span>
+                            </div>
+                            {store.id === 'all' && (
+                              <p className="text-[10px] text-slate-500 font-medium mb-1">{tx.storeName}</p>
+                            )}
+                            <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">{tx.description}</p>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`text-sm font-bold ${tx.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {tx.amount < 0 ? '-' : '+'}Rp {Math.abs(tx.amount).toLocaleString()}
+                              </span>
+                              <button
+                                onClick={() => tx.id && deleteTransaction(tx.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {isEmpty && (
+                          <div className="px-6 py-12 text-center text-slate-400 italic text-sm flex flex-col items-center gap-2">
                             <AlertCircle className="w-8 h-8 opacity-20" />
                             <p>Belum ada transaksi manual</p>
                           </div>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               {manualTransactions.filter(tx => tx.isManual).length > 0 && (
