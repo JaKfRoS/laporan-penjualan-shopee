@@ -1024,7 +1024,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
       ['= Dana Cair', `Rp ${netRevenueSelesai.toLocaleString()}`],
       ['3. Harga Pokok Penjualan (HPP)', `(Rp ${totalHPPSelesai.toLocaleString()})`],
       ['= Laba Kotor', `Rp ${labaKotor.toLocaleString()}`],
-      ['4. Beban Iklan', `(Rp ${finalAdsTotal.toLocaleString()})`],
+      ['4. Biaya Iklan', `(Rp ${finalAdsTotal.toLocaleString()})`],
       ['5. Beban/Pemasukan Operasional Manual', `${totalManualExpenses < 0 ? '-' : '+'}Rp ${Math.abs(totalManualExpenses).toLocaleString()}`],
       ['6. Penyesuaian Lain dari Shopee', `${shopeeAdjustmentsTotal < 0 ? '-' : '+'}Rp ${Math.abs(shopeeAdjustmentsTotal).toLocaleString()}`],
       ['LABA BERSIH RIIL', `Rp ${labaBersihRiil.toLocaleString()}`],
@@ -1260,7 +1260,7 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
                       <td className="px-6 py-4 text-right text-slate-400">Dana Cair − HPP</td>
                     </tr>
                     <tr>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">4. Beban Iklan</td>
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">4. Biaya Iklan</td>
                       <td className="px-6 py-4 text-right text-red-600 font-bold">-Rp {finalAdsTotal.toLocaleString()}</td>
                       <td className="px-6 py-4 text-right text-slate-400">Iklan/Koin (Upload)</td>
                     </tr>
