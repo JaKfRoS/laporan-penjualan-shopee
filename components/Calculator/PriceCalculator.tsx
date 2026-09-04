@@ -155,18 +155,21 @@ export const PriceCalculator: React.FC<PriceCalculatorProps> = ({ store }) => {
     setSearchSku(`${product.sku} - ${product.product_name}`);
     setShowSkuDropdown(false);
 
-    // Fetch last selling price from order_items
+    // Fetch last selling price: order_items itself has no created_at/date column,
+    // so recency has to come from the parent orders row via order_date instead.
     try {
       const { data, error } = await supabase
-        .from('order_items')
-        .select('unit_price')
-        .eq('final_sku', product.sku)
+        .from('orders')
+        .select('order_date, order_items!inner(unit_price)')
         .eq('store_id', store.id)
-        .order('created_at', { ascending: false })
+        .eq('order_items.final_sku', product.sku)
+        .order('order_date', { ascending: false })
         .limit(1);
 
-      if (data && data.length > 0) {
-        setPrice(data[0].unit_price);
+      if (error) throw error;
+
+      if (data && data.length > 0 && data[0].order_items.length > 0) {
+        setPrice(data[0].order_items[0].unit_price);
       }
     } catch (err) {
       console.error("Error fetching last selling price:", err);
