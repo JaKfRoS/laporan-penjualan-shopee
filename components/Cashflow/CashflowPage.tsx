@@ -8,12 +8,24 @@ import { toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 
 interface CashflowPageProps {
   store: Store;
   allStores?: Store[];
 }
+
+// Rentang default saat halaman pertama dibuka (belum ada filter dipilih user):
+// bulan berjalan, bukan '' - dateRange kosong membuat semua .gte/.lte di bawah
+// ter-skip sehingga query menarik SELURUH riwayat data (lambat & makin berat
+// seiring data bertambah).
+const getDefaultMonthRange = () => {
+  const now = new Date();
+  return {
+    start: format(startOfMonth(now), 'yyyy-MM-dd'),
+    end: format(endOfMonth(now), 'yyyy-MM-dd'),
+  };
+};
 
 interface ManualTransaction {
   id?: string;
@@ -30,7 +42,7 @@ interface ManualTransaction {
 
 export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) => {
   const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [dateRange, setDateRange] = useState(getDefaultMonthRange);
   const [activeTab, setActiveTab] = useState<'summary' | 'upload' | 'manual'>('summary');
   
   // Metrics
