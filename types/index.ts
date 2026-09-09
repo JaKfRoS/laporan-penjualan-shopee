@@ -85,6 +85,8 @@ export interface IklanProdukMapping {
   proses_pesanan: number;
   pot_admin_persen: number;
   operasional_persen: number;
+  target_acos_override: number | null;
+  target_roas_override: number | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -114,6 +116,7 @@ export interface IklanKpiTarget {
   target_ctr: number | null;
   target_konversi: number | null;
   rekomendasi_aktif: boolean;
+  biaya_termasuk_ppn: boolean;
   created_at?: string;
   updated_at?: string;
 }

@@ -1,4 +1,4 @@
-import { IklanMingguan, IklanProdukMapping, Product } from '../../types';
+import { IklanMingguan, IklanProdukMapping, Product, IklanKpiTarget } from '../../types';
 
 // Rumus metrik & margin dipusatkan di sini supaya dashboard, halaman per-produk,
 // dan rule engine rekomendasi (fase berikutnya) semuanya membaca angka yang
@@ -41,6 +41,15 @@ export const calcAdsMetrics = (row: AdsAggregate): AdsMetrics => ({
   cpc: row.klik > 0 ? row.biaya / row.klik : 0,
 });
 
+// Biaya di file export Shopee Ads Manager tidak termasuk PPN 11% - biaya yang
+// benar-benar keluar dari saldo lebih tinggi dari angka yang diupload. Dipakai
+// lewat toggle per toko (iklan_kpi_target.biaya_termasuk_ppn) supaya seller
+// yang datanya kebetulan sudah termasuk PPN tidak salah dihitung dobel.
+export const PPN_IKLAN_RATE = 0.11;
+
+export const applyPpnAdjustment = (agg: AdsAggregate, biayaTermasukPpn: boolean): AdsAggregate =>
+  biayaTermasukPpn ? agg : { ...agg, biaya: agg.biaya * (1 + PPN_IKLAN_RATE) };
+
 export type HppSource = 'master' | 'manual' | 'none';
 
 export interface HppResolution {
@@ -73,34 +82,70 @@ export const resolveHpp = (
   return { value: null, source: 'none', masterValue: null, berbedaDariMaster: false };
 };
 
-export interface MarginResult {
-  grossMarginPerUnit: number | null; // null = data HPP/harga jual belum lengkap
-  bepRoas: number | null;
-  marginSetelahIklan: number | null; // agregat periode: (marginPerUnit x unit terjual) - biaya iklan
+export interface ResolvedKpiTarget {
+  targetAcos: number;
+  targetRoas: number;
+  acosSource: 'produk' | 'toko';
+  roasSource: 'produk' | 'toko';
 }
 
-// Margin per-unit dihitung dari harga jual & HPP yang dikonfigurasi (bukan dari
-// omzet aktual periode ini - omzet bisa naik-turun karena diskon/promo, sementara
-// harga jual & HPP di sini adalah acuan/target yang dipakai untuk keputusan iklan).
+// Target per produk (opsional) menang di atas target default toko - dua-duanya
+// tetap ada: toko yang belum mengatur override produk tetap dievaluasi dengan
+// target tokonya, produk yang perlu perlakuan khusus (margin tipis/tebal beda
+// dari rata-rata toko) bisa diberi target sendiri.
+export const resolveKpiTarget = (
+  mapping: Pick<IklanProdukMapping, 'target_acos_override' | 'target_roas_override'> | null | undefined,
+  storeTarget: Pick<IklanKpiTarget, 'target_acos' | 'target_roas'>
+): ResolvedKpiTarget => {
+  const acosOverride = mapping?.target_acos_override ?? null;
+  const roasOverride = mapping?.target_roas_override ?? null;
+  return {
+    targetAcos: acosOverride !== null ? acosOverride : storeTarget.target_acos,
+    targetRoas: roasOverride !== null ? roasOverride : storeTarget.target_roas,
+    acosSource: acosOverride !== null ? 'produk' : 'toko',
+    roasSource: roasOverride !== null ? 'produk' : 'toko',
+  };
+};
+
+export type MarginGapReason = 'hpp-belum-lengkap' | 'belum-ada-penjualan' | null;
+
+export interface MarginResult {
+  grossMarginRatio: number | null; // margin kotor (sebelum iklan) sebagai rasio dari omzet, mis. 0.25 = 25%
+  bepRoas: number | null; // ROAS titik impas: di bawah ini iklan menggerus margin kotor
+  marginSetelahIklan: number | null; // omzet - HPP - biaya proses/admin/operasional - biaya iklan
+  gapReason: MarginGapReason;
+}
+
+// Margin dihitung langsung dari omzet & unit terjual AKTUAL periode ini (dari
+// laporan iklan), bukan dari "harga jual" yang diasumsikan/diketik manual -
+// jadi tidak butuh setup harga jual terpisah, dan otomatis mengikuti harga
+// jual sesungguhnya termasuk diskon/promo yang sedang berjalan. Hanya HPP
+// (dari Master Produk atau override) dan biaya proses/admin%/operasional%
+// yang perlu diketahui.
 export const calcMargin = (
   hpp: number | null,
-  hargaJual: number | null,
   prosesPesanan: number,
   potAdminPersen: number,
   operasionalPersen: number,
   ads: AdsAggregate
 ): MarginResult => {
-  if (hpp === null || !hargaJual || hargaJual <= 0) {
-    return { grossMarginPerUnit: null, bepRoas: null, marginSetelahIklan: null };
+  if (hpp === null) {
+    return { grossMarginRatio: null, bepRoas: null, marginSetelahIklan: null, gapReason: 'hpp-belum-lengkap' };
+  }
+  if (ads.omzet <= 0 || ads.produk_terjual <= 0) {
+    return { grossMarginRatio: null, bepRoas: null, marginSetelahIklan: null, gapReason: 'belum-ada-penjualan' };
   }
 
-  const potAdmin = hargaJual * (potAdminPersen / 100);
-  const operasional = hargaJual * (operasionalPersen / 100);
-  const grossMarginPerUnit = hargaJual - hpp - prosesPesanan - potAdmin - operasional;
-  const bepRoas = grossMarginPerUnit > 0 ? hargaJual / grossMarginPerUnit : 0;
-  const marginSetelahIklan = grossMarginPerUnit * ads.produk_terjual - ads.biaya;
+  const hppTotal = hpp * ads.produk_terjual;
+  const prosesTotal = prosesPesanan * ads.produk_terjual;
+  const potAdminTotal = ads.omzet * (potAdminPersen / 100);
+  const operasionalTotal = ads.omzet * (operasionalPersen / 100);
+  const grossMarginTotal = ads.omzet - hppTotal - prosesTotal - potAdminTotal - operasionalTotal;
+  const grossMarginRatio = grossMarginTotal / ads.omzet;
+  const bepRoas = grossMarginRatio > 0 ? 1 / grossMarginRatio : 0;
+  const marginSetelahIklan = grossMarginTotal - ads.biaya;
 
-  return { grossMarginPerUnit, bepRoas, marginSetelahIklan };
+  return { grossMarginRatio, bepRoas, marginSetelahIklan, gapReason: null };
 };
 
 export type StatusKesehatan = 'sehat' | 'waspada' | 'perlu-aksi';

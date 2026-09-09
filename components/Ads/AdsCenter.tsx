@@ -7,11 +7,11 @@ import AdsKpiSettings, { DEFAULT_KPI_TARGET } from './AdsKpiSettings';
 import AdsRekomendasi from './AdsRekomendasi';
 import ConfirmModal from './ConfirmModal';
 import {
-  calcAdsMetrics, sumAdsRows, resolveHpp, calcMargin, calcStatusKesehatan,
+  calcAdsMetrics, sumAdsRows, resolveHpp, calcMargin, calcStatusKesehatan, applyPpnAdjustment, resolveKpiTarget,
   groupIklanMingguanByProduk, iklanGroupKey, AdsAggregate, StatusKesehatan,
 } from './adsHelpers';
 import {
-  Megaphone, Layers, DollarSign, Percent, ChevronLeft, Link2, AlertTriangle, TrendingUp, Target, Sparkles, Trash2,
+  Megaphone, Layers, DollarSign, Percent, ChevronLeft, Link2, AlertTriangle, TrendingUp, Target, Sparkles, Trash2, Save, RotateCcw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -28,6 +28,9 @@ const getDefaultMonthRange = () => {
 };
 
 const formatRupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
+
+const marginGapLabel = (reason: 'hpp-belum-lengkap' | 'belum-ada-penjualan' | null) =>
+  reason === 'belum-ada-penjualan' ? 'Belum ada penjualan' : 'Data HPP belum lengkap';
 
 const JENIS_OPTIONS: { value: 'all' | JenisIklan; label: string }[] = [
   { value: 'all', label: 'Semua Jenis Iklan' },
@@ -56,12 +59,20 @@ export default function AdsCenter({ store }: AdsCenterProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [deletingWeek, setDeletingWeek] = useState<IklanMingguan | null>(null);
   const [deletingWeekBusy, setDeletingWeekBusy] = useState(false);
+  const [editingTarget, setEditingTarget] = useState(false);
+  const [targetAcosInput, setTargetAcosInput] = useState('');
+  const [targetRoasInput, setTargetRoasInput] = useState('');
+  const [savingTarget, setSavingTarget] = useState(false);
 
   const isMultiple = (store as any).is_multiple || store.id === 'all';
 
   useEffect(() => {
     fetchData();
   }, [store.id, dateRange.start, dateRange.end]);
+
+  useEffect(() => {
+    setEditingTarget(false);
+  }, [selectedKey]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -134,6 +145,32 @@ export default function AdsCenter({ store }: AdsCenterProps) {
     }
   };
 
+  const handleSaveTargetOverride = async (namaIklanRaw: string, storeId: string) => {
+    const acos = targetAcosInput.trim() === '' ? null : Number(targetAcosInput);
+    const roas = targetRoasInput.trim() === '' ? null : Number(targetRoasInput);
+    if ((acos !== null && (isNaN(acos) || acos <= 0)) || (roas !== null && (isNaN(roas) || roas <= 0))) {
+      toast.error('Target ACOS/ROAS harus angka lebih dari 0, atau dikosongkan untuk pakai target toko');
+      return;
+    }
+    setSavingTarget(true);
+    try {
+      const { error } = await supabase
+        .from('iklan_produk_mapping')
+        .upsert(
+          { store_id: storeId, nama_iklan_raw: namaIklanRaw, target_acos_override: acos, target_roas_override: roas, updated_at: new Date().toISOString() },
+          { onConflict: 'store_id,nama_iklan_raw' }
+        );
+      if (error) throw error;
+      toast.success('Target produk ini berhasil disimpan');
+      setEditingTarget(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Gagal menyimpan: ' + err.message);
+    } finally {
+      setSavingTarget(false);
+    }
+  };
+
   const filteredRows = useMemo(
     () => (jenisFilter === 'all' ? rows : rows.filter(r => r.jenis_iklan === jenisFilter)),
     [rows, jenisFilter]
@@ -146,10 +183,22 @@ export default function AdsCenter({ store }: AdsCenterProps) {
   const productByKey = useMemo(() => new Map(products.map(p => [`${p.store_id}::${p.sku}`, p])), [products]);
   const targetByStore = useMemo(() => new Map(kpiTargets.map(t => [t.store_id, t])), [kpiTargets]);
 
-  const overall = sumAdsRows(filteredRows);
+  // Biaya di file export belum termasuk PPN 11% (kecuali toko menyatakan sudah
+  // via Setup KPI) - disesuaikan di sini, per baris berdasarkan target toko
+  // masing-masing, sebelum dipakai di ACOS/ROAS/Margin mana pun di bawah.
+  const adjustedRows = useMemo(
+    () =>
+      filteredRows.map(r => {
+        const target = targetByStore.get(r.store_id) || DEFAULT_KPI_TARGET;
+        return { ...r, biaya: applyPpnAdjustment(r, target.biaya_termasuk_ppn).biaya };
+      }),
+    [filteredRows, targetByStore]
+  );
+
+  const overall = sumAdsRows(adjustedRows);
   const overallMetrics = calcAdsMetrics(overall);
 
-  const grouped = useMemo(() => groupIklanMingguanByProduk(filteredRows), [filteredRows]);
+  const grouped = useMemo(() => groupIklanMingguanByProduk(adjustedRows), [adjustedRows]);
 
   const productRows = useMemo(() => {
     return Array.from(grouped.entries()).map(([key, weekRows]) => {
@@ -162,16 +211,16 @@ export default function AdsCenter({ store }: AdsCenterProps) {
       const hpp = resolveHpp(mapping, product || null);
       const margin = calcMargin(
         hpp.value,
-        mapping?.harga_jual_override ?? null,
         mapping?.proses_pesanan ?? 1250,
         mapping?.pot_admin_persen ?? 0,
         mapping?.operasional_persen ?? 0,
         agg
       );
-      const target = targetByStore.get(storeId) || DEFAULT_KPI_TARGET;
-      const status = calcStatusKesehatan(metrics.acos, target.target_acos, margin.marginSetelahIklan);
+      const storeTarget = targetByStore.get(storeId) || DEFAULT_KPI_TARGET;
+      const target = resolveKpiTarget(mapping, storeTarget);
+      const status = calcStatusKesehatan(metrics.acos, target.targetAcos, margin.marginSetelahIklan);
       const jenisIklan = weekRows.find(w => w.jenis_iklan)?.jenis_iklan ?? null;
-      return { key, namaIklanRaw, storeId, jenisIklan, agg, metrics, mapping, product, hpp, margin, status };
+      return { key, namaIklanRaw, storeId, jenisIklan, agg, metrics, mapping, product, hpp, margin, target, status };
     }).sort((a, b) => b.agg.biaya - a.agg.biaya);
   }, [grouped, mappingByKey, productByKey, targetByStore]);
 
@@ -250,10 +299,90 @@ export default function AdsCenter({ store }: AdsCenterProps) {
               <Metric label="ROAS" value={`${selectedDetail.metrics.roas.toFixed(2)}x`} />
               <Metric
                 label="Margin Setelah Iklan"
-                value={selectedDetail.margin.marginSetelahIklan !== null ? formatRupiah(selectedDetail.margin.marginSetelahIklan) : 'Data HPP belum lengkap'}
+                value={selectedDetail.margin.marginSetelahIklan !== null ? formatRupiah(selectedDetail.margin.marginSetelahIklan) : marginGapLabel(selectedDetail.margin.gapReason)}
                 color={selectedDetail.margin.marginSetelahIklan !== null ? (selectedDetail.margin.marginSetelahIklan >= 0 ? 'text-emerald-600' : 'text-red-600') : 'text-amber-500'}
               />
             </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-blue-500" />
+                <h4 className="font-black text-slate-800 dark:text-slate-100">Target Produk Ini</h4>
+              </div>
+              {!editingTarget && (
+                <button
+                  onClick={() => {
+                    setTargetAcosInput(selectedDetail.mapping?.target_acos_override != null ? String(selectedDetail.mapping.target_acos_override) : '');
+                    setTargetRoasInput(selectedDetail.mapping?.target_roas_override != null ? String(selectedDetail.mapping.target_roas_override) : '');
+                    setEditingTarget(true);
+                  }}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700"
+                >
+                  Atur Target Khusus
+                </button>
+              )}
+            </div>
+
+            {editingTarget ? (
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-slate-500">Kosongkan untuk kembali memakai target default toko.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Target ACOS Maksimal (%)</label>
+                    <input
+                      type="number"
+                      value={targetAcosInput}
+                      onChange={e => setTargetAcosInput(e.target.value)}
+                      placeholder={`Default toko: ${(targetByStore.get(selectedDetail.storeId) || DEFAULT_KPI_TARGET).target_acos}%`}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Target ROAS Minimal (x)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={targetRoasInput}
+                      onChange={e => setTargetRoasInput(e.target.value)}
+                      placeholder={`Default toko: ${(targetByStore.get(selectedDetail.storeId) || DEFAULT_KPI_TARGET).target_roas}x`}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setEditingTarget(false)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl font-bold text-sm transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Batal
+                  </button>
+                  <button
+                    onClick={() => handleSaveTargetOverride(selectedDetail.namaIklanRaw, selectedDetail.storeId)}
+                    disabled={savingTarget}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-500/20 transition-all"
+                  >
+                    <Save className="w-3.5 h-3.5" /> {savingTarget ? 'Menyimpan...' : 'Simpan'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-lg font-black text-slate-800 dark:text-slate-100">{selectedDetail.target.targetAcos}%</p>
+                  <p className="text-[10px] text-slate-400">
+                    Target ACOS &middot; {selectedDetail.target.acosSource === 'produk' ? '✏️ khusus produk ini' : '🔗 dari target toko'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-lg font-black text-slate-800 dark:text-slate-100">{selectedDetail.target.targetRoas}x</p>
+                  <p className="text-[10px] text-slate-400">
+                    Target ROAS &middot; {selectedDetail.target.roasSource === 'produk' ? '✏️ khusus produk ini' : '🔗 dari target toko'}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <h4 className="text-sm font-black text-slate-500 uppercase tracking-widest">Tren Mingguan</h4>
@@ -324,6 +453,11 @@ export default function AdsCenter({ store }: AdsCenterProps) {
                 <SummaryCard icon={<Percent className="w-4 h-4" />} label="ACOS Gabungan" value={`${overallMetrics.acos.toFixed(1)}%`} />
                 <SummaryCard icon={<DollarSign className="w-4 h-4" />} label="ROAS Gabungan" value={`${overallMetrics.roas.toFixed(2)}x`} />
               </div>
+              {Array.from(new Set(filteredRows.map(r => r.store_id))).some(sid => !(targetByStore.get(sid) || DEFAULT_KPI_TARGET).biaya_termasuk_ppn) && (
+                <p className="text-[11px] text-slate-400 -mt-2">
+                  * Biaya di atas sudah termasuk PPN 11% (file export belum menyertakannya) - atur di tab Setup KPI kalau data Anda sudah termasuk PPN.
+                </p>
+              )}
 
               <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
@@ -383,7 +517,7 @@ export default function AdsCenter({ store }: AdsCenterProps) {
                                 {formatRupiah(pr.margin.marginSetelahIklan)}
                               </span>
                             ) : (
-                              <span className="text-slate-400 text-xs italic">Data HPP belum lengkap</span>
+                              <span className="text-slate-400 text-xs italic">{marginGapLabel(pr.margin.gapReason)}</span>
                             )}
                           </td>
                           <td className="px-6 py-4 text-center">
