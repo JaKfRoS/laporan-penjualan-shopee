@@ -7,7 +7,7 @@ import AdsKpiSettings, { DEFAULT_KPI_TARGET } from './AdsKpiSettings';
 import AdsRekomendasi from './AdsRekomendasi';
 import ConfirmModal from './ConfirmModal';
 import {
-  calcAdsMetrics, sumAdsRows, resolveHpp, calcMargin, calcStatusKesehatan,
+  calcAdsMetrics, sumAdsRows, resolveHpp, calcMargin, calcStatusKesehatan, applyPpnAdjustment,
   groupIklanMingguanByProduk, iklanGroupKey, AdsAggregate, StatusKesehatan,
 } from './adsHelpers';
 import {
@@ -28,6 +28,9 @@ const getDefaultMonthRange = () => {
 };
 
 const formatRupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
+
+const marginGapLabel = (reason: 'hpp-belum-lengkap' | 'belum-ada-penjualan' | null) =>
+  reason === 'belum-ada-penjualan' ? 'Belum ada penjualan' : 'Data HPP belum lengkap';
 
 const JENIS_OPTIONS: { value: 'all' | JenisIklan; label: string }[] = [
   { value: 'all', label: 'Semua Jenis Iklan' },
@@ -146,10 +149,22 @@ export default function AdsCenter({ store }: AdsCenterProps) {
   const productByKey = useMemo(() => new Map(products.map(p => [`${p.store_id}::${p.sku}`, p])), [products]);
   const targetByStore = useMemo(() => new Map(kpiTargets.map(t => [t.store_id, t])), [kpiTargets]);
 
-  const overall = sumAdsRows(filteredRows);
+  // Biaya di file export belum termasuk PPN 11% (kecuali toko menyatakan sudah
+  // via Setup KPI) - disesuaikan di sini, per baris berdasarkan target toko
+  // masing-masing, sebelum dipakai di ACOS/ROAS/Margin mana pun di bawah.
+  const adjustedRows = useMemo(
+    () =>
+      filteredRows.map(r => {
+        const target = targetByStore.get(r.store_id) || DEFAULT_KPI_TARGET;
+        return { ...r, biaya: applyPpnAdjustment(r, target.biaya_termasuk_ppn).biaya };
+      }),
+    [filteredRows, targetByStore]
+  );
+
+  const overall = sumAdsRows(adjustedRows);
   const overallMetrics = calcAdsMetrics(overall);
 
-  const grouped = useMemo(() => groupIklanMingguanByProduk(filteredRows), [filteredRows]);
+  const grouped = useMemo(() => groupIklanMingguanByProduk(adjustedRows), [adjustedRows]);
 
   const productRows = useMemo(() => {
     return Array.from(grouped.entries()).map(([key, weekRows]) => {
@@ -162,7 +177,6 @@ export default function AdsCenter({ store }: AdsCenterProps) {
       const hpp = resolveHpp(mapping, product || null);
       const margin = calcMargin(
         hpp.value,
-        mapping?.harga_jual_override ?? null,
         mapping?.proses_pesanan ?? 1250,
         mapping?.pot_admin_persen ?? 0,
         mapping?.operasional_persen ?? 0,
@@ -250,7 +264,7 @@ export default function AdsCenter({ store }: AdsCenterProps) {
               <Metric label="ROAS" value={`${selectedDetail.metrics.roas.toFixed(2)}x`} />
               <Metric
                 label="Margin Setelah Iklan"
-                value={selectedDetail.margin.marginSetelahIklan !== null ? formatRupiah(selectedDetail.margin.marginSetelahIklan) : 'Data HPP belum lengkap'}
+                value={selectedDetail.margin.marginSetelahIklan !== null ? formatRupiah(selectedDetail.margin.marginSetelahIklan) : marginGapLabel(selectedDetail.margin.gapReason)}
                 color={selectedDetail.margin.marginSetelahIklan !== null ? (selectedDetail.margin.marginSetelahIklan >= 0 ? 'text-emerald-600' : 'text-red-600') : 'text-amber-500'}
               />
             </div>
@@ -324,6 +338,11 @@ export default function AdsCenter({ store }: AdsCenterProps) {
                 <SummaryCard icon={<Percent className="w-4 h-4" />} label="ACOS Gabungan" value={`${overallMetrics.acos.toFixed(1)}%`} />
                 <SummaryCard icon={<DollarSign className="w-4 h-4" />} label="ROAS Gabungan" value={`${overallMetrics.roas.toFixed(2)}x`} />
               </div>
+              {Array.from(new Set(filteredRows.map(r => r.store_id))).some(sid => !(targetByStore.get(sid) || DEFAULT_KPI_TARGET).biaya_termasuk_ppn) && (
+                <p className="text-[11px] text-slate-400 -mt-2">
+                  * Biaya di atas sudah termasuk PPN 11% (file export belum menyertakannya) - atur di tab Setup KPI kalau data Anda sudah termasuk PPN.
+                </p>
+              )}
 
               <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
@@ -383,7 +402,7 @@ export default function AdsCenter({ store }: AdsCenterProps) {
                                 {formatRupiah(pr.margin.marginSetelahIklan)}
                               </span>
                             ) : (
-                              <span className="text-slate-400 text-xs italic">Data HPP belum lengkap</span>
+                              <span className="text-slate-400 text-xs italic">{marginGapLabel(pr.margin.gapReason)}</span>
                             )}
                           </td>
                           <td className="px-6 py-4 text-center">

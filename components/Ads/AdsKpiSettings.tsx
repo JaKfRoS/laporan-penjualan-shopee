@@ -8,12 +8,15 @@ interface AdsKpiSettingsProps {
   store: Store;
 }
 
-export const DEFAULT_KPI_TARGET: Pick<IklanKpiTarget, 'target_acos' | 'target_roas' | 'target_ctr' | 'target_konversi' | 'rekomendasi_aktif'> = {
+export const DEFAULT_KPI_TARGET: Pick<IklanKpiTarget, 'target_acos' | 'target_roas' | 'target_ctr' | 'target_konversi' | 'rekomendasi_aktif' | 'biaya_termasuk_ppn'> = {
   target_acos: 30,
   target_roas: 3,
   target_ctr: null,
   target_konversi: null,
   rekomendasi_aktif: true,
+  // Biaya di file export Shopee Ads Manager umumnya belum termasuk PPN 11%,
+  // jadi default-nya false - ACOS/ROAS/Margin dihitung dari biaya x 1.11.
+  biaya_termasuk_ppn: false,
 };
 
 export default function AdsKpiSettings({ store }: AdsKpiSettingsProps) {
@@ -45,6 +48,7 @@ export default function AdsKpiSettings({ store }: AdsKpiSettingsProps) {
           target_ctr: data.target_ctr,
           target_konversi: data.target_konversi,
           rekomendasi_aktif: data.rekomendasi_aktif,
+          biaya_termasuk_ppn: data.biaya_termasuk_ppn,
         });
       } else {
         setExistingId(null);
@@ -162,6 +166,21 @@ export default function AdsKpiSettings({ store }: AdsKpiSettingsProps) {
           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${form.rekomendasi_aktif ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
         >
           <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.rekomendasi_aktif ? 'translate-x-6' : 'translate-x-1'}`} />
+        </button>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
+        <div>
+          <p className="text-sm font-bold text-slate-800 dark:text-slate-200">Biaya Iklan Sudah Termasuk PPN 11%?</p>
+          <p className="text-[10px] text-slate-500">
+            File export Shopee Ads Manager biasanya belum termasuk PPN. Kalau belum (default), ACOS/ROAS/Margin dihitung dari biaya asli &times; 1,11 supaya sesuai biaya riil yang keluar dari saldo.
+          </p>
+        </div>
+        <button
+          onClick={() => setForm({ ...form, biaya_termasuk_ppn: !form.biaya_termasuk_ppn })}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${form.biaya_termasuk_ppn ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+        >
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.biaya_termasuk_ppn ? 'translate-x-6' : 'translate-x-1'}`} />
         </button>
       </div>
 

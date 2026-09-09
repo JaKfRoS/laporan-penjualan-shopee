@@ -114,6 +114,7 @@ export interface IklanKpiTarget {
   target_ctr: number | null;
   target_konversi: number | null;
   rekomendasi_aktif: boolean;
+  biaya_termasuk_ppn: boolean;
   created_at?: string;
   updated_at?: string;
 }

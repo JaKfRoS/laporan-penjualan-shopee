@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
 import { Store, IklanMingguan, IklanProdukMapping, Product, IklanKpiTarget } from '../../types';
-import { resolveHpp, calcMargin, iklanGroupKey } from './adsHelpers';
+import { resolveHpp, calcMargin, iklanGroupKey, applyPpnAdjustment } from './adsHelpers';
 import { evaluateRecommendation, Recommendation, RecommendationLevel } from './adsRules';
 import { DEFAULT_KPI_TARGET } from './AdsKpiSettings';
 import { Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
@@ -85,11 +85,16 @@ export default function AdsRekomendasi({ store }: AdsRekomendasiProps) {
       const targetByStore = new Map((tData || []).map((t: IklanKpiTarget) => [t.store_id, t]));
       const storeNameById = new Map((sData || []).map((s: any) => [s.id, s.name]));
 
+      // Biaya di file export belum termasuk PPN 11% (kecuali toko menyatakan
+      // sudah lewat Setup KPI) - disesuaikan sebelum masuk ke rule engine,
+      // supaya ACOS/margin yang dievaluasi mencerminkan biaya riil.
       const grouped = new Map<string, IklanMingguan[]>();
       (mData || []).forEach((row: IklanMingguan) => {
-        const key = iklanGroupKey(row);
+        const target = targetByStore.get(row.store_id) || { ...DEFAULT_KPI_TARGET, store_id: row.store_id, id: '' };
+        const adjustedRow = { ...row, biaya: applyPpnAdjustment(row, target.biaya_termasuk_ppn).biaya };
+        const key = iklanGroupKey(adjustedRow);
         if (!grouped.has(key)) grouped.set(key, []);
-        grouped.get(key)!.push(row);
+        grouped.get(key)!.push(adjustedRow);
       });
 
       const results: RecommendationCard[] = [];
@@ -108,7 +113,6 @@ export default function AdsRekomendasi({ store }: AdsRekomendasiProps) {
         const marginPerWeek = (week: IklanMingguan): number | null => {
           const m = calcMargin(
             hpp.value,
-            mapping?.harga_jual_override ?? null,
             mapping?.proses_pesanan ?? 1250,
             mapping?.pot_admin_persen ?? 0,
             mapping?.operasional_persen ?? 0,
