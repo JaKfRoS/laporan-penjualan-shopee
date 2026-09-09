@@ -46,6 +46,8 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
   const [uploadHistory, setUploadHistory] = useState<UploadBatch[]>([]);
   const [deletingBatch, setDeletingBatch] = useState<UploadBatch | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deletingMapping, setDeletingMapping] = useState<IklanProdukMapping | null>(null);
+  const [deletingMappingBusy, setDeletingMappingBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -103,6 +105,37 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
       toast.error('Gagal menghapus: ' + err.message);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleDeleteMapping = async () => {
+    if (!deletingMapping) return;
+    setDeletingMappingBusy(true);
+    try {
+      const { error } = await supabase
+        .from('iklan_produk_mapping')
+        .delete()
+        .eq('store_id', store.id)
+        .eq('nama_iklan_raw', deletingMapping.nama_iklan_raw);
+      if (error) throw error;
+
+      // Kalau masih ada baris iklan_mingguan lain (periode belum dihapus) yang
+      // pakai nama iklan ini, lepaskan juga referensi product_sku-nya supaya
+      // tidak nyangkut ke mapping yang sudah dihapus.
+      await supabase
+        .from('iklan_mingguan')
+        .update({ product_sku: null })
+        .eq('store_id', store.id)
+        .eq('nama_iklan_raw', deletingMapping.nama_iklan_raw);
+
+      toast.success('Entri pencocokan berhasil dihapus');
+      setDeletingMapping(null);
+      fetchBaseData();
+      onImported();
+    } catch (err: any) {
+      toast.error('Gagal menghapus: ' + err.message);
+    } finally {
+      setDeletingMappingBusy(false);
     }
   };
 
@@ -453,16 +486,25 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
             {belumDicocokkan.map(m => (
               <div key={m.id} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
                 <p className="text-sm font-bold text-slate-800 dark:text-slate-200 break-words min-w-0 flex-1">{m.nama_iklan_raw}</p>
-                <div className="shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="relative shrink-0">
+                    <button
+                      onClick={() => { setPickerFor(m.nama_iklan_raw); setPickerSearch(''); }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" /> Cocokkan
+                    </button>
+                    {pickerFor === m.nama_iklan_raw && (
+                      <ProductPicker namaIklanRaw={m.nama_iklan_raw} onPick={sku => assignSku(m.nama_iklan_raw, sku, false)} />
+                    )}
+                  </div>
                   <button
-                    onClick={() => { setPickerFor(m.nama_iklan_raw); setPickerSearch(''); }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors"
+                    onClick={() => setDeletingMapping(m)}
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+                    title="Hapus entri ini (mis. sisa dari upload yang salah toko)"
                   >
-                    <AlertTriangle className="w-3.5 h-3.5" /> Cocokkan
+                    <Trash2 className="w-4 h-4" />
                   </button>
-                  {pickerFor === m.nama_iklan_raw && (
-                    <ProductPicker namaIklanRaw={m.nama_iklan_raw} onPick={sku => assignSku(m.nama_iklan_raw, sku, false)} />
-                  )}
                 </div>
               </div>
             ))}
@@ -481,6 +523,19 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
             : ''
         }
         confirmText={deleting ? 'Menghapus...' : 'Hapus'}
+      />
+
+      <ConfirmModal
+        isOpen={!!deletingMapping}
+        onClose={() => setDeletingMapping(null)}
+        onConfirm={handleDeleteMapping}
+        title="Hapus Entri Pencocokan Ini?"
+        message={
+          deletingMapping
+            ? `Entri "${deletingMapping.nama_iklan_raw}" akan dihapus dari daftar cocokkan produk toko ini. Kalau nama iklan ini muncul lagi di upload berikutnya, akan dianggap sebagai iklan baru (perlu dicocokkan ulang).`
+            : ''
+        }
+        confirmText={deletingMappingBusy ? 'Menghapus...' : 'Hapus'}
       />
     </div>
   );
