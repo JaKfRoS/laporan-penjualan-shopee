@@ -117,10 +117,14 @@ export const calcStatusKesehatan = (
   return 'sehat';
 };
 
+// Kunci komposit store_id+nama_iklan_raw - dua toko berbeda bisa kebetulan
+// punya nama iklan yang identik, dan itu bukan iklan yang sama.
+export const iklanGroupKey = (row: Pick<IklanMingguan, 'store_id' | 'nama_iklan_raw'>) => `${row.store_id}::${row.nama_iklan_raw}`;
+
 export const groupIklanMingguanByProduk = (rows: IklanMingguan[]): Map<string, IklanMingguan[]> => {
   const map = new Map<string, IklanMingguan[]>();
   rows.forEach(row => {
-    const key = row.nama_iklan_raw;
+    const key = iklanGroupKey(row);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(row);
   });

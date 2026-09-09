@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
-import { Store, IklanMingguan, IklanProdukMapping, Product, JenisIklan } from '../../types';
+import { Store, IklanMingguan, IklanProdukMapping, Product, JenisIklan, IklanKpiTarget } from '../../types';
 import { DateRangePicker } from '../Dashboard/DateRangePicker';
 import AdsCocokkanProduk from './AdsCocokkanProduk';
+import AdsKpiSettings, { DEFAULT_KPI_TARGET } from './AdsKpiSettings';
+import AdsRekomendasi from './AdsRekomendasi';
 import {
-  calcAdsMetrics, sumAdsRows, resolveHpp, calcMargin, groupIklanMingguanByProduk, AdsAggregate,
+  calcAdsMetrics, sumAdsRows, resolveHpp, calcMargin, calcStatusKesehatan,
+  groupIklanMingguanByProduk, iklanGroupKey, AdsAggregate, StatusKesehatan,
 } from './adsHelpers';
 import {
-  Megaphone, Layers, DollarSign, Percent, ChevronLeft, Link2, AlertTriangle, TrendingUp,
+  Megaphone, Layers, DollarSign, Percent, ChevronLeft, Link2, AlertTriangle, TrendingUp, Target, Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -32,15 +35,24 @@ const JENIS_OPTIONS: { value: 'all' | JenisIklan; label: string }[] = [
   { value: 'Iklan Toko', label: 'Iklan Toko' },
 ];
 
+const STATUS_BADGE: Record<StatusKesehatan, { label: string; className: string }> = {
+  'sehat': { label: '✅ Sehat', className: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  'waspada': { label: '⚠️ Waspada', className: 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+  'perlu-aksi': { label: '🔴 Perlu Aksi', className: 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400' },
+};
+
+type Tab = 'ringkasan' | 'rekomendasi' | 'cocokkan' | 'kpi';
+
 export default function AdsCenter({ store }: AdsCenterProps) {
-  const [activeTab, setActiveTab] = useState<'ringkasan' | 'cocokkan'>('ringkasan');
+  const [activeTab, setActiveTab] = useState<Tab>('ringkasan');
   const [dateRange, setDateRange] = useState(getDefaultMonthRange);
   const [jenisFilter, setJenisFilter] = useState<'all' | JenisIklan>('all');
   const [rows, setRows] = useState<IklanMingguan[]>([]);
   const [mappings, setMappings] = useState<IklanProdukMapping[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [kpiTargets, setKpiTargets] = useState<IklanKpiTarget[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedRaw, setSelectedRaw] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const isMultiple = (store as any).is_multiple || store.id === 'all';
 
@@ -63,32 +75,38 @@ export default function AdsCenter({ store }: AdsCenterProps) {
 
       let mappingQuery = supabase.from('iklan_produk_mapping').select('*');
       let productsQuery = supabase.from('products').select('*');
+      let kpiQuery = supabase.from('iklan_kpi_target').select('*');
 
       if (store.id !== 'all') {
         if (isMulti) {
           mingguanQuery = mingguanQuery.in('store_id', targetIds);
           mappingQuery = mappingQuery.in('store_id', targetIds);
           productsQuery = productsQuery.in('store_id', targetIds);
+          kpiQuery = kpiQuery.in('store_id', targetIds);
         } else {
           mingguanQuery = mingguanQuery.eq('store_id', store.id);
           mappingQuery = mappingQuery.eq('store_id', store.id);
           productsQuery = productsQuery.eq('store_id', store.id);
+          kpiQuery = kpiQuery.eq('store_id', store.id);
         }
       }
 
-      const [{ data: mData, error: mErr }, { data: mapData, error: mapErr }, { data: pData, error: pErr }] = await Promise.all([
-        mingguanQuery,
-        mappingQuery,
-        productsQuery,
-      ]);
+      const [
+        { data: mData, error: mErr },
+        { data: mapData, error: mapErr },
+        { data: pData, error: pErr },
+        { data: kData, error: kErr },
+      ] = await Promise.all([mingguanQuery, mappingQuery, productsQuery, kpiQuery]);
 
       if (mErr) throw mErr;
       if (mapErr) throw mapErr;
       if (pErr) throw pErr;
+      if (kErr) throw kErr;
 
       setRows(mData || []);
       setMappings(mapData || []);
       setProducts(pData || []);
+      setKpiTargets(kData || []);
     } catch (err: any) {
       console.error(err);
       toast.error('Gagal memuat data iklan: ' + err.message);
@@ -102,8 +120,12 @@ export default function AdsCenter({ store }: AdsCenterProps) {
     [rows, jenisFilter]
   );
 
-  const mappingByName = useMemo(() => new Map(mappings.map(m => [m.nama_iklan_raw, m])), [mappings]);
-  const productBySku = useMemo(() => new Map(products.map(p => [p.sku, p])), [products]);
+  // Kunci store_id::nama_iklan_raw - dua toko berbeda bisa kebetulan punya nama
+  // iklan yang identik, jadi tidak cukup dikunci nama_iklan_raw saja saat
+  // beberapa toko digabung (mode "Semua"/"Multiple Toko").
+  const mappingByKey = useMemo(() => new Map(mappings.map(m => [`${m.store_id}::${m.nama_iklan_raw}`, m])), [mappings]);
+  const productByKey = useMemo(() => new Map(products.map(p => [`${p.store_id}::${p.sku}`, p])), [products]);
+  const targetByStore = useMemo(() => new Map(kpiTargets.map(t => [t.store_id, t])), [kpiTargets]);
 
   const overall = sumAdsRows(filteredRows);
   const overallMetrics = calcAdsMetrics(overall);
@@ -111,11 +133,13 @@ export default function AdsCenter({ store }: AdsCenterProps) {
   const grouped = useMemo(() => groupIklanMingguanByProduk(filteredRows), [filteredRows]);
 
   const productRows = useMemo(() => {
-    return Array.from(grouped.entries()).map(([namaIklanRaw, weekRows]) => {
+    return Array.from(grouped.entries()).map(([key, weekRows]) => {
+      const namaIklanRaw = weekRows[0].nama_iklan_raw;
+      const storeId = weekRows[0].store_id;
       const agg: AdsAggregate = sumAdsRows(weekRows);
       const metrics = calcAdsMetrics(agg);
-      const mapping = mappingByName.get(namaIklanRaw) || null;
-      const product = mapping?.product_sku ? productBySku.get(mapping.product_sku) : undefined;
+      const mapping = mappingByKey.get(key) || null;
+      const product = mapping?.product_sku ? productByKey.get(`${storeId}::${mapping.product_sku}`) : undefined;
       const hpp = resolveHpp(mapping, product || null);
       const margin = calcMargin(
         hpp.value,
@@ -125,15 +149,24 @@ export default function AdsCenter({ store }: AdsCenterProps) {
         mapping?.operasional_persen ?? 0,
         agg
       );
+      const target = targetByStore.get(storeId) || DEFAULT_KPI_TARGET;
+      const status = calcStatusKesehatan(metrics.acos, target.target_acos, margin.marginSetelahIklan);
       const jenisIklan = weekRows.find(w => w.jenis_iklan)?.jenis_iklan ?? null;
-      return { namaIklanRaw, jenisIklan, agg, metrics, mapping, product, hpp, margin };
+      return { key, namaIklanRaw, storeId, jenisIklan, agg, metrics, mapping, product, hpp, margin, status };
     }).sort((a, b) => b.agg.biaya - a.agg.biaya);
-  }, [grouped, mappingByName, productBySku]);
+  }, [grouped, mappingByKey, productByKey, targetByStore]);
 
-  const selectedDetail = selectedRaw ? productRows.find(p => p.namaIklanRaw === selectedRaw) : null;
-  const selectedWeeks = selectedRaw
-    ? (grouped.get(selectedRaw) || []).slice().sort((a, b) => a.periode_mulai.localeCompare(b.periode_mulai))
+  const selectedDetail = selectedKey ? productRows.find(p => p.key === selectedKey) : null;
+  const selectedWeeks = selectedKey
+    ? (grouped.get(selectedKey) || []).slice().sort((a, b) => a.periode_mulai.localeCompare(b.periode_mulai))
     : [];
+
+  const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'ringkasan', label: 'Ringkasan', icon: null },
+    { id: 'rekomendasi', label: 'Rekomendasi', icon: <Sparkles className="w-4 h-4" /> },
+    { id: 'cocokkan', label: 'Upload & Cocokkan', icon: <Link2 className="w-4 h-4" /> },
+    { id: 'kpi', label: 'Setup KPI', icon: <Target className="w-4 h-4" /> },
+  ];
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -146,19 +179,16 @@ export default function AdsCenter({ store }: AdsCenterProps) {
           <p className="text-sm text-slate-500 mt-1">Rekap &amp; analisa performa Shopee Ads Anda</p>
         </div>
 
-        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full md:w-auto">
-          <button
-            onClick={() => setActiveTab('ringkasan')}
-            className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'ringkasan' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-          >
-            Ringkasan
-          </button>
-          <button
-            onClick={() => setActiveTab('cocokkan')}
-            className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 ${activeTab === 'cocokkan' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-          >
-            <Link2 className="w-4 h-4" /> Upload &amp; Cocokkan Produk
-          </button>
+        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full md:w-auto overflow-x-auto">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === t.id ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+            >
+              {t.icon}{t.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -171,17 +201,26 @@ export default function AdsCenter({ store }: AdsCenterProps) {
 
       {activeTab === 'cocokkan' ? (
         <AdsCocokkanProduk store={store} onImported={fetchData} />
-      ) : selectedRaw && selectedDetail ? (
+      ) : activeTab === 'kpi' ? (
+        <AdsKpiSettings store={store} />
+      ) : activeTab === 'rekomendasi' ? (
+        <AdsRekomendasi store={store} />
+      ) : selectedKey && selectedDetail ? (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
           <button
-            onClick={() => setSelectedRaw(null)}
+            onClick={() => setSelectedKey(null)}
             className="flex items-center gap-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors font-medium text-sm"
           >
             <ChevronLeft className="w-4 h-4" /> Kembali ke Ringkasan
           </button>
 
           <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 p-6 shadow-sm">
-            <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">{selectedDetail.namaIklanRaw}</h3>
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">{selectedDetail.namaIklanRaw}</h3>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${STATUS_BADGE[selectedDetail.status].className}`}>
+                {STATUS_BADGE[selectedDetail.status].label}
+              </span>
+            </div>
             <p className="text-sm text-slate-500 mb-4">
               {selectedDetail.product ? `Terhubung ke: ${selectedDetail.product.product_name} (${selectedDetail.product.sku})` : 'Belum dicocokkan ke Master Produk'}
             </p>
@@ -246,7 +285,7 @@ export default function AdsCenter({ store }: AdsCenterProps) {
               </div>
               <h3 className="text-lg font-bold mb-2">Belum ada data iklan di periode ini</h3>
               <p className="text-slate-500 max-w-md mx-auto">
-                Upload file laporan iklan dari Shopee Ads Manager di tab "Upload & Cocokkan Produk", atau ubah rentang tanggal.
+                Upload file laporan iklan dari Shopee Ads Manager di tab "Upload & Cocokkan", atau ubah rentang tanggal.
               </p>
             </div>
           ) : (
@@ -260,7 +299,7 @@ export default function AdsCenter({ store }: AdsCenterProps) {
 
               <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left min-w-[800px]">
+                  <table className="w-full text-sm text-left min-w-[900px]">
                     <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500">
                       <tr>
                         <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px]">Nama Iklan / Produk</th>
@@ -270,13 +309,14 @@ export default function AdsCenter({ store }: AdsCenterProps) {
                         <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-right">ROAS</th>
                         <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-right">HPP</th>
                         <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-right">Margin Setelah Iklan</th>
+                        <th className="px-6 py-3 font-bold uppercase tracking-wider text-[10px] text-center">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {productRows.map(pr => (
                         <tr
-                          key={pr.namaIklanRaw}
-                          onClick={() => setSelectedRaw(pr.namaIklanRaw)}
+                          key={pr.key}
+                          onClick={() => setSelectedKey(pr.key)}
                           className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
                         >
                           <td className="px-6 py-4">
@@ -317,6 +357,11 @@ export default function AdsCenter({ store }: AdsCenterProps) {
                             ) : (
                               <span className="text-slate-400 text-xs italic">Data HPP belum lengkap</span>
                             )}
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${STATUS_BADGE[pr.status].className}`}>
+                              {STATUS_BADGE[pr.status].label}
+                            </span>
                           </td>
                         </tr>
                       ))}
