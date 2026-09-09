@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Fuse from 'fuse.js';
 import toast from 'react-hot-toast';
-import { Upload, CheckCircle2, AlertTriangle, Search, X, Loader2, Link2, RotateCcw } from 'lucide-react';
+import { Upload, CheckCircle2, AlertTriangle, Search, X, Loader2, Link2, RotateCcw, Trash2, History } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { parseAdsManagerFile, ParsedAdsReport } from '../../services/adsImport';
 import { Store, Product, IklanProdukMapping } from '../../types';
+import ConfirmModal from './ConfirmModal';
 
 interface AdsCocokkanProdukProps {
   store: Store;
@@ -23,6 +24,13 @@ interface ReviewRow {
   isNewMapping: boolean; // true = belum ada baris iklan_produk_mapping untuk nama ini
 }
 
+interface UploadBatch {
+  periodeMulai: string;
+  periodeAkhir: string;
+  jumlahBaris: number;
+  totalBiaya: number;
+}
+
 const normalize = (s: string) => s.trim().toLowerCase();
 
 export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProdukProps) {
@@ -35,6 +43,9 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
   const [saving, setSaving] = useState(false);
   const [pickerFor, setPickerFor] = useState<string | null>(null); // namaIklanRaw yang sedang pilih produk
   const [pickerSearch, setPickerSearch] = useState('');
+  const [uploadHistory, setUploadHistory] = useState<UploadBatch[]>([]);
+  const [deletingBatch, setDeletingBatch] = useState<UploadBatch | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -44,18 +55,54 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
   const fetchBaseData = async () => {
     setLoading(true);
     try {
-      const [{ data: prods, error: errProds }, { data: maps, error: errMaps }] = await Promise.all([
+      const [{ data: prods, error: errProds }, { data: maps, error: errMaps }, { data: mingguan, error: errMingguan }] = await Promise.all([
         supabase.from('products').select('*').eq('store_id', store.id),
         supabase.from('iklan_produk_mapping').select('*').eq('store_id', store.id),
+        supabase.from('iklan_mingguan').select('periode_mulai, periode_akhir, biaya').eq('store_id', store.id),
       ]);
       if (errProds) throw errProds;
       if (errMaps) throw errMaps;
+      if (errMingguan) throw errMingguan;
       setProducts(prods || []);
       setMappings(maps || []);
+
+      const batchMap = new Map<string, UploadBatch>();
+      (mingguan || []).forEach((row: any) => {
+        const key = `${row.periode_mulai}::${row.periode_akhir}`;
+        if (!batchMap.has(key)) {
+          batchMap.set(key, { periodeMulai: row.periode_mulai, periodeAkhir: row.periode_akhir, jumlahBaris: 0, totalBiaya: 0 });
+        }
+        const b = batchMap.get(key)!;
+        b.jumlahBaris += 1;
+        b.totalBiaya += Number(row.biaya) || 0;
+      });
+      setUploadHistory(Array.from(batchMap.values()).sort((a, b) => b.periodeMulai.localeCompare(a.periodeMulai)));
     } catch (err: any) {
       toast.error('Gagal memuat data: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteBatch = async () => {
+    if (!deletingBatch) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('iklan_mingguan')
+        .delete()
+        .eq('store_id', store.id)
+        .eq('periode_mulai', deletingBatch.periodeMulai)
+        .eq('periode_akhir', deletingBatch.periodeAkhir);
+      if (error) throw error;
+      toast.success('Data iklan periode tersebut berhasil dihapus');
+      setDeletingBatch(null);
+      fetchBaseData();
+      onImported();
+    } catch (err: any) {
+      toast.error('Gagal menghapus: ' + err.message);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -222,41 +269,59 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
 
   const belumDicocokkan = mappings.filter(m => !m.product_sku);
 
+  // Modal penuh (bukan dropdown absolute) supaya selalu pas di layar berapa pun
+  // lebarnya - dropdown lama nempel di sisi kanan tombol dan sering kepotong di
+  // layar HP, bikin input pencarian tidak kelihatan/tidak bisa diketik.
   const ProductPicker: React.FC<{ namaIklanRaw: string; onPick: (sku: string | null) => void }> = ({ namaIklanRaw, onPick }) => {
     const results = pickerSearch.trim() ? productsFuse.search(pickerSearch.trim()).map(r => r.item).slice(0, 8) : products.slice(0, 8);
+    const closePicker = () => { setPickerFor(null); setPickerSearch(''); };
     return (
-      <div className="absolute z-40 mt-1 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-        <div className="p-2 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-          <input
-            autoFocus
-            value={pickerSearch}
-            onChange={e => setPickerSearch(e.target.value)}
-            placeholder="Cari produk/SKU..."
-            className="w-full text-sm outline-none bg-transparent text-slate-900 dark:text-white"
-          />
-          <button onClick={() => { setPickerFor(null); setPickerSearch(''); }} className="text-slate-400 hover:text-slate-600">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="max-h-56 overflow-y-auto">
-          <button
-            onClick={() => onPick(null)}
-            className="w-full text-left px-3 py-2 text-xs text-slate-400 italic hover:bg-slate-50 dark:hover:bg-slate-700/50"
-          >
-            Kosongkan (belum dicocokkan)
-          </button>
-          {results.map(p => (
-            <button
-              key={p.sku}
-              onClick={() => onPick(p.sku)}
-              className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 border-t border-slate-50 dark:border-slate-700/50"
-            >
-              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{p.product_name}</p>
-              <p className="text-[10px] text-slate-400">{p.sku}</p>
+      <div
+        className="fixed inset-0 z-50 flex items-start sm:items-center justify-center px-4 pt-16 sm:pt-4 pb-4 bg-slate-900/60 backdrop-blur-sm"
+        onClick={closePicker}
+      >
+        <div
+          className="bg-white dark:bg-slate-800 w-full max-w-sm max-h-full flex flex-col rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Cocokkan ke produk</p>
+              <p className="text-sm font-bold text-slate-800 dark:text-slate-200 break-words">{namaIklanRaw}</p>
+            </div>
+            <button onClick={closePicker} className="text-slate-400 hover:text-slate-600 shrink-0">
+              <X className="w-4 h-4" />
             </button>
-          ))}
-          {results.length === 0 && <p className="px-3 py-4 text-xs text-slate-400 text-center">Tidak ada produk cocok</p>}
+          </div>
+          <div className="p-2 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2 shrink-0">
+            <Search className="w-4 h-4 text-slate-400 shrink-0" />
+            <input
+              autoFocus
+              value={pickerSearch}
+              onChange={e => setPickerSearch(e.target.value)}
+              placeholder="Cari produk/SKU..."
+              className="w-full text-sm outline-none bg-transparent text-slate-900 dark:text-white"
+            />
+          </div>
+          <div className="overflow-y-auto">
+            <button
+              onClick={() => onPick(null)}
+              className="w-full text-left px-3 py-2 text-xs text-slate-400 italic hover:bg-slate-50 dark:hover:bg-slate-700/50"
+            >
+              Kosongkan (belum dicocokkan)
+            </button>
+            {results.map(p => (
+              <button
+                key={p.sku}
+                onClick={() => onPick(p.sku)}
+                className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 border-t border-slate-50 dark:border-slate-700/50"
+              >
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 break-words">{p.product_name}</p>
+                <p className="text-[10px] text-slate-400">{p.sku}</p>
+              </button>
+            ))}
+            {results.length === 0 && <p className="px-3 py-4 text-xs text-slate-400 text-center">Tidak ada produk cocok</p>}
+          </div>
         </div>
       </div>
     );
@@ -301,16 +366,16 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
             {reviewRows.map(row => {
               const matchedProduct = row.selectedSku ? mappingBySkuLookup.get(row.selectedSku) : null;
               return (
-                <div key={row.namaIklanRaw} className="px-6 py-3 flex items-center justify-between gap-4">
+                <div key={row.namaIklanRaw} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate" title={row.namaIklanRaw}>{row.namaIklanRaw}</p>
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200 break-words">{row.namaIklanRaw}</p>
                     <p className="text-[10px] text-slate-400">{row.jenisIklan || 'Jenis iklan tidak diketahui'} &middot; Rp {row.biaya.toLocaleString()} biaya &middot; {row.produkTerjual} terjual</p>
                   </div>
-                  <div className="relative shrink-0">
+                  <div className="shrink-0">
                     {matchedProduct ? (
                       <button
                         onClick={() => { setPickerFor(row.namaIklanRaw); setPickerSearch(''); }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors max-w-[220px]"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors max-w-full sm:max-w-[220px]"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                         <span className="truncate">{matchedProduct.product_name}</span>
@@ -347,6 +412,36 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
           <h3 className="font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <History className="w-4 h-4 text-blue-500" /> Riwayat Upload
+          </h3>
+          <p className="text-xs text-slate-500">Salah upload ke toko ini? Hapus periode yang salah di sini.</p>
+        </div>
+        {uploadHistory.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm text-slate-400">Belum ada data iklan yang diupload untuk toko ini.</p>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {uploadHistory.map(batch => (
+              <div key={`${batch.periodeMulai}::${batch.periodeAkhir}`} className="px-6 py-3 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{batch.periodeMulai} s/d {batch.periodeAkhir}</p>
+                  <p className="text-[10px] text-slate-400">{batch.jumlahBaris} baris iklan &middot; Rp {batch.totalBiaya.toLocaleString()} total biaya</p>
+                </div>
+                <button
+                  onClick={() => setDeletingBatch(batch)}
+                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+                  title="Hapus periode ini"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
+          <h3 className="font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <Link2 className="w-4 h-4 text-amber-500" /> Produk Belum Dicocokkan
           </h3>
           <p className="text-xs text-slate-500">Nama iklan dari upload sebelumnya yang belum terhubung ke Master Produk.</p>
@@ -356,9 +451,9 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {belumDicocokkan.map(m => (
-              <div key={m.id} className="px-6 py-3 flex items-center justify-between gap-4">
-                <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{m.nama_iklan_raw}</p>
-                <div className="relative shrink-0">
+              <div key={m.id} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-200 break-words min-w-0 flex-1">{m.nama_iklan_raw}</p>
+                <div className="shrink-0">
                   <button
                     onClick={() => { setPickerFor(m.nama_iklan_raw); setPickerSearch(''); }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors"
@@ -374,6 +469,19 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={!!deletingBatch}
+        onClose={() => setDeletingBatch(null)}
+        onConfirm={handleDeleteBatch}
+        title="Hapus Data Iklan Periode Ini?"
+        message={
+          deletingBatch
+            ? `Semua ${deletingBatch.jumlahBaris} baris data iklan periode ${deletingBatch.periodeMulai} s/d ${deletingBatch.periodeAkhir} untuk toko ini akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.`
+            : ''
+        }
+        confirmText={deleting ? 'Menghapus...' : 'Hapus'}
+      />
     </div>
   );
 }

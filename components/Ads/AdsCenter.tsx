@@ -5,12 +5,13 @@ import { DateRangePicker } from '../Dashboard/DateRangePicker';
 import AdsCocokkanProduk from './AdsCocokkanProduk';
 import AdsKpiSettings, { DEFAULT_KPI_TARGET } from './AdsKpiSettings';
 import AdsRekomendasi from './AdsRekomendasi';
+import ConfirmModal from './ConfirmModal';
 import {
   calcAdsMetrics, sumAdsRows, resolveHpp, calcMargin, calcStatusKesehatan,
   groupIklanMingguanByProduk, iklanGroupKey, AdsAggregate, StatusKesehatan,
 } from './adsHelpers';
 import {
-  Megaphone, Layers, DollarSign, Percent, ChevronLeft, Link2, AlertTriangle, TrendingUp, Target, Sparkles,
+  Megaphone, Layers, DollarSign, Percent, ChevronLeft, Link2, AlertTriangle, TrendingUp, Target, Sparkles, Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -53,6 +54,8 @@ export default function AdsCenter({ store }: AdsCenterProps) {
   const [kpiTargets, setKpiTargets] = useState<IklanKpiTarget[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [deletingWeek, setDeletingWeek] = useState<IklanMingguan | null>(null);
+  const [deletingWeekBusy, setDeletingWeekBusy] = useState(false);
 
   const isMultiple = (store as any).is_multiple || store.id === 'all';
 
@@ -112,6 +115,22 @@ export default function AdsCenter({ store }: AdsCenterProps) {
       toast.error('Gagal memuat data iklan: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteWeek = async () => {
+    if (!deletingWeek) return;
+    setDeletingWeekBusy(true);
+    try {
+      const { error } = await supabase.from('iklan_mingguan').delete().eq('id', deletingWeek.id);
+      if (error) throw error;
+      toast.success('Data minggu tersebut berhasil dihapus');
+      setDeletingWeek(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Gagal menghapus: ' + err.message);
+    } finally {
+      setDeletingWeekBusy(false);
     }
   };
 
@@ -242,16 +261,25 @@ export default function AdsCenter({ store }: AdsCenterProps) {
             {selectedWeeks.map(w => {
               const m = calcAdsMetrics(w);
               return (
-                <div key={w.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-4 grid grid-cols-2 md:grid-cols-6 gap-4">
-                  <div className="col-span-2 md:col-span-1">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Periode</p>
-                    <p className="text-xs font-black text-slate-700 dark:text-slate-300">{w.periode_mulai} — {w.periode_akhir}</p>
+                <div key={w.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-4 flex items-center gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-4 flex-1">
+                    <div className="col-span-2 md:col-span-1">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Periode</p>
+                      <p className="text-xs font-black text-slate-700 dark:text-slate-300">{w.periode_mulai} — {w.periode_akhir}</p>
+                    </div>
+                    <Metric small label="Impresi" value={w.impresi.toLocaleString()} />
+                    <Metric small label="Klik" value={w.klik.toLocaleString()} />
+                    <Metric small label="Biaya" value={formatRupiah(w.biaya)} color="text-red-600" />
+                    <Metric small label="Omzet" value={formatRupiah(w.omzet)} color="text-green-600" />
+                    <Metric small label="ROAS" value={`${m.roas.toFixed(2)}x`} />
                   </div>
-                  <Metric small label="Impresi" value={w.impresi.toLocaleString()} />
-                  <Metric small label="Klik" value={w.klik.toLocaleString()} />
-                  <Metric small label="Biaya" value={formatRupiah(w.biaya)} color="text-red-600" />
-                  <Metric small label="Omzet" value={formatRupiah(w.omzet)} color="text-green-600" />
-                  <Metric small label="ROAS" value={`${m.roas.toFixed(2)}x`} />
+                  <button
+                    onClick={() => setDeletingWeek(w)}
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+                    title="Hapus data minggu ini"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               );
             })}
@@ -373,6 +401,19 @@ export default function AdsCenter({ store }: AdsCenterProps) {
           )}
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!deletingWeek}
+        onClose={() => setDeletingWeek(null)}
+        onConfirm={handleDeleteWeek}
+        title="Hapus Data Minggu Ini?"
+        message={
+          deletingWeek
+            ? `Data iklan "${deletingWeek.nama_iklan_raw}" untuk periode ${deletingWeek.periode_mulai} s/d ${deletingWeek.periode_akhir} akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.`
+            : ''
+        }
+        confirmText={deletingWeekBusy ? 'Menghapus...' : 'Hapus'}
+      />
     </div>
   );
 }
