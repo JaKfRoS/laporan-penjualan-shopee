@@ -269,41 +269,59 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
 
   const belumDicocokkan = mappings.filter(m => !m.product_sku);
 
+  // Modal penuh (bukan dropdown absolute) supaya selalu pas di layar berapa pun
+  // lebarnya - dropdown lama nempel di sisi kanan tombol dan sering kepotong di
+  // layar HP, bikin input pencarian tidak kelihatan/tidak bisa diketik.
   const ProductPicker: React.FC<{ namaIklanRaw: string; onPick: (sku: string | null) => void }> = ({ namaIklanRaw, onPick }) => {
     const results = pickerSearch.trim() ? productsFuse.search(pickerSearch.trim()).map(r => r.item).slice(0, 8) : products.slice(0, 8);
+    const closePicker = () => { setPickerFor(null); setPickerSearch(''); };
     return (
-      <div className="absolute z-40 mt-1 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-        <div className="p-2 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-          <input
-            autoFocus
-            value={pickerSearch}
-            onChange={e => setPickerSearch(e.target.value)}
-            placeholder="Cari produk/SKU..."
-            className="w-full text-sm outline-none bg-transparent text-slate-900 dark:text-white"
-          />
-          <button onClick={() => { setPickerFor(null); setPickerSearch(''); }} className="text-slate-400 hover:text-slate-600">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="max-h-56 overflow-y-auto">
-          <button
-            onClick={() => onPick(null)}
-            className="w-full text-left px-3 py-2 text-xs text-slate-400 italic hover:bg-slate-50 dark:hover:bg-slate-700/50"
-          >
-            Kosongkan (belum dicocokkan)
-          </button>
-          {results.map(p => (
-            <button
-              key={p.sku}
-              onClick={() => onPick(p.sku)}
-              className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 border-t border-slate-50 dark:border-slate-700/50"
-            >
-              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{p.product_name}</p>
-              <p className="text-[10px] text-slate-400">{p.sku}</p>
+      <div
+        className="fixed inset-0 z-50 flex items-start sm:items-center justify-center px-4 pt-16 sm:pt-4 pb-4 bg-slate-900/60 backdrop-blur-sm"
+        onClick={closePicker}
+      >
+        <div
+          className="bg-white dark:bg-slate-800 w-full max-w-sm max-h-full flex flex-col rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Cocokkan ke produk</p>
+              <p className="text-sm font-bold text-slate-800 dark:text-slate-200 break-words">{namaIklanRaw}</p>
+            </div>
+            <button onClick={closePicker} className="text-slate-400 hover:text-slate-600 shrink-0">
+              <X className="w-4 h-4" />
             </button>
-          ))}
-          {results.length === 0 && <p className="px-3 py-4 text-xs text-slate-400 text-center">Tidak ada produk cocok</p>}
+          </div>
+          <div className="p-2 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2 shrink-0">
+            <Search className="w-4 h-4 text-slate-400 shrink-0" />
+            <input
+              autoFocus
+              value={pickerSearch}
+              onChange={e => setPickerSearch(e.target.value)}
+              placeholder="Cari produk/SKU..."
+              className="w-full text-sm outline-none bg-transparent text-slate-900 dark:text-white"
+            />
+          </div>
+          <div className="overflow-y-auto">
+            <button
+              onClick={() => onPick(null)}
+              className="w-full text-left px-3 py-2 text-xs text-slate-400 italic hover:bg-slate-50 dark:hover:bg-slate-700/50"
+            >
+              Kosongkan (belum dicocokkan)
+            </button>
+            {results.map(p => (
+              <button
+                key={p.sku}
+                onClick={() => onPick(p.sku)}
+                className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 border-t border-slate-50 dark:border-slate-700/50"
+              >
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 break-words">{p.product_name}</p>
+                <p className="text-[10px] text-slate-400">{p.sku}</p>
+              </button>
+            ))}
+            {results.length === 0 && <p className="px-3 py-4 text-xs text-slate-400 text-center">Tidak ada produk cocok</p>}
+          </div>
         </div>
       </div>
     );
@@ -348,16 +366,16 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
             {reviewRows.map(row => {
               const matchedProduct = row.selectedSku ? mappingBySkuLookup.get(row.selectedSku) : null;
               return (
-                <div key={row.namaIklanRaw} className="px-6 py-3 flex items-center justify-between gap-4">
+                <div key={row.namaIklanRaw} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate" title={row.namaIklanRaw}>{row.namaIklanRaw}</p>
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200 break-words">{row.namaIklanRaw}</p>
                     <p className="text-[10px] text-slate-400">{row.jenisIklan || 'Jenis iklan tidak diketahui'} &middot; Rp {row.biaya.toLocaleString()} biaya &middot; {row.produkTerjual} terjual</p>
                   </div>
-                  <div className="relative shrink-0">
+                  <div className="shrink-0">
                     {matchedProduct ? (
                       <button
                         onClick={() => { setPickerFor(row.namaIklanRaw); setPickerSearch(''); }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors max-w-[220px]"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors max-w-full sm:max-w-[220px]"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                         <span className="truncate">{matchedProduct.product_name}</span>
@@ -433,9 +451,9 @@ export default function AdsCocokkanProduk({ store, onImported }: AdsCocokkanProd
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {belumDicocokkan.map(m => (
-              <div key={m.id} className="px-6 py-3 flex items-center justify-between gap-4">
-                <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{m.nama_iklan_raw}</p>
-                <div className="relative shrink-0">
+              <div key={m.id} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-200 break-words min-w-0 flex-1">{m.nama_iklan_raw}</p>
+                <div className="shrink-0">
                   <button
                     onClick={() => { setPickerFor(m.nama_iklan_raw); setPickerSearch(''); }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors"
