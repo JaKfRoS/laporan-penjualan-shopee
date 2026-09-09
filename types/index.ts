@@ -85,6 +85,8 @@ export interface IklanProdukMapping {
   proses_pesanan: number;
   pot_admin_persen: number;
   operasional_persen: number;
+  target_acos_override: number | null;
+  target_roas_override: number | null;
   created_at?: string;
   updated_at?: string;
 }

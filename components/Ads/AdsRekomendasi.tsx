@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../services/supabase';
 import { Store, IklanMingguan, IklanProdukMapping, Product, IklanKpiTarget } from '../../types';
-import { resolveHpp, calcMargin, iklanGroupKey, applyPpnAdjustment } from './adsHelpers';
+import { resolveHpp, calcMargin, iklanGroupKey, applyPpnAdjustment, resolveKpiTarget } from './adsHelpers';
 import { evaluateRecommendation, Recommendation, RecommendationLevel } from './adsRules';
 import { DEFAULT_KPI_TARGET } from './AdsKpiSettings';
 import { Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
@@ -109,6 +109,8 @@ export default function AdsRekomendasi({ store }: AdsRekomendasiProps) {
         const mapping = mappingByKey.get(key) || null;
         const product = mapping?.product_sku ? productByKey.get(`${storeId}::${mapping.product_sku}`) : undefined;
         const hpp = resolveHpp(mapping, product || null);
+        // Target ACOS/ROAS per produk (kalau diatur) menang di atas target toko.
+        const resolvedTarget = resolveKpiTarget(mapping, target);
 
         const marginPerWeek = (week: IklanMingguan): number | null => {
           const m = calcMargin(
@@ -121,7 +123,11 @@ export default function AdsRekomendasi({ store }: AdsRekomendasiProps) {
           return m.marginSetelahIklan;
         };
 
-        const rec = evaluateRecommendation(recentWeeks, target, marginPerWeek);
+        const rec = evaluateRecommendation(
+          recentWeeks,
+          { target_acos: resolvedTarget.targetAcos, target_roas: resolvedTarget.targetRoas },
+          marginPerWeek
+        );
         if (rec) {
           results.push({
             key,

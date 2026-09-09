@@ -1,4 +1,4 @@
-import { IklanMingguan, IklanProdukMapping, Product } from '../../types';
+import { IklanMingguan, IklanProdukMapping, Product, IklanKpiTarget } from '../../types';
 
 // Rumus metrik & margin dipusatkan di sini supaya dashboard, halaman per-produk,
 // dan rule engine rekomendasi (fase berikutnya) semuanya membaca angka yang
@@ -80,6 +80,31 @@ export const resolveHpp = (
     return { value: masterValue, source: 'master', masterValue, berbedaDariMaster: false };
   }
   return { value: null, source: 'none', masterValue: null, berbedaDariMaster: false };
+};
+
+export interface ResolvedKpiTarget {
+  targetAcos: number;
+  targetRoas: number;
+  acosSource: 'produk' | 'toko';
+  roasSource: 'produk' | 'toko';
+}
+
+// Target per produk (opsional) menang di atas target default toko - dua-duanya
+// tetap ada: toko yang belum mengatur override produk tetap dievaluasi dengan
+// target tokonya, produk yang perlu perlakuan khusus (margin tipis/tebal beda
+// dari rata-rata toko) bisa diberi target sendiri.
+export const resolveKpiTarget = (
+  mapping: Pick<IklanProdukMapping, 'target_acos_override' | 'target_roas_override'> | null | undefined,
+  storeTarget: Pick<IklanKpiTarget, 'target_acos' | 'target_roas'>
+): ResolvedKpiTarget => {
+  const acosOverride = mapping?.target_acos_override ?? null;
+  const roasOverride = mapping?.target_roas_override ?? null;
+  return {
+    targetAcos: acosOverride !== null ? acosOverride : storeTarget.target_acos,
+    targetRoas: roasOverride !== null ? roasOverride : storeTarget.target_roas,
+    acosSource: acosOverride !== null ? 'produk' : 'toko',
+    roasSource: roasOverride !== null ? 'produk' : 'toko',
+  };
 };
 
 export type MarginGapReason = 'hpp-belum-lengkap' | 'belum-ada-penjualan' | null;
