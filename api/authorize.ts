@@ -64,6 +64,15 @@ export default withErrorHandling(async function handler(req: any, res: any) {
     .select('id, redirect_uris')
     .eq('id', client_id)
     .maybeSingle();
+
+  // Logging sementara untuk diagnosa - lihat Vercel function logs.
+  console.log('AUTHORIZE_DEBUG', JSON.stringify({
+    received_client_id: client_id,
+    received_redirect_uri: redirect_uri,
+    lookup_error: clientErr?.message || null,
+    found_client: client,
+  }));
+
   if (clientErr || !client || !client.redirect_uris.includes(redirect_uri)) {
     res.status(400).send('client_id atau redirect_uri tidak dikenal. Pastikan aplikasi klien sudah terdaftar lewat /api/register.');
     return;
