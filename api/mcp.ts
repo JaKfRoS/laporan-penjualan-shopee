@@ -1,8 +1,8 @@
-import { getSupabaseAdmin } from './_lib/db';
-import { sha256Hex } from './_lib/crypto';
-import { getOrigin, parseBody } from './_lib/oauthConfig';
-import { callTool, TOOLS } from './_lib/tools';
-import { withErrorHandling } from './_lib/withErrorHandling';
+import { getSupabaseAdmin } from './_lib/db.js';
+import { sha256Hex } from './_lib/crypto.js';
+import { getOrigin, parseBody } from './_lib/oauthConfig.js';
+import { callTool, TOOLS } from './_lib/tools.js';
+import { withErrorHandling } from './_lib/withErrorHandling.js';
 
 // Endpoint MCP (JSON-RPC lewat HTTP POST). SETIAP request wajib token valid -
 // termasuk "initialize" - supaya klien yang belum punya token selalu kena 401

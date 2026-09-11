@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from './db';
+import { getSupabaseAdmin } from './db.js';
 
 // Logika tool sama persis dengan supabase/functions/mcp-server/index.ts (versi
 // Deno yang dipakai lewat token statis di Claude Code) - dipusatkan di sini

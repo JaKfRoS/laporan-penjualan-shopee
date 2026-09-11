@@ -1,7 +1,7 @@
-import { getSupabaseAdmin } from './_lib/db';
-import { randomToken, sha256Hex } from './_lib/crypto';
-import { DEV_ALLOWED_USER_ID, AUTH_CODE_TTL_SECONDS, parseBody } from './_lib/oauthConfig';
-import { withErrorHandling } from './_lib/withErrorHandling';
+import { getSupabaseAdmin } from './_lib/db.js';
+import { randomToken, sha256Hex } from './_lib/crypto.js';
+import { DEV_ALLOWED_USER_ID, AUTH_CODE_TTL_SECONDS, parseBody } from './_lib/oauthConfig.js';
+import { withErrorHandling } from './_lib/withErrorHandling.js';
 
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]);

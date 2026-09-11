@@ -1,7 +1,7 @@
-import { getSupabaseAdmin } from './_lib/db';
-import { randomToken, sha256Hex, sha256Base64Url } from './_lib/crypto';
-import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS, parseBody } from './_lib/oauthConfig';
-import { withErrorHandling } from './_lib/withErrorHandling';
+import { getSupabaseAdmin } from './_lib/db.js';
+import { randomToken, sha256Hex, sha256Base64Url } from './_lib/crypto.js';
+import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS, parseBody } from './_lib/oauthConfig.js';
+import { withErrorHandling } from './_lib/withErrorHandling.js';
 
 async function issueTokenPair(userId: string, clientId: string, scope: string | null) {
   const supabaseAdmin = getSupabaseAdmin();

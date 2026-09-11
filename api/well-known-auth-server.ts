@@ -1,5 +1,5 @@
-import { getOrigin } from './_lib/oauthConfig';
-import { withErrorHandling } from './_lib/withErrorHandling';
+import { getOrigin } from './_lib/oauthConfig.js';
+import { withErrorHandling } from './_lib/withErrorHandling.js';
 
 // RFC 8414 - Authorization Server Metadata. Client publik + PKCE saja (tanpa
 // client_secret) karena semua klien (termasuk Claude) mendaftar sendiri lewat
