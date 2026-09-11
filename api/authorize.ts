@@ -1,6 +1,7 @@
-import { supabaseAdmin } from './_lib/db';
+import { getSupabaseAdmin } from './_lib/db';
 import { randomToken, sha256Hex } from './_lib/crypto';
 import { DEV_ALLOWED_USER_ID, AUTH_CODE_TTL_SECONDS, parseBody } from './_lib/oauthConfig';
+import { withErrorHandling } from './_lib/withErrorHandling';
 
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]);
@@ -38,7 +39,8 @@ function renderLoginPage(params: Record<string, string>, error?: string) {
 </body></html>`;
 }
 
-export default async function handler(req: any, res: any) {
+export default withErrorHandling(async function handler(req: any, res: any) {
+  const supabaseAdmin = getSupabaseAdmin();
   const isPost = req.method === 'POST';
   const source: Record<string, any> = isPost ? parseBody(req) : req.query || {};
 
@@ -110,4 +112,4 @@ export default async function handler(req: any, res: any) {
   if (state) redirectUrl.searchParams.set('state', state);
   res.writeHead(302, { Location: redirectUrl.toString() });
   res.end();
-}
+});

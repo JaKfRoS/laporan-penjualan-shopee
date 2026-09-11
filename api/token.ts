@@ -1,8 +1,10 @@
-import { supabaseAdmin } from './_lib/db';
+import { getSupabaseAdmin } from './_lib/db';
 import { randomToken, sha256Hex, sha256Base64Url } from './_lib/crypto';
 import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS, parseBody } from './_lib/oauthConfig';
+import { withErrorHandling } from './_lib/withErrorHandling';
 
 async function issueTokenPair(userId: string, clientId: string, scope: string | null) {
+  const supabaseAdmin = getSupabaseAdmin();
   const accessToken = randomToken(32);
   const refreshToken = randomToken(32);
   const accessExpiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_SECONDS * 1000).toISOString();
@@ -28,12 +30,13 @@ async function issueTokenPair(userId: string, clientId: string, scope: string | 
   return { accessToken, refreshToken, expiresAt: accessExpiresAt, scope };
 }
 
-export default async function handler(req: any, res: any) {
+export default withErrorHandling(async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'method_not_allowed' });
     return;
   }
 
+  const supabaseAdmin = getSupabaseAdmin();
   const body = parseBody(req);
   const grant_type = body.grant_type;
 
@@ -119,4 +122,4 @@ export default async function handler(req: any, res: any) {
   }
 
   res.status(400).json({ error: 'unsupported_grant_type' });
-}
+});

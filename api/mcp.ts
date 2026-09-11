@@ -1,7 +1,8 @@
-import { supabaseAdmin } from './_lib/db';
+import { getSupabaseAdmin } from './_lib/db';
 import { sha256Hex } from './_lib/crypto';
 import { getOrigin, parseBody } from './_lib/oauthConfig';
 import { callTool, TOOLS } from './_lib/tools';
+import { withErrorHandling } from './_lib/withErrorHandling';
 
 // Endpoint MCP (JSON-RPC lewat HTTP POST). SETIAP request wajib token valid -
 // termasuk "initialize" - supaya klien yang belum punya token selalu kena 401
@@ -12,6 +13,7 @@ import { callTool, TOOLS } from './_lib/tools';
 async function resolveUserId(authHeader: string | undefined): Promise<string | null> {
   const token = authHeader?.replace(/^Bearer\s+/i, '').trim();
   if (!token) return null;
+  const supabaseAdmin = getSupabaseAdmin();
   const tokenHash = sha256Hex(token);
   const { data, error } = await supabaseAdmin
     .from('mcp_access_tokens')
@@ -33,7 +35,7 @@ function jsonRpcError(id: unknown, code: number, message: string) {
   return { jsonrpc: '2.0', id, error: { code, message } };
 }
 
-export default async function handler(req: any, res: any) {
+export default withErrorHandling(async function handler(req: any, res: any) {
   const userId = await resolveUserId(req.headers.authorization);
   if (!userId) {
     const origin = getOrigin(req);
@@ -93,4 +95,4 @@ export default async function handler(req: any, res: any) {
   }
 
   res.status(400).json(jsonRpcError(id, -32601, `Method "${method}" tidak didukung.`));
-}
+});
