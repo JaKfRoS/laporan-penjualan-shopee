@@ -103,22 +103,19 @@ async function callTool(userId: string, name: string, args: Record<string, any>)
     if (stores.length === 0) return errorResult(`Toko "${nama_toko}" tidak ditemukan di akun ini.`);
     const storeIds = stores.map(s => s.id);
 
-    // Agregasi dilakukan di database (bukan tarik semua baris lalu jumlahkan di
-    // JS) - PostgREST/Supabase membatasi hasil .select() ke 1000 baris secara
-    // default, jadi toko dengan pesanan lebih dari itu akan salah dihitung
-    // kalau baris mentahnya ditarik satu-satu.
-    const { data, error } = await supabase
-      .from("orders")
-      .select(
-        "jumlah_pesanan:count(), omzet:sum(product_total), net_revenue:sum(net_revenue), total_discount:sum(total_discount), seller_voucher:sum(seller_voucher), admin_fee:sum(admin_fee), service_fee:sum(service_fee)"
-      )
-      .in("store_id", storeIds)
-      .gte("order_date", start_date)
-      .lte("order_date", end_date)
-      .single();
+    // Agregasi dilakukan di database lewat RPC (bukan tarik semua baris lalu
+    // jumlahkan di JS, dan bukan aggregate function di select= - PostgREST di
+    // project ini tidak mendukungnya) - PostgREST/Supabase membatasi hasil
+    // .select() ke 1000 baris secara default, jadi toko dengan pesanan lebih
+    // dari itu akan salah dihitung kalau baris mentahnya ditarik satu-satu.
+    const { data, error } = await supabase.rpc("rekap_penjualan_agg", {
+      p_store_ids: storeIds,
+      p_start_date: start_date,
+      p_end_date: end_date,
+    });
     if (error) return errorResult(error.message);
 
-    const row: any = data || {};
+    const row: any = (data && data[0]) || {};
     const totals = {
       jumlah_pesanan: Number(row.jumlah_pesanan) || 0,
       omzet: Number(row.omzet) || 0,
