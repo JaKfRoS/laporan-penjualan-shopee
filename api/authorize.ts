@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from './_lib/db.js';
+import { getSupabaseAdmin, createAuthClient } from './_lib/db.js';
 import { randomToken, sha256Hex } from './_lib/crypto.js';
 import { DEV_ALLOWED_USER_ID, AUTH_CODE_TTL_SECONDS, parseBody } from './_lib/oauthConfig.js';
 import { withErrorHandling } from './_lib/withErrorHandling.js';
@@ -65,14 +65,6 @@ export default withErrorHandling(async function handler(req: any, res: any) {
     .eq('id', client_id)
     .maybeSingle();
 
-  // Logging sementara untuk diagnosa - lihat Vercel function logs.
-  console.log('AUTHORIZE_DEBUG', JSON.stringify({
-    received_client_id: client_id,
-    received_redirect_uri: redirect_uri,
-    lookup_error: clientErr?.message || null,
-    found_client: client,
-  }));
-
   if (clientErr || !client || !client.redirect_uris.includes(redirect_uri)) {
     res.status(400).send('client_id atau redirect_uri tidak dikenal. Pastikan aplikasi klien sudah terdaftar lewat /api/register.');
     return;
@@ -87,7 +79,7 @@ export default withErrorHandling(async function handler(req: any, res: any) {
   const email = String(source.email || '');
   const password = String(source.password || '');
 
-  const { data: signInData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({ email, password });
+  const { data: signInData, error: signInError } = await createAuthClient().auth.signInWithPassword({ email, password });
   if (signInError || !signInData.user) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.status(200).send(renderLoginPage(passthrough, 'Email atau password salah.'));

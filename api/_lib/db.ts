@@ -18,3 +18,21 @@ export function getSupabaseAdmin(): SupabaseClient {
   client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   return client;
 }
+
+// Client BARU (bukan singleton) khusus untuk memverifikasi email/password.
+// PENTING: signInWithPassword() dipanggil pada instance client-nya sendiri
+// akan menukar Authorization header client itu dari service_role menjadi JWT
+// user yang baru login - kalau ini dipanggil di atas getSupabaseAdmin(),
+// query admin (bypass RLS) SETELAHNYA di client (singleton) yang sama akan
+// ikut berjalan sebagai user biasa, kena RLS, dan gagal. Client sekali-pakai
+// ini mencegah "kebocoran" itu ke client admin.
+export function createAuthClient(): SupabaseClient {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error(
+      'SUPABASE_URL dan/atau SUPABASE_SERVICE_ROLE_KEY belum diset di Environment Variables Vercel. Tambahkan lalu redeploy.'
+    );
+  }
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
