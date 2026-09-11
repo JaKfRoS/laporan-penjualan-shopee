@@ -108,6 +108,14 @@ async function callTool(userId: string, name: string, args: Record<string, any>)
     // project ini tidak mendukungnya) - PostgREST/Supabase membatasi hasil
     // .select() ke 1000 baris secara default, jadi toko dengan pesanan lebih
     // dari itu akan salah dihitung kalau baris mentahnya ditarik satu-satu.
+    //
+    // Formula omzet/net_revenue/potongan_marketplace meniru PERSIS logika
+    // "Omzet Riil"/"Dana Cair"/"Potongan Marketplace" di Dashboard.tsx: hanya
+    // pesanan selesai/retur (bukan batal), omzet pakai fallback product_total
+    // -> total_payment (product_total sering 0 kalau header file import tidak
+    // cocok), net_revenue pakai fallback dari gmv-fee, dan potongan dihitung
+    // dari breakdown fee_details - bukan cuma kolom diskon mentah. Lihat
+    // fungsi SQL rekap_penjualan_agg untuk detail lengkapnya.
     const { data, error } = await supabase.rpc("rekap_penjualan_agg", {
       p_store_ids: storeIds,
       p_start_date: start_date,
@@ -120,8 +128,7 @@ async function callTool(userId: string, name: string, args: Record<string, any>)
       jumlah_pesanan: Number(row.jumlah_pesanan) || 0,
       omzet: Number(row.omzet) || 0,
       net_revenue: Number(row.net_revenue) || 0,
-      potongan_marketplace:
-        (Number(row.total_discount) || 0) + (Number(row.seller_voucher) || 0) + (Number(row.admin_fee) || 0) + (Number(row.service_fee) || 0),
+      potongan_marketplace: Number(row.potongan_marketplace) || 0,
     };
 
     return textResult({ periode: `${start_date} s/d ${end_date}`, toko: stores.map(s => s.name), ...totals });
