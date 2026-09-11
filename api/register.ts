@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
-import { getSupabaseAdmin } from './_lib/db';
-import { parseBody } from './_lib/oauthConfig';
-import { withErrorHandling } from './_lib/withErrorHandling';
+import { getSupabaseAdmin } from './_lib/db.js';
+import { parseBody } from './_lib/oauthConfig.js';
+import { withErrorHandling } from './_lib/withErrorHandling.js';
 
 // RFC 7591 - Dynamic Client Registration, subset minimal: klien publik (PKCE,
 // tanpa client_secret) yang mendaftarkan redirect_uris-nya sendiri.
