@@ -103,23 +103,29 @@ async function callTool(userId: string, name: string, args: Record<string, any>)
     if (stores.length === 0) return errorResult(`Toko "${nama_toko}" tidak ditemukan di akun ini.`);
     const storeIds = stores.map(s => s.id);
 
-    const { data: orders, error } = await supabase
+    // Agregasi dilakukan di database (bukan tarik semua baris lalu jumlahkan di
+    // JS) - PostgREST/Supabase membatasi hasil .select() ke 1000 baris secara
+    // default, jadi toko dengan pesanan lebih dari itu akan salah dihitung
+    // kalau baris mentahnya ditarik satu-satu.
+    const { data, error } = await supabase
       .from("orders")
-      .select("product_total, net_revenue, total_discount, seller_voucher, admin_fee, service_fee")
+      .select(
+        "jumlah_pesanan:count(), omzet:sum(product_total), net_revenue:sum(net_revenue), total_discount:sum(total_discount), seller_voucher:sum(seller_voucher), admin_fee:sum(admin_fee), service_fee:sum(service_fee)"
+      )
       .in("store_id", storeIds)
       .gte("order_date", start_date)
-      .lte("order_date", end_date);
+      .lte("order_date", end_date)
+      .single();
     if (error) return errorResult(error.message);
 
-    const totals = (orders || []).reduce(
-      (acc, o) => ({
-        jumlah_pesanan: acc.jumlah_pesanan + 1,
-        omzet: acc.omzet + (o.product_total || 0),
-        net_revenue: acc.net_revenue + (o.net_revenue || 0),
-        potongan_marketplace: acc.potongan_marketplace + (o.total_discount || 0) + (o.seller_voucher || 0) + (o.admin_fee || 0) + (o.service_fee || 0),
-      }),
-      { jumlah_pesanan: 0, omzet: 0, net_revenue: 0, potongan_marketplace: 0 }
-    );
+    const row: any = data || {};
+    const totals = {
+      jumlah_pesanan: Number(row.jumlah_pesanan) || 0,
+      omzet: Number(row.omzet) || 0,
+      net_revenue: Number(row.net_revenue) || 0,
+      potongan_marketplace:
+        (Number(row.total_discount) || 0) + (Number(row.seller_voucher) || 0) + (Number(row.admin_fee) || 0) + (Number(row.service_fee) || 0),
+    };
 
     return textResult({ periode: `${start_date} s/d ${end_date}`, toko: stores.map(s => s.name), ...totals });
   }
