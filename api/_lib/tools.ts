@@ -1,4 +1,4 @@
-import { supabaseAdmin } from './db';
+import { getSupabaseAdmin } from './db';
 
 // Logika tool sama persis dengan supabase/functions/mcp-server/index.ts (versi
 // Deno yang dipakai lewat token statis di Claude Code) - dipusatkan di sini
@@ -7,6 +7,7 @@ import { supabaseAdmin } from './db';
 const PPN_IKLAN_RATE = 0.11;
 
 async function getOwnedStores(userId: string, namaToko?: string) {
+  const supabaseAdmin = getSupabaseAdmin();
   const { data, error } = await supabaseAdmin.from('stores').select('id, name').eq('user_id', userId);
   if (error) throw new Error(error.message);
   const stores = data || [];
@@ -57,6 +58,8 @@ export const TOOLS = [
 ];
 
 export async function callTool(userId: string, name: string, args: Record<string, any>) {
+  const supabaseAdmin = getSupabaseAdmin();
+
   if (name === 'list_toko') {
     const stores = await getOwnedStores(userId);
     return textResult(stores);
