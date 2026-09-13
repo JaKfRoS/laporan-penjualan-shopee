@@ -62,6 +62,43 @@ function errorResult(message: string) {
   return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
 }
 
+// Label & arah kas per komponen fee_details - persis label yang dipakai di
+// halaman Dashboard (mode Basis Pesanan Selesai) supaya laporan yang dibuat
+// dari tool ini konsisten dengan yang user lihat di aplikasi.
+const FEE_DETAIL_LABELS: Array<{ key: string; label: string; kategori: "pemasukan" | "biaya"; sign: 1 | -1 }> = [
+  { key: "shopee_product_discount", label: "Diskon Produk dari Shopee", kategori: "pemasukan", sign: 1 },
+  { key: "shipping_paid_by_buyer", label: "Ongkir Dibayar Pembeli", kategori: "pemasukan", sign: 1 },
+  { key: "shipping_discount_by_courier", label: "Diskon Ongkir Ditanggung Jasa Kirim", kategori: "pemasukan", sign: 1 },
+  { key: "shipping_rebate", label: "Gratis Ongkir dari Shopee", kategori: "pemasukan", sign: 1 },
+  { key: "shipping_refund", label: "Pengembalian Biaya Kirim", kategori: "pemasukan", sign: 1 },
+  { key: "seller_voucher", label: "Voucher disponsor oleh Penjual", kategori: "biaya", sign: -1 },
+  { key: "seller_cofund_voucher", label: "Voucher co-fund disponsor oleh Penjual", kategori: "biaya", sign: -1 },
+  { key: "seller_coin_cashback", label: "Cashback Koin disponsori Penjual", kategori: "biaya", sign: -1 },
+  { key: "seller_cofund_coin_cashback", label: "Cashback Koin Co-fund disponsori Penjual", kategori: "biaya", sign: -1 },
+  { key: "shipping_forwarded", label: "Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim", kategori: "biaya", sign: -1 },
+  { key: "return_shipping_fee", label: "Ongkos Kirim Pengembalian Barang", kategori: "biaya", sign: -1 },
+  { key: "return_to_sender_shipping_fee", label: "Kembali ke Biaya Pengiriman Pengirim", kategori: "biaya", sign: -1 },
+  { key: "ams_commission", label: "Biaya Komisi AMS", kategori: "biaya", sign: -1 },
+  { key: "admin_fee", label: "Biaya Administrasi", kategori: "biaya", sign: -1 },
+  { key: "service_fee", label: "Biaya Layanan", kategori: "biaya", sign: -1 },
+  { key: "processing_fee", label: "Biaya Proses Pesanan", kategori: "biaya", sign: -1 },
+  { key: "premium_fee", label: "Premi", kategori: "biaya", sign: -1 },
+  { key: "save_shipping_program_fee", label: "Biaya Program Hemat Biaya Kirim", kategori: "biaya", sign: -1 },
+  { key: "transaction_fee", label: "Biaya Transaksi", kategori: "biaya", sign: -1 },
+  { key: "campaign_fee", label: "Biaya Kampanye", kategori: "biaya", sign: -1 },
+  { key: "auto_topup_fee", label: "Biaya Isi Saldo Otomatis (dari Penghasilan)", kategori: "biaya", sign: -1 },
+  { key: "free_shipping_xtra_fee", label: "Biaya Gratis Ongkir XTRA", kategori: "biaya", sign: -1 },
+  { key: "refund_amount", label: "Jumlah Pengembalian Dana ke Pembeli", kategori: "biaya", sign: -1 },
+];
+
+function buildDetailPotongan(row: Record<string, any>) {
+  return FEE_DETAIL_LABELS.map(({ key, label, kategori, sign }) => ({
+    label,
+    kategori,
+    jumlah: sign * (Number(row[key]) || 0),
+  })).filter(item => item.jumlah !== 0);
+}
+
 // --- Rumus iklan (duplikat dari components/Ads/adsHelpers.ts) ---
 
 function applyPpnAdjustment(agg: any, biayaTermasukPpn: boolean) {
@@ -161,7 +198,7 @@ const TOOLS = [
   {
     name: "rekap_keuangan",
     description:
-      "Rekap keuangan (fitur Keuangan/Cashflow di aplikasi): Penjualan, Potongan Marketplace, Dana Cair, HPP, dan Laba Kotor untuk rentang tanggal tertentu berbasis tanggal dana dilepaskan (release_date) - sama seperti halaman Keuangan.",
+      "Rekap keuangan (fitur Keuangan/Cashflow di aplikasi): Penjualan, Potongan Marketplace (plus rincian per komponen fee: admin, layanan, AMS, ongkir, voucher, dll), Dana Cair, HPP, dan Laba Kotor untuk rentang tanggal tertentu berbasis tanggal dana dilepaskan (release_date) - sama seperti halaman Keuangan.",
     inputSchema: {
       type: "object",
       properties: {
@@ -176,7 +213,7 @@ const TOOLS = [
   {
     name: "analisa_performa_produk",
     description:
-      "Analisa performa penjualan per produk/varian (basis pesanan dibuat, exclude pesanan batal): jumlah terjual, omzet, rata-rata harga, HPP, dan estimasi margin kotor per SKU. Bisa diurutkan terlaris atau paling rendah, dengan limit+offset untuk lihat peringkat tertentu (mis. peringkat 1-5 lalu 6-10), dan bisa cari nama produk spesifik untuk bandingkan antar variannya.",
+      'Analisa performa penjualan per produk/varian: jumlah terjual, omzet, rata-rata harga, HPP, dan estimasi margin kotor per SKU. Bisa pilih basis "pesanan_dibuat" (default, ikut tanggal order dibuat, exclude batal) atau "pesanan_selesai" (ikut tanggal dana dilepaskan/release_date, hanya pesanan berstatus selesai - sama seperti mode "Basis Pesanan Selesai" di Dashboard). Bisa diurutkan terlaris atau paling rendah, dengan limit+offset untuk lihat peringkat tertentu (mis. peringkat 1-5 lalu 6-10), dan bisa cari nama produk spesifik untuk bandingkan antar variannya. Tidak ada mode "ambil semua SKU sekaligus" - untuk katalog besar, panggil berulang dengan offset bertahap.',
     inputSchema: {
       type: "object",
       properties: {
@@ -184,6 +221,7 @@ const TOOLS = [
         end_date: { type: "string", description: "Tanggal akhir, format YYYY-MM-DD" },
         nama_toko: { type: "string", description: "Nama toko spesifik (boleh sebagian). Kosongkan untuk semua toko di akun ini." },
         nama_produk: { type: "string", description: "Filter nama produk (boleh sebagian, mis. untuk bandingkan semua varian satu produk). Kosongkan untuk semua produk." },
+        basis: { type: "string", enum: ["pesanan_dibuat", "pesanan_selesai"], description: '"pesanan_dibuat" (default): filter tanggal order dibuat. "pesanan_selesai": filter tanggal dana dilepaskan (release_date), hanya pesanan berstatus selesai/completed/rekonsiliasi/terkirim.' },
         urutkan_berdasarkan: { type: "string", enum: ["jumlah_terjual", "omzet"], description: "Urutkan berdasarkan jumlah unit terjual atau omzet. Default jumlah_terjual." },
         arah: { type: "string", enum: ["terlaris", "terendah"], description: '"terlaris" (default) untuk yang paling laku duluan, "terendah" untuk yang paling sedikit terjual duluan.' },
         limit: { type: "number", description: "Jumlah baris yang diambil, default 10, maksimal 50." },
@@ -298,14 +336,15 @@ async function callTool(userId: string, name: string, args: Record<string, any>)
     // fee_details punya celah kecil (mis. penyesuaian dari Shopee) yang bikin
     // breakdown tidak selalu pas. Ini sengaja beda dari rekap_penjualan_selesai
     // supaya masing-masing tool cocok dengan angka di halaman yang ditirunya.
-    const { data, error } = await supabase.rpc("rekap_pesanan_selesai_agg", {
-      p_store_ids: storeIds,
-      p_start_date: start_date,
-      p_end_date: end_date,
-    });
+    const [{ data, error }, { data: detailRows, error: detailErr }] = await Promise.all([
+      supabase.rpc("rekap_pesanan_selesai_agg", { p_store_ids: storeIds, p_start_date: start_date, p_end_date: end_date }),
+      supabase.rpc("rekap_potongan_detail_agg", { p_store_ids: storeIds, p_start_date: start_date, p_end_date: end_date }),
+    ]);
     if (error) return errorResult(error.message);
+    if (detailErr) return errorResult(detailErr.message);
 
     const row: any = (data && data[0]) || {};
+    const detailRow: any = (detailRows && detailRows[0]) || {};
     const omzet = Number(row.omzet) || 0;
     const danaCair = Number(row.dana_cair) || 0;
     const hpp = Number(row.hpp) || 0;
@@ -313,6 +352,7 @@ async function callTool(userId: string, name: string, args: Record<string, any>)
       jumlah_pesanan: Number(row.jumlah_pesanan) || 0,
       penjualan: omzet,
       potongan_marketplace: Math.max(0, omzet - danaCair),
+      detail_potongan_marketplace: buildDetailPotongan(detailRow),
       dana_cair: danaCair,
       hpp,
       laba_kotor: danaCair - hpp,
@@ -322,7 +362,7 @@ async function callTool(userId: string, name: string, args: Record<string, any>)
   }
 
   if (name === "analisa_performa_produk") {
-    const { start_date, end_date, nama_toko, nama_produk, urutkan_berdasarkan, arah, limit, offset } = args || {};
+    const { start_date, end_date, nama_toko, nama_produk, basis, urutkan_berdasarkan, arah, limit, offset } = args || {};
     if (!start_date || !end_date) return errorResult("start_date dan end_date wajib diisi.");
     const stores = await getOwnedStores(userId, nama_toko);
     if (stores.length === 0) return errorResult(`Toko "${nama_toko}" tidak ditemukan di akun ini.`);
@@ -330,8 +370,9 @@ async function callTool(userId: string, name: string, args: Record<string, any>)
 
     const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
     const safeOffset = Math.max(Number(offset) || 0, 0);
+    const rpcName = basis === "pesanan_selesai" ? "analisa_produk_selesai_agg" : "analisa_produk_agg";
 
-    const { data, error } = await supabase.rpc("analisa_produk_agg", {
+    const { data, error } = await supabase.rpc(rpcName, {
       p_store_ids: storeIds,
       p_start_date: start_date,
       p_end_date: end_date,
@@ -355,7 +396,7 @@ async function callTool(userId: string, name: string, args: Record<string, any>)
       margin_kotor: p.margin_kotor !== null ? Number(p.margin_kotor) : null,
     }));
 
-    return textResult({ periode: `${start_date} s/d ${end_date}`, toko: stores.map(s => s.name), produk });
+    return textResult({ periode: `${start_date} s/d ${end_date}`, basis: basis === "pesanan_selesai" ? "pesanan_selesai" : "pesanan_dibuat", toko: stores.map(s => s.name), produk });
   }
 
   if (name === "performa_iklan") {
