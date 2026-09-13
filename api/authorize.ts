@@ -1,6 +1,6 @@
 import { getSupabaseAdmin, createAuthClient } from './_lib/db.js';
 import { randomToken, sha256Hex } from './_lib/crypto.js';
-import { DEV_ALLOWED_USER_ID, AUTH_CODE_TTL_SECONDS, parseBody } from './_lib/oauthConfig.js';
+import { AUTH_CODE_TTL_SECONDS, parseBody } from './_lib/oauthConfig.js';
 import { withErrorHandling } from './_lib/withErrorHandling.js';
 
 function escapeHtml(s: string) {
@@ -83,12 +83,6 @@ export default withErrorHandling(async function handler(req: any, res: any) {
   if (signInError || !signInData.user) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.status(200).send(renderLoginPage(passthrough, 'Email atau password salah.'));
-    return;
-  }
-
-  if (signInData.user.id !== DEV_ALLOWED_USER_ID) {
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.status(200).send(renderLoginPage(passthrough, 'Akun ini belum diaktifkan untuk akses chat (masih tahap pengembangan).'));
     return;
   }
 
