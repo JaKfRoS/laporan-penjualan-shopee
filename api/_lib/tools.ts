@@ -36,7 +36,7 @@ export const TOOLS = [
   {
     name: 'rekap_performa_penjualan',
     description:
-      'Rekap penjualan berbasis TANGGAL PESANAN DIBUAT (kapan pembeli order) - sama seperti mode "Basis Pesanan Dibuat" di Dashboard. Cocok untuk melihat performa penjualan periode berjalan, termasuk pesanan yang belum tentu sudah cair dananya.',
+      'Rekap PERFORMA penjualan berbasis TANGGAL PESANAN DIBUAT (kapan pembeli order) - sama seperti mode "Basis Pesanan Dibuat" di Dashboard. Fokus ke omzet, rata-rata nilai per pesanan, jumlah pesanan dibatalkan, dan produk terlaris pada periode ini - bukan rincian potongan marketplace (pakai rekap_keuangan untuk itu).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -113,26 +113,34 @@ export async function callTool(userId: string, name: string, args: Record<string
     // .select() ke 1000 baris secara default, jadi toko dengan pesanan lebih
     // dari itu akan salah dihitung kalau baris mentahnya ditarik satu-satu.
     //
-    // Formula omzet/net_revenue/potongan_marketplace meniru PERSIS logika
-    // "Omzet Riil"/"Dana Cair"/"Potongan Marketplace" di Dashboard.tsx: hanya
-    // pesanan selesai/retur (bukan batal), omzet pakai fallback product_total
-    // -> total_payment (product_total sering 0 kalau header file import tidak
-    // cocok), net_revenue pakai fallback dari gmv-fee, dan potongan dihitung
-    // dari breakdown fee_details - bukan cuma kolom diskon mentah. Lihat
-    // fungsi SQL rekap_penjualan_agg untuk detail lengkapnya.
-    const { data, error } = await supabaseAdmin.rpc('rekap_penjualan_agg', {
-      p_store_ids: storeIds,
-      p_start_date: start_date,
-      p_end_date: end_date,
-    });
+    // Fokus tool ini: omzet, rata-rata per pesanan, jumlah dibatalkan, dan
+    // produk terlaris - BUKAN rincian potongan marketplace (itu di
+    // rekap_keuangan). Omzet tetap pakai formula "Omzet Riil" Dashboard.tsx
+    // (fallback product_total -> total_payment, hanya pesanan selesai/retur)
+    // supaya tidak salah hitung seperti bug product_total=0 yang pernah
+    // terjadi. jumlah_dibatalkan dihitung dari SEMUA pesanan di rentang
+    // order_date yang sama (bukan cuma yang settled).
+    const [{ data, error }, { data: produkRows, error: produkErr }] = await Promise.all([
+      supabaseAdmin.rpc('rekap_penjualan_agg', { p_store_ids: storeIds, p_start_date: start_date, p_end_date: end_date }),
+      supabaseAdmin.rpc('produk_terlaris_agg', { p_store_ids: storeIds, p_start_date: start_date, p_end_date: end_date, p_limit: 10 }),
+    ]);
     if (error) return errorResult(error.message);
+    if (produkErr) return errorResult(produkErr.message);
 
     const row: any = (data && data[0]) || {};
+    const jumlahPesanan = Number(row.jumlah_pesanan) || 0;
+    const omzet = Number(row.omzet) || 0;
     const totals = {
-      jumlah_pesanan: Number(row.jumlah_pesanan) || 0,
-      omzet: Number(row.omzet) || 0,
-      net_revenue: Number(row.net_revenue) || 0,
-      potongan_marketplace: Number(row.potongan_marketplace) || 0,
+      jumlah_pesanan: jumlahPesanan,
+      omzet,
+      rata_rata_per_pesanan: jumlahPesanan > 0 ? Math.round(omzet / jumlahPesanan) : 0,
+      jumlah_dibatalkan: Number(row.jumlah_dibatalkan) || 0,
+      produk_terlaris: (produkRows || []).map((p: any) => ({
+        produk: p.produk,
+        sku: p.sku || null,
+        jumlah_terjual: Number(p.jumlah_terjual) || 0,
+        omzet: Number(p.omzet) || 0,
+      })),
     };
 
     return textResult({ periode: `${start_date} s/d ${end_date}`, toko: stores.map(s => s.name), ...totals });
