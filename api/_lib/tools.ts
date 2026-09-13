@@ -79,6 +79,26 @@ export const TOOLS = [
     },
   },
   {
+    name: 'analisa_performa_produk',
+    description:
+      'Analisa performa penjualan per produk/varian (basis pesanan dibuat, exclude pesanan batal): jumlah terjual, omzet, rata-rata harga, HPP, dan estimasi margin kotor per SKU. Bisa diurutkan terlaris atau paling rendah, dengan limit+offset untuk lihat peringkat tertentu (mis. peringkat 1-5 lalu 6-10), dan bisa cari nama produk spesifik untuk bandingkan antar variannya.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        start_date: { type: 'string', description: 'Tanggal mulai, format YYYY-MM-DD' },
+        end_date: { type: 'string', description: 'Tanggal akhir, format YYYY-MM-DD' },
+        nama_toko: { type: 'string', description: 'Nama toko spesifik (boleh sebagian). Kosongkan untuk semua toko di akun ini.' },
+        nama_produk: { type: 'string', description: 'Filter nama produk (boleh sebagian, mis. untuk bandingkan semua varian satu produk). Kosongkan untuk semua produk.' },
+        urutkan_berdasarkan: { type: 'string', enum: ['jumlah_terjual', 'omzet'], description: 'Urutkan berdasarkan jumlah unit terjual atau omzet. Default jumlah_terjual.' },
+        arah: { type: 'string', enum: ['terlaris', 'terendah'], description: '"terlaris" (default) untuk yang paling laku duluan, "terendah" untuk yang paling sedikit terjual duluan.' },
+        limit: { type: 'number', description: 'Jumlah baris yang diambil, default 10, maksimal 50.' },
+        offset: { type: 'number', description: 'Lewati sekian baris pertama - untuk lihat peringkat berikutnya, mis. offset=5 dengan limit=5 untuk peringkat 6-10. Default 0.' },
+      },
+      required: ['start_date', 'end_date'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'performa_iklan',
     description:
       'Ringkasan performa iklan Shopee minggu terbaru per nama iklan/produk (fitur Ads & Promosi): biaya (sudah disesuaikan PPN 11% kalau perlu), omzet, ACOS, ROAS, HPP, Margin Setelah Iklan, dan status kesehatan dibanding target (per produk kalau diatur, atau target default toko).',
@@ -207,6 +227,43 @@ export async function callTool(userId: string, name: string, args: Record<string
     };
 
     return textResult({ periode: `${start_date} s/d ${end_date}`, toko: stores.map(s => s.name), ...totals });
+  }
+
+  if (name === 'analisa_performa_produk') {
+    const { start_date, end_date, nama_toko, nama_produk, urutkan_berdasarkan, arah, limit, offset } = args || {};
+    if (!start_date || !end_date) return errorResult('start_date dan end_date wajib diisi.');
+    const stores = await getOwnedStores(userId, nama_toko);
+    if (stores.length === 0) return errorResult(`Toko "${nama_toko}" tidak ditemukan di akun ini.`);
+    const storeIds = stores.map(s => s.id);
+
+    const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+    const safeOffset = Math.max(Number(offset) || 0, 0);
+
+    const { data, error } = await supabaseAdmin.rpc('analisa_produk_agg', {
+      p_store_ids: storeIds,
+      p_start_date: start_date,
+      p_end_date: end_date,
+      p_nama_produk: nama_produk || null,
+      p_urutkan: urutkan_berdasarkan === 'omzet' ? 'omzet' : 'jumlah_terjual',
+      p_arah: arah === 'terendah' ? 'asc' : 'desc',
+      p_limit: safeLimit,
+      p_offset: safeOffset,
+    });
+    if (error) return errorResult(error.message);
+
+    const produk = (data || []).map((p: any, idx: number) => ({
+      peringkat: safeOffset + idx + 1,
+      produk: p.produk,
+      sku: p.sku || null,
+      jumlah_terjual: Number(p.jumlah_terjual) || 0,
+      jumlah_pesanan: Number(p.jumlah_pesanan) || 0,
+      omzet: Number(p.omzet) || 0,
+      rata_rata_harga: Number(p.rata_rata_harga) || 0,
+      hpp: p.hpp !== null ? Number(p.hpp) : null,
+      margin_kotor: p.margin_kotor !== null ? Number(p.margin_kotor) : null,
+    }));
+
+    return textResult({ periode: `${start_date} s/d ${end_date}`, toko: stores.map(s => s.name), produk });
   }
 
   if (name === 'performa_iklan') {
