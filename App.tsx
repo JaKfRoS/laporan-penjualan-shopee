@@ -19,6 +19,9 @@ const ProductManager = lazy(() => import('./components/Product/ProductManager').
 import { StoreSelector } from './components/StoreSelector';
 import { Layout } from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
+// Lazy: menarik @google/genai (SDK Gemini) yang cukup berat - jangan sampai
+// ikut membengkakkan bundle utama untuk user yang tidak pernah buka Pengaturan.
+const AiIntegrationSettings = lazy(() => import('./components/Settings/AiIntegrationSettings').then(m => ({ default: m.AiIntegrationSettings })));
 import { deleteStoreWithData } from './services/storeDeletion';
 const AdsCenter = lazy(() => import('./components/Ads/AdsCenter'));
 const CashflowPage = lazy(() => import('./components/Cashflow/CashflowPage').then(m => ({ default: m.CashflowPage })));
@@ -673,7 +676,11 @@ export default function App() {
                   </button>
                 </div>
               </div>
-              
+
+              <Suspense fallback={<div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 h-40 flex items-center justify-center"><Loader2 className="w-6 h-6 text-purple-400 animate-spin" /></div>}>
+                <AiIntegrationSettings />
+              </Suspense>
+
               {currentStore?.id !== 'all' && (
               <div className="bg-red-50/30 dark:bg-red-950/5 rounded-[2.5rem] border border-red-100 dark:border-red-900/20 p-6 md:p-10">
                 <div className="flex items-center gap-3 text-red-600 font-black mb-6 md:mb-10 uppercase text-xs md:text-sm tracking-widest">

@@ -140,3 +140,14 @@ export type Mapping = Record<string, string>;
 export interface RawRow {
   [key: string]: any;
 }
+
+export type AiProvider = 'gemini' | 'openai' | 'anthropic' | 'openai_compatible';
+
+export interface AiSettings {
+  user_id: string;
+  provider: AiProvider;
+  api_key: string;
+  model: string | null;
+  base_url: string | null;
+  updated_at: string;
+}
