@@ -31,6 +31,45 @@ export class AiNotConfiguredError extends Error {
   }
 }
 
+// Error dari provider AI sampai ke sini dalam bentuk mentah yang beda-beda -
+// SDK @google/genai melempar Error yang message-nya JSON body API Gemini apa
+// adanya, sementara callOpenAiCompatible/callAnthropic bikin sendiri format
+// "<Provider> error <status>: <body>". Keduanya kalau ditampilkan langsung ke
+// user jadi tembok teks JSON yang tidak ada gunanya. Fungsi ini mengenali
+// pola umum (kuota habis, key salah, jaringan putus) dan mengubahnya jadi
+// satu kalimat yang jelas apa yang terjadi dan apa yang perlu dilakukan.
+export function humanizeAiError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+
+  let status: number | null = null;
+  try {
+    const parsed = JSON.parse(raw);
+    status = Number(parsed?.error?.code) || null;
+  } catch {
+    const match = raw.match(/error (\d{3}):/i);
+    if (match) status = Number(match[1]);
+  }
+
+  const lower = raw.toLowerCase();
+  const isRateLimit = status === 429 || lower.includes('resource_exhausted') || lower.includes('rate limit') || lower.includes('quota');
+  const isAuth = status === 401 || status === 403 || lower.includes('permission_denied') || lower.includes('api key not valid') || lower.includes('invalid api key') || lower.includes('unauthorized') || lower.includes('incorrect api key');
+  const isNetwork = lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('err_connection') || lower.includes('err_tunnel') || lower.includes('err_name_not_resolved');
+
+  if (isRateLimit) {
+    return 'API key Anda sudah mencapai batas penggunaan (kuota/rate limit) di provider AI ini. Coba lagi dalam beberapa menit, atau ganti ke API key/provider lain di Pengaturan → Integrasi AI.';
+  }
+  if (isAuth) {
+    return 'API key tidak valid atau tidak punya akses ke model ini. Periksa kembali API key Anda di Pengaturan → Integrasi AI.';
+  }
+  if (isNetwork) {
+    return 'Gagal terhubung ke layanan AI. Periksa koneksi internet Anda lalu coba lagi.';
+  }
+
+  // Fallback: tetap tampilkan pesan asli (dipotong) supaya kasus yang belum
+  // dikenali tidak hilang informasinya sama sekali, cuma tidak membanjiri layar.
+  return raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;

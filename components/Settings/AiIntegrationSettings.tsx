@@ -4,7 +4,7 @@ import { toast } from 'react-hot-toast';
 import { Sparkles, Loader2, Eye, EyeOff, Save, Trash2, CheckCircle2, PlugZap, Pencil } from 'lucide-react';
 import { AiProvider, AiSettings } from '../../types';
 import { getAiSettings, saveAiSettings, deleteAiSettings, maskApiKey } from '../../services/aiSettings';
-import { getSalesInsights, DEFAULT_MODELS, PROVIDER_LABELS } from '../../services/aiInsights';
+import { getSalesInsights, DEFAULT_MODELS, PROVIDER_LABELS, humanizeAiError } from '../../services/aiInsights';
 
 const PROVIDER_OPTIONS: { value: AiProvider; label: string; helper: string }[] = [
   { value: 'gemini', label: 'Google Gemini', helper: 'Dapatkan API key gratis di aistudio.google.com/apikey' },
@@ -102,7 +102,7 @@ export const AiIntegrationSettings: React.FC = () => {
       await getSalesInsights({ contoh: 'tes koneksi', omzet: 1000000, jumlah_pesanan: 10 }, settingsToTest);
       toast.success('Berhasil! API key valid dan bisa dipakai.', { id: toastId });
     } catch (err: any) {
-      toast.error('Gagal: ' + (err.message || 'API key tidak valid.'), { id: toastId });
+      toast.error('Gagal: ' + humanizeAiError(err), { id: toastId });
     } finally {
       setTesting(false);
     }

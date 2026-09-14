@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bot, MessageCircle, Minus, X, Send, Loader2, AlertCircle } from 'lucide-react';
 import { AiSettings } from '../../types';
-import { chatWithAssistant, AiNotConfiguredError, ChatMessage } from '../../services/aiInsights';
+import { chatWithAssistant, AiNotConfiguredError, ChatMessage, humanizeAiError } from '../../services/aiInsights';
 import { InsightBody } from './InsightMarkdown';
 
 interface FloatingAiChatProps {
@@ -70,7 +70,7 @@ export const FloatingAiChat: React.FC<FloatingAiChatProps> = ({ visible, open, o
       const reply = await chatWithAssistant(nextMessages, contextSummary, aiSettings);
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (err: any) {
-      setError(err instanceof AiNotConfiguredError ? 'AI belum diatur - buka Pengaturan → Integrasi AI.' : (err.message || 'Gagal mendapat balasan dari AI.'));
+      setError(err instanceof AiNotConfiguredError ? 'AI belum diatur - buka Pengaturan → Integrasi AI.' : humanizeAiError(err));
     } finally {
       setSending(false);
     }
