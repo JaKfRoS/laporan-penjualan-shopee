@@ -1273,7 +1273,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2 text-purple-600 font-black uppercase text-xs tracking-widest">
                   <Sparkles className="w-5 h-5" />
-                  Saran Intelijen Bisnis
+                  ShopeeSales AI Agent
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {insights && !isGeneratingInsights && (
