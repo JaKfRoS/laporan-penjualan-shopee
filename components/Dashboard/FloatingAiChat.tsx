@@ -80,7 +80,11 @@ export const FloatingAiChat: React.FC<FloatingAiChatProps> = ({ visible, open, o
     return (
       <button
         onClick={() => onOpenChange(true)}
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-2xl shadow-purple-500/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform animate-in zoom-in duration-300"
+        // bottom-24 di mobile: bar navigasi bawah App.tsx (z-[100], fixed
+        // bottom-0) menutupi apapun yang ditaruh persis di bottom-6 di layar
+        // HP - digeser ke atas biar bubble tidak ketutupan/nempel. Di md+
+        // bar navigasi itu tidak ada (md:hidden), jadi balik ke bottom-6.
+        className="fixed z-[110] bottom-24 right-5 md:bottom-6 md:right-6 w-14 h-14 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-2xl shadow-purple-500/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform animate-in zoom-in duration-300"
         title="Buka AI Assistant"
       >
         <MessageCircle className="w-6 h-6" />
@@ -90,7 +94,12 @@ export const FloatingAiChat: React.FC<FloatingAiChatProps> = ({ visible, open, o
 
   return (
     <div
-      className="fixed z-50 bg-white dark:bg-slate-900 shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800
+      // z-[110]: harus di atas bar navigasi bawah mobile (z-[100] di
+      // App.tsx) supaya jendela chat (termasuk input di paling bawah) tidak
+      // ketutupan/ketimpa nav saat dibuka fullscreen di HP - perilaku modal
+      // fullscreen yang wajar, nav memang seharusnya tidak bisa dipakai
+      // selagi chat terbuka.
+      className="fixed z-[110] bg-white dark:bg-slate-900 shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800
         inset-x-0 bottom-0 h-[85dvh] rounded-t-3xl animate-in slide-in-from-bottom duration-300
         md:inset-x-auto md:inset-y-auto md:bottom-6 md:right-6 md:w-[380px] md:h-[520px] md:rounded-3xl md:slide-in-from-bottom-4"
     >
