@@ -14,7 +14,7 @@ import { DateRangePicker } from './DateRangePicker';
 import { InsightBody } from './InsightMarkdown';
 import { FloatingAiChat } from './FloatingAiChat';
 import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle, ChevronLeft, ChevronRight, Sparkles, RefreshCw, Copy, SlidersHorizontal, MessageCircleQuestion } from 'lucide-react';
-import { getSalesInsights, AiNotConfiguredError, DEFAULT_MODELS, PROVIDER_LABELS } from '../../services/aiInsights';
+import { getSalesInsights, AiNotConfiguredError, DEFAULT_MODELS, PROVIDER_LABELS, humanizeAiError } from '../../services/aiInsights';
 import { getAiSettings } from '../../services/aiSettings';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -1158,7 +1158,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       if (err instanceof AiNotConfiguredError) {
         setInsightsError('not_configured');
       } else {
-        setInsightsError(err.message || 'Gagal menghasilkan insight.');
+        setInsightsError(humanizeAiError(err));
       }
     } finally {
       setIsGeneratingInsights(false);
