@@ -11,7 +11,9 @@ import { PerformanceTrendChart } from './PerformanceTrendChart';
 import { ProductChart } from './ProductChart';
 import { OrdersTable } from './OrdersTable';
 import { DateRangePicker } from './DateRangePicker';
-import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle, ChevronLeft, ChevronRight, Sparkles, RefreshCw, Copy, SlidersHorizontal } from 'lucide-react';
+import { InsightBody } from './InsightMarkdown';
+import { FloatingAiChat } from './FloatingAiChat';
+import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle, ChevronLeft, ChevronRight, Sparkles, RefreshCw, Copy, SlidersHorizontal, MessageCircleQuestion } from 'lucide-react';
 import { getSalesInsights, AiNotConfiguredError, DEFAULT_MODELS, PROVIDER_LABELS } from '../../services/aiInsights';
 import { getAiSettings } from '../../services/aiSettings';
 import { toast } from 'react-hot-toast';
@@ -27,47 +29,6 @@ interface DashboardFilters {
   start: string;
   end: string;
 }
-
-// Render ringan ala-Markdown buat balasan AI: "- poin" jadi list ber-bullet,
-// **teks** jadi tebal. Model biasanya balas dalam format ini karena diminta
-// lewat system instruction, tapi tetap fallback aman ke paragraf biasa kalau
-// tidak ada listnya sama sekali.
-const renderBoldSegments = (line: string, keyPrefix: string) => {
-  const parts = line.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
-  return parts.map((part, i) =>
-    part.startsWith('**') && part.endsWith('**') ? (
-      <strong key={`${keyPrefix}-${i}`} className="font-black text-slate-900 dark:text-white">{part.slice(2, -2)}</strong>
-    ) : (
-      <React.Fragment key={`${keyPrefix}-${i}`}>{part}</React.Fragment>
-    )
-  );
-};
-
-const InsightBody: React.FC<{ text: string }> = ({ text }) => {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const isBullet = (l: string) => /^([-*•]|\d+[.)])\s+/.test(l);
-
-  if (!lines.some(isBullet)) {
-    return <p className="whitespace-pre-line">{renderBoldSegments(text, 'p')}</p>;
-  }
-
-  return (
-    <div className="space-y-2.5">
-      {lines.map((line, idx) => {
-        if (isBullet(line)) {
-          const content = line.replace(/^([-*•]|\d+[.)])\s+/, '');
-          return (
-            <div key={idx} className="flex items-start gap-2.5">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" />
-              <span>{renderBoldSegments(content, `b${idx}`)}</span>
-            </div>
-          );
-        }
-        return <p key={idx}>{renderBoldSegments(line, `p${idx}`)}</p>;
-      })}
-    </div>
-  );
-};
 
 export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
   // 1. Single Source of Truth for Filters
@@ -103,9 +64,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
   const [insights, setInsights] = useState<string | null>(null);
   const [insightsError, setInsightsError] = useState<string | null>(null);
   const [insightsMeta, setInsightsMeta] = useState<{ provider: AiSettings['provider']; model: string; generatedAt: number } | null>(null);
+  const [insightsSummaryData, setInsightsSummaryData] = useState<Record<string, any> | null>(null);
   const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
   const [aiSettingsChecked, setAiSettingsChecked] = useState(false);
+  // Floating AI Chat Assistant: "assistantVisible" = bubble ada di layar,
+  // "assistantOpen" = jendela chat sedang dibuka (bubble tetap terlihat saat
+  // diminimalkan, cuma jendelanya yang collapse).
+  const [assistantVisible, setAssistantVisible] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [adjustmentsPage, setAdjustmentsPage] = useState(1);
   const ADJUSTMENTS_PAGE_SIZE = 8;
 
@@ -1118,6 +1085,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
   const generateAIInsights = async () => {
     setIsGeneratingInsights(true);
     setInsightsError(null);
+    // Insight baru = konteks lama sudah usang - tutup sesi chat assistant
+    // (kalau lagi kebuka) supaya tidak nyambung ke angka yang sudah berubah.
+    setAssistantVisible(false);
+    setAssistantOpen(false);
     try {
       const currentSettings = aiSettings ?? (await getAiSettings().catch(() => null));
       if (currentSettings !== aiSettings) setAiSettings(currentSettings);
@@ -1174,6 +1145,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
       const text = await getSalesInsights(summary, currentSettings);
       setInsights(text);
+      setInsightsSummaryData(summary);
       setInsightsMeta({
         provider: currentSettings!.provider,
         model: currentSettings!.model || DEFAULT_MODELS[currentSettings!.provider],
@@ -1181,6 +1153,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       });
     } catch (err: any) {
       setInsights(null);
+      setInsightsSummaryData(null);
       setInsightsMeta(null);
       if (err instanceof AiNotConfiguredError) {
         setInsightsError('not_configured');
@@ -1191,6 +1164,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       setIsGeneratingInsights(false);
     }
   };
+
+  // Konteks yang dibawa Chat Assistant - ringkasan angka yang sama persis
+  // dipakai buat generate kartu insight, plus teks insight-nya sendiri, jadi
+  // asisten bisa jawab pertanyaan lanjutan tanpa "lupa" apa yang baru dibahas.
+  const assistantContext = insights && insightsSummaryData
+    ? `${JSON.stringify(insightsSummaryData, null, 2)}\n\nAnalisis yang sudah ditampilkan ke user:\n${insights}`
+    : '';
 
   // Tampilkan loading HANYA saat pertama kali buka toko/aplikasi
   if (loading && filteredOrders.length === 0) {
@@ -1287,7 +1267,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
         )}
 
-        {(isGeneratingInsights || insights || insightsError) && (
+        {(isGeneratingInsights || insights || insightsError) && !assistantVisible && (
           <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-1 rounded-3xl shadow-xl animate-in slide-in-from-top-4 mt-6">
             <div className="bg-white dark:bg-slate-900 rounded-[1.4rem] p-6">
               <div className="flex items-center justify-between mb-4">
@@ -1355,11 +1335,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   <div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed font-medium">
                     <InsightBody text={insights} />
                   </div>
-                  {insightsMeta && (
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 font-bold uppercase tracking-wider">
-                      Dibuat oleh {PROVIDER_LABELS[insightsMeta.provider]} ({insightsMeta.model}) &bull; {format(new Date(insightsMeta.generatedAt), 'HH:mm:ss')}
-                    </p>
-                  )}
+                  <div className="flex items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    {insightsMeta && (
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
+                        Dibuat oleh {PROVIDER_LABELS[insightsMeta.provider]} ({insightsMeta.model}) &bull; {format(new Date(insightsMeta.generatedAt), 'HH:mm:ss')}
+                      </p>
+                    )}
+                    <button
+                      onClick={() => { setAssistantVisible(true); setAssistantOpen(true); }}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors shrink-0"
+                    >
+                      <MessageCircleQuestion className="w-3.5 h-3.5" />
+                      Ajukan Pertanyaan
+                    </button>
+                  </div>
                 </>
               ) : null}
             </div>
@@ -1829,12 +1818,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         </div>
 
         <div className="mt-6">
-          <OrdersTable 
-            orders={filteredOrders} 
-            stores={store.id === 'all' ? allStores : undefined} 
+          <OrdersTable
+            orders={filteredOrders}
+            stores={store.id === 'all' ? allStores : undefined}
           />
         </div>
       </div>
+
+      <FloatingAiChat
+        visible={assistantVisible}
+        open={assistantOpen}
+        onOpenChange={setAssistantOpen}
+        onClose={() => { setAssistantVisible(false); setAssistantOpen(false); }}
+        storeName={store.name}
+        contextSummary={assistantContext}
+        aiSettings={aiSettings}
+      />
     </div>
   );
 };
