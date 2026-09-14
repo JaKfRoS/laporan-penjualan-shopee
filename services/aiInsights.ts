@@ -9,7 +9,9 @@ import { AiSettings, AiProvider } from '../types';
 // client-only lainnya.
 
 export const DEFAULT_MODELS: Record<AiProvider, string> = {
-  gemini: 'gemini-2.0-flash',
+  // gemini-2.0-flash sudah tidak tersedia lagi di API Gemini per akun user
+  // (dicoba manual, gagal) - gemini-3.6-flash terkonfirmasi jalan.
+  gemini: 'gemini-3.6-flash',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-latest',
   openai_compatible: 'gpt-4o-mini',

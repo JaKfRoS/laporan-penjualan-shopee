@@ -12,7 +12,7 @@ import { ProductChart } from './ProductChart';
 import { OrdersTable } from './OrdersTable';
 import { DateRangePicker } from './DateRangePicker';
 import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle, ChevronLeft, ChevronRight, Sparkles, RefreshCw, Copy, SlidersHorizontal } from 'lucide-react';
-import { getSalesInsights, AiNotConfiguredError, PROVIDER_LABELS } from '../../services/aiInsights';
+import { getSalesInsights, AiNotConfiguredError, DEFAULT_MODELS, PROVIDER_LABELS } from '../../services/aiInsights';
 import { getAiSettings } from '../../services/aiSettings';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -1122,12 +1122,61 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const currentSettings = aiSettings ?? (await getAiSettings().catch(() => null));
       if (currentSettings !== aiSettings) setAiSettings(currentSettings);
 
-      const summary = filteredOrders.slice(0, 50).map(o => ({ date: o.order_date, revenue: o.net_revenue, status: o.status }));
+      // Kirim RINGKASAN AGREGAT utk seluruh periode yang difilter, bukan
+      // sekian baris pesanan mentah teratas - sebelumnya cuma 50 baris
+      // teratas (data terurut terbaru dulu) yang dikirim, jadi utk toko
+      // dengan >50 pesanan/hari AI cuma "melihat" 1 hari terakhir dan
+      // menyimpulkan seolah itu keseluruhan periode. net_revenue mentah per
+      // baris juga sering null di basis Pesanan Dibuat (baru terisi kalau
+      // sudah ke-merge income_reports) - dipakai metrics yang sudah dihitung
+      // benar (formula sama seperti KPI card di layar) alih-alih raw field.
+      const productTotals = new Map<string, { produk: string; jumlah_terjual: number; omzet: number }>();
+      filteredOrders.forEach(o => {
+        const s = (o.status || '').toLowerCase();
+        if (s.includes('batal') || s.includes('cancel')) return;
+        (o.order_items || []).forEach(item => {
+          const key = item.final_sku || item.product_name;
+          const existing = productTotals.get(key) || { produk: item.product_name, jumlah_terjual: 0, omzet: 0 };
+          existing.jumlah_terjual += Number(item.quantity) || 0;
+          existing.omzet += Number(item.product_total) || 0;
+          productTotals.set(key, existing);
+        });
+      });
+      const produk_terlaris = Array.from(productTotals.values())
+        .sort((a, b) => b.jumlah_terjual - a.jumlah_terjual)
+        .slice(0, 5);
+
+      const summary = filters.mode === 'order_date' ? {
+        periode: `${filters.start} s/d ${filters.end}`,
+        basis: 'Pesanan Dibuat',
+        omzet_pesanan_gmv: Math.round(metrics.totalOmzetPesanan),
+        omzet_bersih_net_gmv: Math.round(metrics.totalOmzetBersih),
+        total_pesanan: metrics.totalOrders,
+        pesanan_dibatalkan: metrics.cancelledCount,
+        rata_rata_per_pesanan_aov: Math.round(metrics.averageOrderValue),
+        biaya_iklan: Math.round(metrics.biayaIklan),
+        roas_aktual: Number(metrics.roasAktual.toFixed(2)),
+        acos_aktual: Number(metrics.acosAktual.toFixed(2)),
+        produk_terlaris,
+      } : {
+        periode: `${filters.start} s/d ${filters.end}`,
+        basis: 'Pesanan Selesai',
+        omzet_riil: Math.round(metrics.omzetRiil),
+        dana_cair: Math.round(metrics.danaCair),
+        potongan_marketplace: Math.round(metrics.potonganMarketplace),
+        hpp: Math.round(metrics.hppSelesai),
+        profit_riil: Math.round(metrics.profitRiil),
+        pesanan_selesai: metrics.completedCount,
+        pesanan_retur: metrics.returnedCount,
+        biaya_iklan: Math.round(metrics.biayaIklan),
+        produk_terlaris,
+      };
+
       const text = await getSalesInsights(summary, currentSettings);
       setInsights(text);
       setInsightsMeta({
         provider: currentSettings!.provider,
-        model: currentSettings!.model || PROVIDER_LABELS[currentSettings!.provider],
+        model: currentSettings!.model || DEFAULT_MODELS[currentSettings!.provider],
         generatedAt: Date.now(),
       });
     } catch (err: any) {
