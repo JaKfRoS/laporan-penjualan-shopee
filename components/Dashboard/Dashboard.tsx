@@ -5,14 +5,15 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../../services/supabase';
 import { chunk, mapWithConcurrency } from '../../services/concurrency';
-import { Store, Order } from '../../types';
+import { Store, Order, AiSettings } from '../../types';
 import { KPICard } from './KPICard';
 import { PerformanceTrendChart } from './PerformanceTrendChart';
 import { ProductChart } from './ProductChart';
 import { OrdersTable } from './OrdersTable';
 import { DateRangePicker } from './DateRangePicker';
-import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
-import { getSalesInsights } from '../../services/gemini';
+import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle, ChevronLeft, ChevronRight, Sparkles, RefreshCw, Copy, SlidersHorizontal } from 'lucide-react';
+import { getSalesInsights, AiNotConfiguredError, PROVIDER_LABELS } from '../../services/aiInsights';
+import { getAiSettings } from '../../services/aiSettings';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
 
@@ -26,6 +27,47 @@ interface DashboardFilters {
   start: string;
   end: string;
 }
+
+// Render ringan ala-Markdown buat balasan AI: "- poin" jadi list ber-bullet,
+// **teks** jadi tebal. Model biasanya balas dalam format ini karena diminta
+// lewat system instruction, tapi tetap fallback aman ke paragraf biasa kalau
+// tidak ada listnya sama sekali.
+const renderBoldSegments = (line: string, keyPrefix: string) => {
+  const parts = line.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+  return parts.map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') ? (
+      <strong key={`${keyPrefix}-${i}`} className="font-black text-slate-900 dark:text-white">{part.slice(2, -2)}</strong>
+    ) : (
+      <React.Fragment key={`${keyPrefix}-${i}`}>{part}</React.Fragment>
+    )
+  );
+};
+
+const InsightBody: React.FC<{ text: string }> = ({ text }) => {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const isBullet = (l: string) => /^([-*•]|\d+[.)])\s+/.test(l);
+
+  if (!lines.some(isBullet)) {
+    return <p className="whitespace-pre-line">{renderBoldSegments(text, 'p')}</p>;
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {lines.map((line, idx) => {
+        if (isBullet(line)) {
+          const content = line.replace(/^([-*•]|\d+[.)])\s+/, '');
+          return (
+            <div key={idx} className="flex items-start gap-2.5">
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" />
+              <span>{renderBoldSegments(content, `b${idx}`)}</span>
+            </div>
+          );
+        }
+        return <p key={idx}>{renderBoldSegments(line, `p${idx}`)}</p>;
+      })}
+    </div>
+  );
+};
 
 export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
   // 1. Single Source of Truth for Filters
@@ -59,7 +101,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
   
   const [loading, setLoading] = useState(true);
   const [insights, setInsights] = useState<string | null>(null);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [insightsMeta, setInsightsMeta] = useState<{ provider: AiSettings['provider']; model: string; generatedAt: number } | null>(null);
   const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
+  const [aiSettingsChecked, setAiSettingsChecked] = useState(false);
   const [adjustmentsPage, setAdjustmentsPage] = useState(1);
   const ADJUSTMENTS_PAGE_SIZE = 8;
 
@@ -72,6 +118,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
   }, [filters.mode, filters.start, filters.end, store.id]);
+
+  // Cek konfigurasi AI sekali saat dashboard dibuka - dipakai buat nentuin
+  // tombol "AI Insights" langsung generate atau kasih tahu user ke Pengaturan
+  // dulu, tanpa nunggu diklik dulu baru ketahuan belum diatur.
+  useEffect(() => {
+    let cancelled = false;
+    getAiSettings()
+      .then(s => { if (!cancelled) setAiSettings(s); })
+      .catch(() => { if (!cancelled) setAiSettings(null); })
+      .finally(() => { if (!cancelled) setAiSettingsChecked(true); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Reset ke halaman pertama setiap kali periode/toko berganti agar tidak nyangkut di halaman kosong
   useEffect(() => {
@@ -1059,10 +1117,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
 
   const generateAIInsights = async () => {
     setIsGeneratingInsights(true);
-    const summary = filteredOrders.slice(0, 50).map(o => ({ date: o.order_date, revenue: o.net_revenue, status: o.status }));
-    const text = await getSalesInsights(summary);
-    setInsights(text || "No insights found.");
-    setIsGeneratingInsights(false);
+    setInsightsError(null);
+    try {
+      const currentSettings = aiSettings ?? (await getAiSettings().catch(() => null));
+      if (currentSettings !== aiSettings) setAiSettings(currentSettings);
+
+      const summary = filteredOrders.slice(0, 50).map(o => ({ date: o.order_date, revenue: o.net_revenue, status: o.status }));
+      const text = await getSalesInsights(summary, currentSettings);
+      setInsights(text);
+      setInsightsMeta({
+        provider: currentSettings!.provider,
+        model: currentSettings!.model || PROVIDER_LABELS[currentSettings!.provider],
+        generatedAt: Date.now(),
+      });
+    } catch (err: any) {
+      setInsights(null);
+      setInsightsMeta(null);
+      if (err instanceof AiNotConfiguredError) {
+        setInsightsError('not_configured');
+      } else {
+        setInsightsError(err.message || 'Gagal menghasilkan insight.');
+      }
+    } finally {
+      setIsGeneratingInsights(false);
+    }
   };
 
   // Tampilkan loading HANYA saat pertama kali buka toko/aplikasi
@@ -1117,13 +1195,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
           
           <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto shrink-0 justify-start xl:justify-end">
-            <button 
+            <button
               onClick={generateAIInsights}
               disabled={isGeneratingInsights}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50 shadow-lg shadow-purple-500/20 text-xs font-black uppercase w-full sm:w-auto"
+              className="relative flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-60 shadow-lg shadow-purple-500/20 text-xs font-black uppercase w-full sm:w-auto"
             >
-              <BrainCircuit className="w-4 h-4" />
-              {isGeneratingInsights ? 'Analisis...' : 'AI Insights'}
+              {isGeneratingInsights ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              {isGeneratingInsights ? 'Menganalisis...' : 'AI Insights'}
+              {aiSettingsChecked && !aiSettings && (
+                <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-amber-400 border-2 border-white dark:border-slate-950 rounded-full" title="AI belum diatur - buka Pengaturan" />
+              )}
             </button>
             <button 
               onClick={handleExportXLSX}
@@ -1157,19 +1238,81 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           </div>
         )}
 
-        {insights && (
+        {(isGeneratingInsights || insights || insightsError) && (
           <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-1 rounded-3xl shadow-xl animate-in slide-in-from-top-4 mt-6">
             <div className="bg-white dark:bg-slate-900 rounded-[1.4rem] p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2 text-purple-600 font-black uppercase text-xs tracking-widest">
-                  <BrainCircuit className="w-5 h-5" />
+                  <Sparkles className="w-5 h-5" />
                   Saran Intelijen Bisnis
                 </div>
-                <button onClick={() => setInsights(null)} className="text-slate-400 hover:text-slate-600"><XCircle className="w-5 h-5" /></button>
+                <div className="flex items-center gap-1 shrink-0">
+                  {insights && !isGeneratingInsights && (
+                    <>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(insights); toast.success('Insight disalin ke clipboard.'); }}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Salin teks"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={generateAIInsights}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Buat ulang"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => { setInsights(null); setInsightsError(null); }}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    title="Tutup"
+                  >
+                    <XCircle className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
-              <div className="text-slate-700 dark:text-slate-300 text-sm whitespace-pre-line leading-relaxed font-medium">
-                {insights}
-              </div>
+
+              {isGeneratingInsights ? (
+                <div className="space-y-3 animate-pulse py-1">
+                  <div className="h-3.5 bg-slate-200 dark:bg-slate-800 rounded-full w-11/12" />
+                  <div className="h-3.5 bg-slate-200 dark:bg-slate-800 rounded-full w-4/5" />
+                  <div className="h-3.5 bg-slate-200 dark:bg-slate-800 rounded-full w-3/5" />
+                </div>
+              ) : insightsError === 'not_configured' ? (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 py-1">
+                  <div className="w-11 h-11 bg-purple-50 dark:bg-purple-500/10 rounded-2xl flex items-center justify-center shrink-0">
+                    <SlidersHorizontal className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">AI Insights belum diatur</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                      Tempel API key model AI pilihan Anda (Gemini, OpenAI, Claude, atau lainnya) di menu <span className="font-bold text-slate-700 dark:text-slate-300">Pengaturan &rarr; Integrasi AI</span> untuk mengaktifkan fitur ini.
+                    </p>
+                  </div>
+                </div>
+              ) : insightsError ? (
+                <div className="flex items-start gap-3 py-1">
+                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-red-600 dark:text-red-400">Gagal menghasilkan insight</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 break-words">{insightsError}</p>
+                  </div>
+                </div>
+              ) : insights ? (
+                <>
+                  <div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed font-medium">
+                    <InsightBody text={insights} />
+                  </div>
+                  {insightsMeta && (
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 font-bold uppercase tracking-wider">
+                      Dibuat oleh {PROVIDER_LABELS[insightsMeta.provider]} ({insightsMeta.model}) &bull; {format(new Date(insightsMeta.generatedAt), 'HH:mm:ss')}
+                    </p>
+                  )}
+                </>
+              ) : null}
             </div>
           </div>
         )}
