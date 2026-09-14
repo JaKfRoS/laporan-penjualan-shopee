@@ -15,8 +15,8 @@ interface FloatingAiChatProps {
   aiSettings: AiSettings | null;
 }
 
-// Floating AI Chat Assistant - kelanjutan diskusi dari kartu "Saran Intelijen
-// Bisnis" di Dashboard. `visible` = bubble ada di layar (mulai dari klik
+// Floating AI Chat Assistant - kelanjutan diskusi dari kartu "ShopeeSales AI
+// Agent" di Dashboard. `visible` = bubble ada di layar (mulai dari klik
 // "Ajukan Pertanyaan" sampai user menutup penuh lewat X di header), `open` =
 // jendela chat sedang terbuka (diminimalkan lewat header cuma balik jadi
 // bubble kecil, sesi & riwayat chat tetap tersimpan).
