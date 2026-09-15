@@ -112,59 +112,64 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     setLoading(true);
 
     try {
-      // Helper function to fetch all data using pagination
-      const fetchAll = async (baseQuery: any) => {
-        let allData: any[] = [];
-        let from = 0;
+      // Fetch semua baris dari sebuah query yang bisa >1000 baris (limit
+      // default Supabase per request). SEBELUMNYA ini nge-loop .range() satu
+      // per satu secara berurutan (nunggu halaman 1 selesai baru minta
+      // halaman 2, dst) - utk toko dengan >1000 pesanan di rentang tanggal
+      // (lazim, mis. toko besar bisa ribuan pesanan/bulan) ini artinya
+      // beberapa round-trip jaringan BERURUTAN, padahal halaman-halaman itu
+      // sama sekali tidak saling bergantung.
+      //
+      // Sekarang: ambil halaman pertama SEKALIAN total jumlah barisnya
+      // (`count: 'exact'` di setiap query builder di bawah), lalu kalau
+      // masih ada sisa, ambil SEMUA halaman sisanya SEKALIGUS secara paralel
+      // (dibatasi 5 request bersamaan, pola yang sama dipakai di
+      // mapWithConcurrency lain di file ini). Hasilnya (jumlah baris, isi,
+      // urutan) identik dengan versi lama - cuma cara mengambilnya yang
+      // beda - sudah dibuktikan lewat simulasi terpisah (0, pas di batas
+      // 1000, sampai puluhan ribu baris, semua cocok persis).
+      //
+      // PENTING: parameternya factory (fungsi yang BIKIN query builder baru
+      // tiap dipanggil), BUKAN builder yang sudah jadi - soalnya .range() di
+      // supabase-js mengubah langsung objek builder yang sama (bukan bikin
+      // salinan baru), jadi motret builder yang sama dari beberapa request
+      // paralel sekaligus akan tabrakan/salah rentang. Query builder yang
+      // sudah ada di bawah karenanya dibungkus jadi fungsi () => {...}.
+      const fetchAll = async (queryFactory: () => any) => {
+        if (controller.signal.aborted) throw new Error('AbortError');
         const pageSize = 1000;
-        let finished = false;
 
-        while (!finished) {
-          if (controller.signal.aborted) throw new Error('AbortError');
-          
-          const { data, error } = await baseQuery.range(from, from + pageSize - 1);
-          if (error) throw error;
-          if (data && data.length > 0) {
-            allData = [...allData, ...data];
-            if (data.length < pageSize) finished = true;
-            else from += pageSize;
-          } else {
-            finished = true;
-          }
+        const { data: firstData, error: firstError, count } = await queryFactory().range(0, pageSize - 1);
+        if (firstError) throw firstError;
+        const first = firstData || [];
+
+        if (first.length < pageSize || count == null || count <= pageSize) {
+          return first;
         }
-        return allData;
+
+        const totalPages = Math.ceil(count / pageSize);
+        const remainingPageIndexes = Array.from({ length: totalPages - 1 }, (_, i) => i + 1);
+
+        const restPages = await mapWithConcurrency(remainingPageIndexes, 5, async (pageIndex) => {
+          if (controller.signal.aborted) return [];
+          const from = pageIndex * pageSize;
+          const { data, error } = await queryFactory().range(from, from + pageSize - 1);
+          if (error) throw error;
+          return data || [];
+        });
+
+        return [first, ...restPages].flat();
       };
 
       const isMultiple = (store as any).is_multiple;
       const targetStoreIds = isMultiple ? (store as any).selected_ids : [storeId];
 
-      let adjQuery = supabase
-        .from('adjustments')
-        .select('*')
-        // adjustment_date sendirian bukan kunci unik (ratusan baris/hari berbagi
-        // tanggal yang sama), jadi pagination .range() di bawah bisa melewatkan
-        // atau menduplikasi baris tanpa tie-breaker kedua yang unik.
-        .order('adjustment_date', { ascending: false })
-        .order('id', { ascending: true });
-
-      if (storeId === 'all') {
-        if (allStores && allStores.length > 0) {
-           const storeIds = allStores.map(s => s.id);
-           adjQuery = adjQuery.in('store_id', storeIds);
-        } else {
-           setFilteredOrders([]);
-           setAdjustments([]);
-           setLoading(false);
-           return;
-        }
-      } else if (isMultiple) {
-        adjQuery = adjQuery.in('store_id', targetStoreIds);
-      } else {
-        adjQuery = adjQuery.eq('store_id', storeId);
+      if (storeId === 'all' && (!allStores || allStores.length === 0)) {
+        setFilteredOrders([]);
+        setAdjustments([]);
+        setLoading(false);
+        return;
       }
-
-      if (start) adjQuery = adjQuery.gte('adjustment_date', start);
-      if (end) adjQuery = adjQuery.lte('adjustment_date', end);
 
       const [y, m, d] = end.split('-').map(Number);
       const nextDayDate = new Date(y, m - 1, d + 1);
@@ -173,144 +178,171 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       const nd = String(nextDayDate.getDate()).padStart(2, '0');
       const nextDay = `${ny}-${nm}-${nd}`;
 
-      let ordersData: any[] = [];
-      let incomeData: any[] = [];
-
-      if (mode === 'order_date') {
-        // --- BASIS PESANAN DIBUAT ---
-        let query = supabase
-          .from('orders')
-          .select('*, order_items(*)')
-          .order('order_date', { ascending: false, nullsFirst: false })
+      // adjustment_date sendirian bukan kunci unik (ratusan baris/hari berbagi
+      // tanggal yang sama), jadi pagination .range() di atas bisa melewatkan
+      // atau menduplikasi baris tanpa tie-breaker kedua yang unik.
+      const buildAdjQuery = () => {
+        let q = supabase
+          .from('adjustments')
+          .select('*', { count: 'exact' })
+          .order('adjustment_date', { ascending: false })
           .order('id', { ascending: true });
+        if (storeId === 'all') q = q.in('store_id', allStores!.map(s => s.id));
+        else if (isMultiple) q = q.in('store_id', targetStoreIds);
+        else q = q.eq('store_id', storeId);
+        if (start) q = q.gte('adjustment_date', start);
+        if (end) q = q.lte('adjustment_date', end);
+        return q;
+      };
 
-        if (storeId === 'all') {
-          query = query.in('store_id', allStores!.map(s => s.id));
-        } else if (isMultiple) {
-          query = query.in('store_id', targetStoreIds);
-        } else {
-          query = query.eq('store_id', storeId);
-        }
+      // Data pesanan/pendanaan (order_date atau release_date, tergantung
+      // mode) TIDAK bergantung ke adjustments sama sekali - sebelumnya
+      // adjustments baru diambil SETELAH blok ini selesai total, padahal
+      // bisa jalan bersamaan. Dibungkus jadi fungsi supaya bisa di-race
+      // lewat Promise.all dengan fetch adjustments di bawah.
+      const fetchOrdersAndIncome = async (): Promise<{ ordersData: any[]; incomeData: any[] }> => {
+        let ordersData: any[] = [];
+        let incomeData: any[] = [];
 
-        if (start) query = query.gte('order_date', `${start} 00:00:00+07`);
-        if (end) query = query.lt('order_date', `${nextDay} 00:00:00+07`);
-
-        ordersData = await fetchAll(query);
-
-        // Fetch corresponding income_reports to enrich fees/net revenue.
-        // This is a plain select, so it takes a larger chunk than the orders
-        // query below without risking an over-long URL.
-        if (ordersData.length > 0) {
-          const orderIds = ordersData.map(o => o.order_id);
-          const incChunks = await mapWithConcurrency(chunk(orderIds, 120), 5, async (ids) => {
-            if (controller.signal.aborted) return [];
-            try {
-              let chunkIncQuery = supabase.from('income_reports').select('*').in('order_id', ids);
-              if (storeId === 'all') chunkIncQuery = chunkIncQuery.in('store_id', allStores!.map(s => s.id));
-              else if (isMultiple) chunkIncQuery = chunkIncQuery.in('store_id', targetStoreIds);
-              else chunkIncQuery = chunkIncQuery.eq('store_id', storeId);
-
-              const { data: incChunk } = await chunkIncQuery;
-              return incChunk || [];
-            } catch (chunkIncErr) {
-              console.warn("Income chunk enrichment skipped:", chunkIncErr);
-              return [];
-            }
-          });
-          incomeData = incChunks.flat();
-        }
-      } else {
-        // --- BASIS PESANAN SELESAI (release_date) ---
-        // 1. Primary Ledger: income_reports
-        let incQuery = supabase
-          .from('income_reports')
-          .select('*')
-          .order('release_date', { ascending: false, nullsFirst: false })
-          .order('id', { ascending: true });
-
-        if (storeId === 'all') {
-          incQuery = incQuery.in('store_id', allStores!.map(s => s.id));
-        } else if (isMultiple) {
-          incQuery = incQuery.in('store_id', targetStoreIds);
-        } else {
-          incQuery = incQuery.eq('store_id', storeId);
-        }
-
-        if (start) incQuery = incQuery.gte('release_date', start);
-        if (end) incQuery = incQuery.lt('release_date', `${nextDay} 00:00:00+07`);
-
-        try {
-          incomeData = await fetchAll(incQuery);
-        } catch (incErr: any) {
-          console.warn("income_reports fetch failed or table doesn't exist:", incErr);
-          try {
-            let fallbackIncQuery = supabase
-              .from('income_reports')
-              .select('*')
-              .order('release_date', { ascending: false, nullsFirst: false })
-              .order('id', { ascending: true });
-            if (storeId === 'all') fallbackIncQuery = fallbackIncQuery.in('store_id', allStores!.map(s => s.id));
-            else if (isMultiple) fallbackIncQuery = fallbackIncQuery.in('store_id', targetStoreIds);
-            else fallbackIncQuery = fallbackIncQuery.eq('store_id', storeId);
-            if (start) fallbackIncQuery = fallbackIncQuery.gte('release_date', start);
-            if (end) fallbackIncQuery = fallbackIncQuery.lte('release_date', end);
-            incomeData = await fetchAll(fallbackIncQuery);
-          } catch (e2) {
-            incomeData = [];
-          }
-        }
-
-        // 2. Secondary Ledger: orders table with release_date
-        try {
-          let ordReleaseQuery = supabase
-            .from('orders')
-            .select('*, order_items(*)')
-            .not('release_date', 'is', null)
-            .order('release_date', { ascending: false, nullsFirst: false })
-            .order('id', { ascending: true });
-
-          if (storeId === 'all') ordReleaseQuery = ordReleaseQuery.in('store_id', allStores!.map(s => s.id));
-          else if (isMultiple) ordReleaseQuery = ordReleaseQuery.in('store_id', targetStoreIds);
-          else ordReleaseQuery = ordReleaseQuery.eq('store_id', storeId);
-
-          if (start) ordReleaseQuery = ordReleaseQuery.gte('release_date', `${start} 00:00:00+07`);
-          if (end) ordReleaseQuery = ordReleaseQuery.lt('release_date', `${nextDay} 00:00:00+07`);
-
-          ordersData = await fetchAll(ordReleaseQuery);
-        } catch (ordErr) {
-          // Column release_date may not exist in orders table yet
-          ordersData = [];
-        }
-
-        // 3. Resilient Fallback: If both income_reports and orders.release_date have 0 records,
-        // fallback to completed orders in orders table for that date range so user data is never lost.
-        if (incomeData.length === 0 && ordersData.length === 0) {
-          try {
-            let fallbackCompletedQuery = supabase
+        if (mode === 'order_date') {
+          // --- BASIS PESANAN DIBUAT ---
+          const buildOrdersQuery = () => {
+            let q = supabase
               .from('orders')
-              .select('*, order_items(*)')
+              .select('*, order_items(*)', { count: 'exact' })
               .order('order_date', { ascending: false, nullsFirst: false })
               .order('id', { ascending: true });
+            if (storeId === 'all') q = q.in('store_id', allStores!.map(s => s.id));
+            else if (isMultiple) q = q.in('store_id', targetStoreIds);
+            else q = q.eq('store_id', storeId);
+            if (start) q = q.gte('order_date', `${start} 00:00:00+07`);
+            if (end) q = q.lt('order_date', `${nextDay} 00:00:00+07`);
+            return q;
+          };
 
-            if (storeId === 'all') fallbackCompletedQuery = fallbackCompletedQuery.in('store_id', allStores!.map(s => s.id));
-            else if (isMultiple) fallbackCompletedQuery = fallbackCompletedQuery.in('store_id', targetStoreIds);
-            else fallbackCompletedQuery = fallbackCompletedQuery.eq('store_id', storeId);
+          ordersData = await fetchAll(buildOrdersQuery);
 
-            if (start) fallbackCompletedQuery = fallbackCompletedQuery.gte('order_date', `${start} 00:00:00+07`);
-            if (end) fallbackCompletedQuery = fallbackCompletedQuery.lt('order_date', `${nextDay} 00:00:00+07`);
+          // Fetch corresponding income_reports to enrich fees/net revenue.
+          // This is a plain select, so it takes a larger chunk than the orders
+          // query below without risking an over-long URL.
+          if (ordersData.length > 0) {
+            const orderIds = ordersData.map(o => o.order_id);
+            const incChunks = await mapWithConcurrency(chunk(orderIds, 120), 5, async (ids) => {
+              if (controller.signal.aborted) return [];
+              try {
+                let chunkIncQuery = supabase.from('income_reports').select('*').in('order_id', ids);
+                if (storeId === 'all') chunkIncQuery = chunkIncQuery.in('store_id', allStores!.map(s => s.id));
+                else if (isMultiple) chunkIncQuery = chunkIncQuery.in('store_id', targetStoreIds);
+                else chunkIncQuery = chunkIncQuery.eq('store_id', storeId);
 
-            const allOrdersInRange = await fetchAll(fallbackCompletedQuery);
-            ordersData = (allOrdersInRange || []).filter((o: any) => {
-              const st = (o.status || '').toLowerCase();
-              return st.includes('selesai') || st === 'completed' || st.includes('rekonsiliasi') || (!st.includes('batal') && !st.includes('cancel') && !st.includes('retur') && !st.includes('pengembalian'));
+                const { data: incChunk } = await chunkIncQuery;
+                return incChunk || [];
+              } catch (chunkIncErr) {
+                console.warn("Income chunk enrichment skipped:", chunkIncErr);
+                return [];
+              }
             });
-          } catch (fbErr) {
-            console.warn("Fallback completed orders query error:", fbErr);
+            incomeData = incChunks.flat();
+          }
+        } else {
+          // --- BASIS PESANAN SELESAI (release_date) ---
+          // 1. Primary Ledger: income_reports
+          const buildIncQuery = () => {
+            let q = supabase
+              .from('income_reports')
+              .select('*', { count: 'exact' })
+              .order('release_date', { ascending: false, nullsFirst: false })
+              .order('id', { ascending: true });
+            if (storeId === 'all') q = q.in('store_id', allStores!.map(s => s.id));
+            else if (isMultiple) q = q.in('store_id', targetStoreIds);
+            else q = q.eq('store_id', storeId);
+            if (start) q = q.gte('release_date', start);
+            if (end) q = q.lt('release_date', `${nextDay} 00:00:00+07`);
+            return q;
+          };
+
+          try {
+            incomeData = await fetchAll(buildIncQuery);
+          } catch (incErr: any) {
+            console.warn("income_reports fetch failed or table doesn't exist:", incErr);
+            try {
+              const buildFallbackIncQuery = () => {
+                let q = supabase
+                  .from('income_reports')
+                  .select('*', { count: 'exact' })
+                  .order('release_date', { ascending: false, nullsFirst: false })
+                  .order('id', { ascending: true });
+                if (storeId === 'all') q = q.in('store_id', allStores!.map(s => s.id));
+                else if (isMultiple) q = q.in('store_id', targetStoreIds);
+                else q = q.eq('store_id', storeId);
+                if (start) q = q.gte('release_date', start);
+                if (end) q = q.lte('release_date', end);
+                return q;
+              };
+              incomeData = await fetchAll(buildFallbackIncQuery);
+            } catch (e2) {
+              incomeData = [];
+            }
+          }
+
+          // 2. Secondary Ledger: orders table with release_date
+          try {
+            const buildOrdReleaseQuery = () => {
+              let q = supabase
+                .from('orders')
+                .select('*, order_items(*)', { count: 'exact' })
+                .not('release_date', 'is', null)
+                .order('release_date', { ascending: false, nullsFirst: false })
+                .order('id', { ascending: true });
+              if (storeId === 'all') q = q.in('store_id', allStores!.map(s => s.id));
+              else if (isMultiple) q = q.in('store_id', targetStoreIds);
+              else q = q.eq('store_id', storeId);
+              if (start) q = q.gte('release_date', `${start} 00:00:00+07`);
+              if (end) q = q.lt('release_date', `${nextDay} 00:00:00+07`);
+              return q;
+            };
+            ordersData = await fetchAll(buildOrdReleaseQuery);
+          } catch (ordErr) {
+            // Column release_date may not exist in orders table yet
+            ordersData = [];
+          }
+
+          // 3. Resilient Fallback: If both income_reports and orders.release_date have 0 records,
+          // fallback to completed orders in orders table for that date range so user data is never lost.
+          if (incomeData.length === 0 && ordersData.length === 0) {
+            try {
+              const buildFallbackCompletedQuery = () => {
+                let q = supabase
+                  .from('orders')
+                  .select('*, order_items(*)', { count: 'exact' })
+                  .order('order_date', { ascending: false, nullsFirst: false })
+                  .order('id', { ascending: true });
+                if (storeId === 'all') q = q.in('store_id', allStores!.map(s => s.id));
+                else if (isMultiple) q = q.in('store_id', targetStoreIds);
+                else q = q.eq('store_id', storeId);
+                if (start) q = q.gte('order_date', `${start} 00:00:00+07`);
+                if (end) q = q.lt('order_date', `${nextDay} 00:00:00+07`);
+                return q;
+              };
+
+              const allOrdersInRange = await fetchAll(buildFallbackCompletedQuery);
+              ordersData = (allOrdersInRange || []).filter((o: any) => {
+                const st = (o.status || '').toLowerCase();
+                return st.includes('selesai') || st === 'completed' || st.includes('rekonsiliasi') || (!st.includes('batal') && !st.includes('cancel') && !st.includes('retur') && !st.includes('pengembalian'));
+              });
+            } catch (fbErr) {
+              console.warn("Fallback completed orders query error:", fbErr);
+            }
           }
         }
-      }
 
-      const adjData = await fetchAll(adjQuery).catch(() => []);
+        return { ordersData, incomeData };
+      };
+
+      const [adjData, { ordersData, incomeData }] = await Promise.all([
+        fetchAll(buildAdjQuery).catch(() => []),
+        fetchOrdersAndIncome(),
+      ]);
 
       if (controller.signal.aborted) return;
 
