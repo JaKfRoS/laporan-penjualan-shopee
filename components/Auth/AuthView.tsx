@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../../services/supabase';
 import { toast } from 'react-hot-toast';
-import { BarChart3, Mail, Lock, Loader2, LogIn, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Loader2, LogIn, AlertCircle } from 'lucide-react';
 
 export const AuthView: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -40,9 +40,9 @@ export const AuthView: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
         <div className="p-8 sm:p-12">
-          <div className="flex items-center gap-2 text-orange-600 mb-8 justify-center">
-            <BarChart3 className="w-10 h-10" />
-            <span className="text-2xl font-black tracking-tighter uppercase">Shopee Analytics</span>
+          <div className="flex items-center gap-3 mb-8 justify-center">
+            <img src="/logo.png" alt="ShopeeSales" className="w-10 h-10 rounded-xl" />
+            <span className="text-2xl font-black tracking-tighter uppercase text-orange-600">Shopee Analytics</span>
           </div>
 
           <div className="text-center mb-10">

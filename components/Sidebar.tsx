@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, UploadCloud, Settings, LogOut, BarChart3, Moon, Sun, Megaphone, Calculator, PackageSearch, Wallet } from 'lucide-react';
+import { LayoutDashboard, UploadCloud, Settings, LogOut, Moon, Sun, Megaphone, Calculator, PackageSearch, Wallet } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: 'dashboard' | 'import' | 'settings' | 'ads' | 'calculator' | 'products' | 'keuangan';
@@ -23,8 +23,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isDar
   return (
     <aside className="w-64 h-full overflow-y-auto bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col hidden md:flex transition-colors z-10">
       <div className="p-6">
-        <div className="flex items-center gap-2 text-orange-600 mb-8">
-          <BarChart3 className="w-8 h-8" />
+        <div className="flex items-center gap-2.5 mb-8">
+          <img src="/logo.png" alt="ShopeeSales" className="w-8 h-8 rounded-lg" />
           <span className="text-xl font-bold tracking-tight dark:text-white">ShopeeSales</span>
         </div>
 
