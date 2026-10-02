@@ -13,7 +13,7 @@ import { OrdersTable } from './OrdersTable';
 import { DateRangePicker } from './DateRangePicker';
 import { InsightBody } from './InsightMarkdown';
 import { FloatingAiChat } from './FloatingAiChat';
-import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle, ChevronLeft, ChevronRight, Sparkles, RefreshCw, Copy, SlidersHorizontal, MessageCircleQuestion } from 'lucide-react';
+import { BrainCircuit, Loader2, Info, AlertCircle, ShoppingBag, XCircle, Wallet, FileSpreadsheet, ArrowRightLeft, Settings, Percent, CheckCircle2, PackageSearch, AlertTriangle, ChevronLeft, ChevronRight, Sparkles, RefreshCw, Copy, SlidersHorizontal, MessageCircleQuestion, Megaphone } from 'lucide-react';
 import { getSalesInsights, AiNotConfiguredError, DEFAULT_MODELS, PROVIDER_LABELS, humanizeAiError } from '../../services/aiInsights';
 import { getAiSettings } from '../../services/aiSettings';
 import { toast } from 'react-hot-toast';
@@ -620,6 +620,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
     // memperhitungkan biaya iklan yang sudah dikeluarkan — overstated sejumlah biaya iklan itu.
     const profitRiil = danaCair - hppSelesai - biayaIklan + penyesuaianLain;
 
+    // Biaya Iklan (Riil) = top-up manual (ledger adjustments) + auto top-up dari Shopee
+    // (fee_details.auto_topup_fee, sudah terpotong di Dana Cair). Murni untuk DITAMPILKAN -
+    // tidak dipakai di profitRiil karena auto top-up-nya sudah ikut lewat danaCair, jangan
+    // sampai dikurangkan dua kali di situ.
+    const biayaIklanRiil = biayaIklan + feeBreakdown.autoTopupFee;
+
     // F. Supporting Metrics
     const percentNetProfit = omzetRiil > 0 ? (profitRiil / omzetRiil) * 100 : 0;
     const percentPotonganOmzet = omzetRiil > 0 ? (potonganMarketplace / omzetRiil) * 100 : 0;
@@ -654,6 +660,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       percentPotonganOmzet,
       shippingLeakage,
       biayaIklan,
+      biayaIklanRiil,
       roasAktual,
       acosAktual,
       totalOmzetPesanan,
@@ -734,6 +741,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           rows.push(["Potongan Marketplace", -metrics.potonganMarketplace, "Total komisi/biaya marketplace"]);
           rows.push(["Dana Cair", metrics.danaCair, "Total pendapatan bersih yang diterima"]);
           rows.push(["HPP", -metrics.hppSelesai, "Total modal pokok produk pesanan selesai"]);
+          rows.push(["Biaya Iklan (Riil)", -metrics.biayaIklanRiil, "Top-up manual + auto top-up dari Shopee (sudah termasuk di Potongan Marketplace)"]);
           rows.push(["Penyesuaian Shopee", metrics.adjustmentPlus + metrics.adjustmentMinus, "Total penyesuaian saldo (Kompensasi, Klaim, Bonus, dll)"]);
           rows.push(["Profit Riil", metrics.profitRiil, "Dana Cair - HPP - Biaya Iklan + Penyesuaian"]);
           rows.push(["% Net Profit", `${metrics.percentNetProfit.toFixed(1)}%`, "Profit Riil / Omzet Riil"]);
@@ -945,6 +953,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         ['Potongan Marketplace', `-Rp ${metrics.potonganMarketplace.toLocaleString()}`, 'Total komisi/biaya marketplace'],
         ['Dana Cair', `Rp ${metrics.danaCair.toLocaleString()}`, 'Total pendapatan bersih yang diterima'],
         ['HPP', `-Rp ${metrics.hppSelesai.toLocaleString()}`, 'Total modal pokok produk pesanan selesai'],
+        ['Biaya Iklan (Riil)', `-Rp ${metrics.biayaIklanRiil.toLocaleString()}`, 'Top-up manual + auto top-up dari Shopee (sudah termasuk di Potongan Marketplace)'],
         ['Penyesuaian Shopee', `${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`, 'Total penyesuaian saldo (Kompensasi, Klaim, Bonus, dll)'],
         ['Profit Riil', `Rp ${metrics.profitRiil.toLocaleString()}`, 'Dana Cair - HPP - Biaya Iklan + Penyesuaian'],
         ['% Net Profit', `${metrics.percentNetProfit.toFixed(1)}%`, 'Profit Riil / Omzet Riil'],
@@ -1080,11 +1089,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         doc.text("HPP", 30, summaryYStart + (rowHeight * 3));
         doc.text(`-Rp ${metrics.hppSelesai.toLocaleString()}`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
 
-        doc.text("Penyesuaian", 30, summaryYStart + (rowHeight * 4));
-        doc.text(`${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
+        doc.text("Biaya Iklan (Riil)", 30, summaryYStart + (rowHeight * 4));
+        doc.text(`-Rp ${metrics.biayaIklanRiil.toLocaleString()}`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
 
-        doc.text("Profit Riil", 30, summaryYStart + (rowHeight * 5));
-        doc.text(`Rp ${metrics.profitRiil.toLocaleString()}`, 250, summaryYStart + (rowHeight * 5), { align: 'right' });
+        doc.text("Penyesuaian", 30, summaryYStart + (rowHeight * 5));
+        doc.text(`${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`, 250, summaryYStart + (rowHeight * 5), { align: 'right' });
+
+        doc.text("Profit Riil", 30, summaryYStart + (rowHeight * 6));
+        doc.text(`Rp ${metrics.profitRiil.toLocaleString()}`, 250, summaryYStart + (rowHeight * 6), { align: 'right' });
       }
 
       // Footer for the final page
@@ -1168,6 +1180,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         dana_cair: Math.round(metrics.danaCair),
         potongan_marketplace: Math.round(metrics.potonganMarketplace),
         hpp: Math.round(metrics.hppSelesai),
+        biaya_iklan_riil: Math.round(metrics.biayaIklanRiil),
         profit_riil: Math.round(metrics.profitRiil),
         pesanan_selesai: metrics.completedCount,
         pesanan_retur: metrics.returnedCount,
@@ -1484,16 +1497,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   description="Total pendapatan bersih dari pesanan yang sudah dilepaskan Shopee."
                   isHighlight
                 />
-                <KPICard 
-                  title="HPP" 
-                  value={`-Rp ${(metrics.hppSelesai || 0).toLocaleString()}`} 
+                <KPICard
+                  title="HPP"
+                  value={`-Rp ${(metrics.hppSelesai || 0).toLocaleString()}`}
                   trend="COGS"
                   isNegative
                   icon={<PackageSearch className="w-4 h-4 text-orange-600" />}
                   description="Total modal pokok produk untuk pesanan selesai."
                 />
-                <KPICard 
-                  title="Penyesuaian" 
+                <KPICard
+                  title="Biaya Iklan (Riil)"
+                  value={`-Rp ${(metrics.biayaIklanRiil || 0).toLocaleString()}`}
+                  trend="Ad Spend"
+                  isNegative
+                  icon={<Megaphone className="w-4 h-4 text-pink-600" />}
+                  description="Top-up iklan manual + auto top-up dari Shopee (sudah termasuk di Potongan Marketplace, hanya ditampilkan di sini untuk ringkasan)."
+                />
+                <KPICard
+                  title="Penyesuaian"
                   value={`${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`} 
                   trend={`+${metrics.adjustmentPlus.toLocaleString()} / -${Math.abs(metrics.adjustmentMinus).toLocaleString()}`}
                   isNegative={metrics.adjustmentPlus + metrics.adjustmentMinus < 0}
