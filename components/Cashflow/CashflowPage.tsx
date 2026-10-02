@@ -1103,18 +1103,11 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
           return acc + (o.order_items?.reduce((h: number, item: any) => h + ((item.hpp_at_time || 0) * item.quantity), 0) || 0);
         }, 0);
         
-        const storeAutoTopupIklan = storeOrders.reduce((acc, o) => {
-           let subAds = 0;
-           if (o.fee_details) {
-              if (o.fee_details.auto_topup_fee) subAds += Math.abs(o.fee_details.auto_topup_fee);
-              if (o.fee_details.seller_coin_cashback) subAds += Math.abs(o.fee_details.seller_coin_cashback);
-              if (o.fee_details.seller_cofund_coin_cashback) subAds += Math.abs(o.fee_details.seller_cofund_coin_cashback);
-           }
-           return acc + subAds;
-        }, 0);
-        
+        // fee_details.auto_topup_fee/seller_coin_cashback TIDAK ditambahkan di sini - sudah
+        // ikut terpotong oleh Shopee di dalam storeRevenue (net_revenue), sama seperti
+        // finalAdsTotal di ringkasan utama (lihat komentar di situ).
         const storeTxs = manualTransactions.filter(tx => tx.storeId === s.id);
-        const storeAds = storeTxs.filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual' && !tx.isManual).reduce((acc, tx) => acc + Math.abs(tx.amount), 0) + storeAutoTopupIklan;
+        const storeAds = storeTxs.filter(tx => tx.category === 'Isi Ulang Saldo Iklan/Koin Penjual' && !tx.isManual).reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
         const storeManual = storeTxs.filter(tx => tx.isManual).reduce((acc, tx) => acc + tx.amount, 0);
         const storeShopeeAdj = storeTxs.filter(tx => tx.category === 'Penyesuaian Saldo' && !tx.isManual).reduce((acc, tx) => acc + tx.amount, 0);
         
