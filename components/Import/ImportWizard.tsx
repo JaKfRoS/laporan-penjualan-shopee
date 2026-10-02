@@ -495,13 +495,28 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       // Map headers for Income Data dynamically
       const incomeHeaders = Object.keys(incomeData[0] || {});
       const incomeMapping: Mapping = {};
-      Object.entries(INCOME_HEADER_ALIASES).forEach(([dbKey, aliases]) => {
-         const found = incomeHeaders.find(h => {
-             const cleanH = normalizeHeaderKey(String(h).replace(/\(idr\)/gi, '').replace(/\(rp\)/gi, ''));
-             return aliases.some(a => cleanH === normalizeHeaderKey(a) || cleanH.includes(normalizeHeaderKey(a)));
-         });
-         if (found) incomeMapping[dbKey] = found;
-      });
+      // Two passes: exact matches are claimed first (across ALL dbKeys), then
+      // loose substring matches fill in whatever is still unmapped, skipping
+      // headers already claimed. Doing substring matching in a single pass
+      // let a generic alias (e.g. "Diskon Produk" for product_discount) steal
+      // a column meant for a more specific dbKey (e.g. "Diskon Produk dari
+      // Shopee" for shopee_product_discount) whenever the report format
+      // didn't include a column for the generic alias's own exact name -
+      // silently corrupting whichever formula read the generic dbKey.
+      const assignIncomeMapping = (exactOnly: boolean) => {
+        const usedHeaders = new Set(Object.values(incomeMapping));
+        Object.entries(INCOME_HEADER_ALIASES).forEach(([dbKey, aliases]) => {
+           if (incomeMapping[dbKey]) return;
+           const found = incomeHeaders.find(h => {
+               if (usedHeaders.has(h)) return false;
+               const cleanH = normalizeHeaderKey(String(h).replace(/\(idr\)/gi, '').replace(/\(rp\)/gi, ''));
+               return aliases.some(a => exactOnly ? cleanH === normalizeHeaderKey(a) : cleanH.includes(normalizeHeaderKey(a)));
+           });
+           if (found) { incomeMapping[dbKey] = found; usedHeaders.add(found); }
+        });
+      };
+      assignIncomeMapping(true);
+      assignIncomeMapping(false);
 
       // "Total Penghasilan" (net_revenue) is the one column the rest of this
       // function cannot safely proceed without: every fee/profit figure in the
@@ -528,6 +543,17 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
       const freeShippingXtraHeaders = incomeHeaders.filter(h => {
           const cleanH = normalizeHeaderKey(h);
           return cleanH.includes('gratisongkirxtra') || cleanH.includes('freeshippingxtra');
+      });
+
+      // "Biaya Layanan" is likewise split by Shopee into several columns in
+      // newer export formats (e.g. "Biaya Layanan Promo XTRA", "SPayLater
+      // Xtra 0% Service Fee") - distinct from "Biaya Transaksi", which already
+      // has its own dbKey/alias above. Sum every matching column instead of a
+      // single literal alias, same pattern as freeShippingXtraHeaders - this
+      // also still matches the old single "Biaya Layanan" column by itself.
+      const serviceFeeHeaders = incomeHeaders.filter(h => {
+          const cleanH = normalizeHeaderKey(h);
+          return cleanH.includes('biayalayanan') || cleanH.includes('spaylaterxtra');
       });
 
       const incomeReportsToInsert: any[] = [];
@@ -562,7 +588,9 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ store, onComplete })
              }
          }
          const adminFee = Math.abs(parseNumberIndonesia(row[incomeMapping['admin_fee']] || row['Biaya Administrasi']));
-         const serviceFee = Math.abs(parseNumberIndonesia(row[incomeMapping['service_fee']] || row['Biaya Layanan']));
+         const serviceFee = serviceFeeHeaders.length > 0
+            ? serviceFeeHeaders.reduce((sum, h) => sum + Math.abs(parseNumberIndonesia(row[h])), 0)
+            : Math.abs(parseNumberIndonesia(row[incomeMapping['service_fee']] || row['Biaya Layanan']));
          const amsFee = Math.abs(parseNumberIndonesia(row[incomeMapping['ams_commission']] || row['Biaya Komisi AMS']));
          const procFee = Math.abs(parseNumberIndonesia(row[incomeMapping['order_processing_fee']] || row['Biaya Proses Pesanan']));
          const premFee = Math.abs(parseNumberIndonesia(row[incomeMapping['premium_fee']] || row['Premi']));
