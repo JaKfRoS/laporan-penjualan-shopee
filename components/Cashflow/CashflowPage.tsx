@@ -50,7 +50,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
   const [netRevenueSelesai, setNetRevenueSelesai] = useState(0);
   const [totalHPPSelesai, setTotalHPPSelesai] = useState(0);
   const [adsTotal, setAdsTotal] = useState(0);
-  const [autoTopupTotal, setAutoTopupTotal] = useState(0);
   const [withdrawalsTotal, setWithdrawalsTotal] = useState(0);
   const [shopeeAdjustmentsTotal, setShopeeAdjustmentsTotal] = useState(0);
   const [escrowBalance, setEscrowBalance] = useState(0);
@@ -338,19 +337,6 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
         }, 0) || 0;
         return acc + orderHpp;
       }, 0);
-
-      const autoTopupIklan = settledOrders.reduce((acc, o) => {
-         let subAds = 0;
-         if (o.fee_details) {
-            if (o.fee_details.auto_topup_fee) subAds += Math.abs(o.fee_details.auto_topup_fee);
-            if (o.fee_details.seller_coin_cashback) subAds += Math.abs(o.fee_details.seller_coin_cashback);
-            if (o.fee_details.seller_cofund_coin_cashback) subAds += Math.abs(o.fee_details.seller_cofund_coin_cashback);
-         }
-         return acc + subAds;
-      }, 0);
-      
-      // Store auto_topup_fee sum to use later in adsTotal calculation
-      setAutoTopupTotal(autoTopupIklan);
 
       setNetRevenueSelesai(revenue);
       setTotalHPPSelesai(hpp);
@@ -1006,7 +992,12 @@ export const CashflowPage: React.FC<CashflowPageProps> = ({ store, allStores }) 
     .filter(tx => tx.isManual)
     .reduce((acc, tx) => acc + tx.amount, 0);
   
-  const finalAdsTotal = adsTotal + autoTopupTotal;
+  // "Biaya Iklan" di sini HANYA top-up saldo iklan dari ledger adjustments (uang yang
+  // benar-benar dipindah ke wallet iklan). fee_details.auto_topup_fee/seller_coin_cashback
+  // SUDAH ikut dipotong oleh Shopee di dalam net_revenue (Dana Cair) per pesanan - dulu
+  // dijumlahkan lagi ke sini sehingga Biaya Iklan dan Laba Bersih Riil double-count potongan
+  // yang sama, membuat Laba Bersih Riil di Keuangan lebih rendah dari Profit Riil Dashboard.
+  const finalAdsTotal = adsTotal;
   // Potongan Marketplace = selisih antara Omzet Riil (kotor) dan Dana Cair (net_revenue dari Shopee),
   // dijamin selalu rekonsil karena diturunkan dari netRevenueSelesai (sumber yang sudah divalidasi),
   // bukan dihitung ulang dari fee_details (yang punya celah kecil, mis. Penyesuaian Penjual dari Shopee).
