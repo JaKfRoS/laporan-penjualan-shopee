@@ -644,8 +644,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
       return acc + (o.product_total || 0);
     }, 0);
     const averageOrderValue = totalOrdersCount > 0 ? totalOmzetPesanan / totalOrdersCount : 0;
-    const roasAktual = Math.abs(biayaIklan) > 0 ? totalOmzetBersih / Math.abs(biayaIklan) : 0;
-    const acosAktual = totalOmzetBersih > 0 ? (Math.abs(biayaIklan) / totalOmzetBersih) * 100 : 0;
+    // ROAS/ACOS pakai Biaya Iklan (Riil) - manual + auto top-up dari Shopee - supaya
+    // mencerminkan total biaya iklan sebenarnya, bukan cuma top-up manual yang diupload.
+    const roasAktual = Math.abs(biayaIklanRiil) > 0 ? totalOmzetBersih / Math.abs(biayaIklanRiil) : 0;
+    const acosAktual = totalOmzetBersih > 0 ? (Math.abs(biayaIklanRiil) / totalOmzetBersih) * 100 : 0;
 
     return { 
       totalOrders: totalOrdersCount,
@@ -730,7 +732,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         if (filters.mode === 'order_date') {
           rows.push(["Omset Pesanan (GMV)", metrics.totalOmzetPesanan, "Total nilai seluruh pesanan masuk (termasuk Batal/Retur)"]);
           rows.push(["Omset Bersih (Net GMV)", metrics.totalOmzetBersih, "Total nilai pesanan aktif (mengecualikan Batal/Retur)"]);
-          rows.push(["Biaya Iklan", metrics.biayaIklan, "Total biaya iklan (Top-up Keuangan)"]);
+          rows.push(["Biaya Iklan (Riil)", metrics.biayaIklanRiil, "Top-up manual (Keuangan) + auto top-up dari Shopee"]);
           rows.push(["ROAS Aktual", `${metrics.roasAktual.toFixed(2)}x`, "Return on Ad Spend"]);
           rows.push(["% ACOS", `${metrics.acosAktual.toFixed(2)}%`, "Advertising Cost of Sales"]);
           rows.push(["Total Pesanan", metrics.totalOrders, "Jumlah seluruh transaksi"]);
@@ -741,7 +743,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
           rows.push(["Potongan Marketplace", -metrics.potonganMarketplace, "Total komisi/biaya marketplace"]);
           rows.push(["Dana Cair", metrics.danaCair, "Total pendapatan bersih yang diterima"]);
           rows.push(["HPP", -metrics.hppSelesai, "Total modal pokok produk pesanan selesai"]);
-          rows.push(["Biaya Iklan (Riil)", -metrics.biayaIklanRiil, "Top-up manual + auto top-up dari Shopee (sudah termasuk di Potongan Marketplace)"]);
           rows.push(["Penyesuaian Shopee", metrics.adjustmentPlus + metrics.adjustmentMinus, "Total penyesuaian saldo (Kompensasi, Klaim, Bonus, dll)"]);
           rows.push(["Profit Riil", metrics.profitRiil, "Dana Cair - HPP - Biaya Iklan + Penyesuaian"]);
           rows.push(["% Net Profit", `${metrics.percentNetProfit.toFixed(1)}%`, "Profit Riil / Omzet Riil"]);
@@ -942,7 +943,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         const summaryBody = filters.mode === 'order_date' ? [
           ['Omset Pesanan (GMV)', `Rp ${metrics.totalOmzetPesanan.toLocaleString()}`, 'Total nilai pesanan dibuat pelanggan'],
           ['Omset Bersih (Net GMV)', `Rp ${metrics.totalOmzetBersih.toLocaleString()}`, 'Total nilai pesanan aktif (mengecualikan Batal/Retur)'],
-          ['Biaya Iklan', `Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 'Total biaya iklan (Top-up Keuangan)'],
+          ['Biaya Iklan (Riil)', `Rp ${Math.abs(metrics.biayaIklanRiil).toLocaleString()}`, 'Top-up manual (Keuangan) + auto top-up dari Shopee'],
           ['ROAS Aktual', `${metrics.roasAktual.toFixed(2)}x`, 'Return on Ad Spend'],
           ['% ACOS', `${metrics.acosAktual.toFixed(2)}%`, 'Advertising Cost of Sales'],
           ['Total Pesanan', metrics.totalOrders.toString(), 'Jumlah seluruh transaksi'],
@@ -953,7 +954,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         ['Potongan Marketplace', `-Rp ${metrics.potonganMarketplace.toLocaleString()}`, 'Total komisi/biaya marketplace'],
         ['Dana Cair', `Rp ${metrics.danaCair.toLocaleString()}`, 'Total pendapatan bersih yang diterima'],
         ['HPP', `-Rp ${metrics.hppSelesai.toLocaleString()}`, 'Total modal pokok produk pesanan selesai'],
-        ['Biaya Iklan (Riil)', `-Rp ${metrics.biayaIklanRiil.toLocaleString()}`, 'Top-up manual + auto top-up dari Shopee (sudah termasuk di Potongan Marketplace)'],
         ['Penyesuaian Shopee', `${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`, 'Total penyesuaian saldo (Kompensasi, Klaim, Bonus, dll)'],
         ['Profit Riil', `Rp ${metrics.profitRiil.toLocaleString()}`, 'Dana Cair - HPP - Biaya Iklan + Penyesuaian'],
         ['% Net Profit', `${metrics.percentNetProfit.toFixed(1)}%`, 'Profit Riil / Omzet Riil'],
@@ -1067,8 +1067,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         doc.text("Omset Bersih (Net GMV)", 30, summaryYStart + (rowHeight * 2));
         doc.text(`Rp ${metrics.totalOmzetBersih.toLocaleString()}`, 250, summaryYStart + (rowHeight * 2), { align: 'right' });
 
-        doc.text("Biaya Iklan", 30, summaryYStart + (rowHeight * 3));
-        doc.text(`Rp ${Math.abs(metrics.biayaIklan).toLocaleString()}`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
+        doc.text("Biaya Iklan (Riil)", 30, summaryYStart + (rowHeight * 3));
+        doc.text(`Rp ${Math.abs(metrics.biayaIklanRiil).toLocaleString()}`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
 
         doc.text("ROAS Aktual", 30, summaryYStart + (rowHeight * 4));
         doc.text(`${metrics.roasAktual.toFixed(2)} x`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
@@ -1089,14 +1089,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         doc.text("HPP", 30, summaryYStart + (rowHeight * 3));
         doc.text(`-Rp ${metrics.hppSelesai.toLocaleString()}`, 250, summaryYStart + (rowHeight * 3), { align: 'right' });
 
-        doc.text("Biaya Iklan (Riil)", 30, summaryYStart + (rowHeight * 4));
-        doc.text(`-Rp ${metrics.biayaIklanRiil.toLocaleString()}`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
+        doc.text("Penyesuaian", 30, summaryYStart + (rowHeight * 4));
+        doc.text(`${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`, 250, summaryYStart + (rowHeight * 4), { align: 'right' });
 
-        doc.text("Penyesuaian", 30, summaryYStart + (rowHeight * 5));
-        doc.text(`${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`, 250, summaryYStart + (rowHeight * 5), { align: 'right' });
-
-        doc.text("Profit Riil", 30, summaryYStart + (rowHeight * 6));
-        doc.text(`Rp ${metrics.profitRiil.toLocaleString()}`, 250, summaryYStart + (rowHeight * 6), { align: 'right' });
+        doc.text("Profit Riil", 30, summaryYStart + (rowHeight * 5));
+        doc.text(`Rp ${metrics.profitRiil.toLocaleString()}`, 250, summaryYStart + (rowHeight * 5), { align: 'right' });
       }
 
       // Footer for the final page
@@ -1169,7 +1166,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         total_pesanan: metrics.totalOrders,
         pesanan_dibatalkan: metrics.cancelledCount,
         rata_rata_per_pesanan_aov: Math.round(metrics.averageOrderValue),
-        biaya_iklan: Math.round(metrics.biayaIklan),
+        biaya_iklan_riil: Math.round(metrics.biayaIklanRiil),
         roas_aktual: Number(metrics.roasAktual.toFixed(2)),
         acos_aktual: Number(metrics.acosAktual.toFixed(2)),
         produk_terlaris,
@@ -1180,7 +1177,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
         dana_cair: Math.round(metrics.danaCair),
         potongan_marketplace: Math.round(metrics.potonganMarketplace),
         hpp: Math.round(metrics.hppSelesai),
-        biaya_iklan_riil: Math.round(metrics.biayaIklanRiil),
         profit_riil: Math.round(metrics.profitRiil),
         pesanan_selesai: metrics.completedCount,
         pesanan_retur: metrics.returnedCount,
@@ -1418,28 +1414,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
               description="Omset riil yang mengecualikan seluruh pesanan Batal/Retur (lebih akurat daripada 'Penjualan' Shopee)."
               isHighlight
             />
-            <KPICard 
-              title="Biaya Iklan" 
-              value={`Rp ${Math.abs(metrics.biayaIklan || 0).toLocaleString()}`} 
+            <KPICard
+              title="Biaya Iklan (Riil)"
+              value={`Rp ${Math.abs(metrics.biayaIklanRiil || 0).toLocaleString()}`}
               trend="Ad Spend"
-              icon={<Percent className="w-4 h-4 text-red-600" />}
-              description="Total biaya iklan yang dikeluarkan (berdasarkan transaksi saldo penjual, sudah termasuk PPN iklan 11%)."
+              icon={<Megaphone className="w-4 h-4 text-red-600" />}
+              description="Top-up iklan manual (transaksi saldo penjual, sudah termasuk PPN iklan 11%) + auto top-up dari Shopee (fee_details.auto_topup_fee)."
               isNegative
             />
-            <KPICard 
-              title="ROAS Aktual" 
-              value={`${(metrics.roasAktual || 0).toFixed(2)}x`} 
+            <KPICard
+              title="ROAS Aktual"
+              value={`${(metrics.roasAktual || 0).toFixed(2)}x`}
               trend="Return on Ad Spend"
               icon={<BrainCircuit className="w-4 h-4 text-purple-600" />}
-              description="Efektivitas iklan (Omzet Bersih / Biaya Iklan)."
+              description="Efektivitas iklan (Omzet Bersih / Biaya Iklan Riil)."
               isHighlight
             />
-            <KPICard 
-              title="% ACOS" 
-              value={`${(metrics.acosAktual || 0).toFixed(2)}%`} 
+            <KPICard
+              title="% ACOS"
+              value={`${(metrics.acosAktual || 0).toFixed(2)}%`}
               trend="Ad Cost of Sales"
               icon={<Percent className="w-4 h-4 text-rose-600" />}
-              description="Persentase biaya iklan dibandingkan omzet bersih (Biaya Iklan / Omzet Bersih)."
+              description="Persentase biaya iklan dibandingkan omzet bersih (Biaya Iklan Riil / Omzet Bersih)."
               isNegative
             />
             <KPICard 
@@ -1504,14 +1500,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                   isNegative
                   icon={<PackageSearch className="w-4 h-4 text-orange-600" />}
                   description="Total modal pokok produk untuk pesanan selesai."
-                />
-                <KPICard
-                  title="Biaya Iklan (Riil)"
-                  value={`-Rp ${(metrics.biayaIklanRiil || 0).toLocaleString()}`}
-                  trend="Ad Spend"
-                  isNegative
-                  icon={<Megaphone className="w-4 h-4 text-pink-600" />}
-                  description="Top-up iklan manual + auto top-up dari Shopee (sudah termasuk di Potongan Marketplace, hanya ditampilkan di sini untuk ringkasan)."
                 />
                 <KPICard
                   title="Penyesuaian"
