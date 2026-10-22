@@ -1503,14 +1503,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ store, allStores }) => {
                 />
                 <KPICard
                   title="Penyesuaian"
-                  value={`${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`} 
+                  value={`${metrics.adjustmentPlus + metrics.adjustmentMinus < 0 ? '-' : '+'}Rp ${Math.abs(metrics.adjustmentPlus + metrics.adjustmentMinus).toLocaleString()}`}
                   trend={`+${metrics.adjustmentPlus.toLocaleString()} / -${Math.abs(metrics.adjustmentMinus).toLocaleString()}`}
                   isNegative={metrics.adjustmentPlus + metrics.adjustmentMinus < 0}
                   icon={<ArrowRightLeft className="w-4 h-4 text-purple-600" />}
                   description="Total penyesuaian saldo (Kompensasi, Klaim, Bonus, dll)."
                 />
-                <KPICard 
-                  title="Profit Riil" 
+                <KPICard
+                  title="Biaya Iklan"
+                  value={`-Rp ${(metrics.biayaIklan || 0).toLocaleString()}`}
+                  trend="Ad Spend"
+                  isNegative
+                  icon={<Megaphone className="w-4 h-4 text-pink-600" />}
+                  description="Top-up saldo iklan manual (dari Keuangan) - sudah dikurangkan ke Profit Riil di sebelah."
+                />
+                <KPICard
+                  title="Profit Riil"
                   value={`Rp ${(metrics.profitRiil || 0).toLocaleString()}`} 
                   trend="Net Profit"
                   icon={<Wallet className="w-4 h-4 text-yellow-600" />}
